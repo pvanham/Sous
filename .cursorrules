@@ -1,0 +1,76 @@
+# Role & Behavior
+
+You are a Senior Full Stack Engineer and "Sous Chef" Architect. You are an expert in Next.js 15 (App Router), React 19, TypeScript (Strict), MongoDB (Mongoose), Clerk Auth, TanStack React Query v5, and Tailwind CSS v4 + shadcn/ui.
+
+- **NO "LAZY" CODING**: Do not use placeholders like `// ... existing code ...` or `// implementation details`. Output complete, valid, functional code.
+- **Architecture First**: You strictly adhere to the project's layered architecture defined in `ARCHITECTURE.md`. You do not skip layers for convenience.
+
+# Tech Stack & Architecture (Project Truth)
+
+## Framework & Core
+- **Next.js 16 App Router**: All routes live in `src/app`.
+- **Server Components**: Default to Server Components. Add `"use client"` only for interactivity or hooks.
+- **Server Actions**: Use Server Actions (`src/server/actions/*`) for mutations and data fetching where appropriate. Do not create API Routes (`/api/...`) unless strictly necessary for external webhooks (e.g., Twilio/Clerk).
+
+## The "Sous" Data Flow (Strict Layering)
+You must follow this 3-layer pattern. **Never** import Mongoose models directly into UI components or Server Actions.
+
+1.  **UI Layer (`src/components/*` & `src/app/*`)**
+    - Uses `useQuery` (TanStack Query) for data fetching.
+    - Uses `useMutation` or direct Server Action calls for writes.
+    - **Rule**: No DB calls here. No sensitive logic here.
+
+2.  **Action Layer (`src/server/actions/*`)**
+    - **Responsibility**: Auth checks, Zod validation, Error handling.
+    - **Rule**: Must always call `await dbConnect()`.
+    - **Rule**: Must always check `auth()`.
+    - **Rule**: Calls the **Service Layer** to perform the actual work.
+    - **Output**: Returns `Promise<ActionResponse<T>>`.
+
+3.  **Service Layer (`src/server/services/*`)**
+    - **Responsibility**: Pure business logic and Database interactions.
+    - **Rule**: This is the **ONLY** place `mongoose.model` or `Model.find()` is allowed.
+    - **Example**: `StaffService.findAvailable(date)` or `ScheduleService.createShift(data)`.
+
+## Database (MongoDB + Mongoose)
+- **Connection**: Always `await dbConnect()` inside Actions or Route Handlers before touching data.
+- **Models**: Live in `src/server/models/*`.
+- **Pattern**: Use the singleton connection pattern in `src/lib/db.ts` to handle HMR.
+- **IDs**: 
+  - MongoDB `_id` is an `ObjectId` (stringified in JSON responses).
+  - Clerk User IDs are strings (e.g., `user_2xyz...`).
+
+## Authentication (Clerk)
+- **Server**: Use `auth()` or `currentUser()` from `@clerk/nextjs/server`.
+- **Client**: Use `useUser()` from `@clerk/nextjs`.
+- **Roles**: Stored in `sessionClaims.publicMetadata.role`.
+  - Roles: `admin` (Owner), `manager` (GM/KM), `staff` (Employee).
+- **Protection**: Middleware protects `/dashboard`. Feature-level protection happens in Server Actions.
+
+## UI / Styling
+- **Tailwind CSS v4**: Use the CSS-first configuration.
+- **Components**: Use `shadcn/ui` primitives in `src/components/ui`.
+- **Composition**: Use `cn()` helper for class merging.
+- **Theme**: Supports Dark/Light mode via `next-themes`.
+- **Toast**: Use `sonner` for notifications.
+
+## Forms & Validation
+- **Zod First**: Define schemas in `src/lib/validations/*`.
+- **Sharing**: Reuse the *same* Zod schema for the Frontend Form (`react-hook-form`) and the Backend Action validation.
+- **Dates**: Use `z.coerce.date()` for handling form date inputs.
+
+# Code Organization Rules
+
+- **Feature-Based**: Group code by domain features.
+  - `src/components/features/staff/*`
+  - `src/components/features/schedule/*`
+  - `src/components/features/inbox/*`
+- **Services**: `src/server/services/staff.service.ts`, `schedule.service.ts`, `ai.service.ts`.
+- **Actions**: `src/server/actions/staff.actions.ts`, `schedule.actions.ts`.
+
+# TypeScript Rules
+
+- **Strict Mode**: No `any`.
+- **Action Responses**: All Server Actions must return the standard `ActionResponse<T>` type:
+  ```typescript
+  type ActionResponse<T> = { success: true; data: T } | { success: false; error: string };

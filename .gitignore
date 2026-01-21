@@ -1,0 +1,57 @@
+# ==========================================
+# Sous (Next.js / Node / macOS) .gitignore
+# ==========================================
+
+# --- dependencies ---
+node_modules/
+.pnp/
+.pnp.js
+
+# --- Next.js build output ---
+.next/
+out/
+
+# --- runtime / logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- env files (secrets) ---
+.env
+.env.*
+!.env.example
+
+# --- clerk configuration (can include secrets) ---
+/.clerk/
+
+# --- caches ---
+.turbo/
+.swc/
+.eslintcache
+.cache/
+
+# --- coverage ---
+coverage/
+
+# --- typescript ---
+*.tsbuildinfo
+
+# --- OS / editor ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+._*
+
+.vscode/
+!.vscode/extensions.json
+
+.idea/
+
+# --- misc ---
+.npmrc
+.yarnrc
+.yarnrc.yml
+.pnpm-debug.log*
