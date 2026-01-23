@@ -3,9 +3,10 @@
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { formatWeekLabel } from "@/lib/utils/date";
 import type { ScheduleStatus } from "@/types/schedule";
+
+import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 
 interface ScheduleHeaderProps {
   weekStart: Date;
@@ -57,12 +58,7 @@ export function ScheduleHeader({
         </Button>
       </div>
 
-      <Badge
-        variant={scheduleStatus === "PUBLISHED" ? "default" : "secondary"}
-        className="text-xs"
-      >
-        {scheduleStatus}
-      </Badge>
+      <ScheduleStatusBadge status={scheduleStatus} />
     </div>
   );
 }

@@ -206,4 +206,64 @@ export const ShiftService = {
     const result = await Shift.deleteMany({ userId });
     return result.deletedCount;
   },
+
+  /**
+   * Copy shifts from one schedule to another with adjusted dates.
+   * Handles overlap detection - skips shifts that would conflict with existing ones.
+   * @param userId - Clerk user ID (ownership check)
+   * @param sourceScheduleId - Schedule ID to copy from
+   * @param targetScheduleId - Schedule ID to copy to
+   * @param dayOffset - Number of days to add to shift dates (e.g., 7 for next week)
+   * @returns Object with count of created and skipped shifts
+   */
+  async copyShiftsToNewWeek(
+    userId: string,
+    sourceScheduleId: string,
+    targetScheduleId: string,
+    dayOffset: number
+  ): Promise<{ created: number; skipped: number }> {
+    // Get all shifts from source schedule
+    const sourceShifts = await this.getBySchedule(sourceScheduleId);
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const sourceShift of sourceShifts) {
+      // Calculate new dates by adding the day offset
+      const newStart = new Date(sourceShift.start);
+      newStart.setDate(newStart.getDate() + dayOffset);
+
+      const newEnd = new Date(sourceShift.end);
+      newEnd.setDate(newEnd.getDate() + dayOffset);
+
+      // Check if this shift would overlap with existing shifts in target schedule
+      const hasOverlap = await this.checkOverlap(
+        userId,
+        sourceShift.staffId,
+        newStart,
+        newEnd
+      );
+
+      if (hasOverlap) {
+        // Skip this shift due to conflict
+        skipped++;
+        continue;
+      }
+
+      // Create the new shift in the target schedule
+      await Shift.create({
+        userId,
+        scheduleId: new Types.ObjectId(targetScheduleId),
+        staffId: new Types.ObjectId(sourceShift.staffId),
+        start: newStart,
+        end: newEnd,
+        station: sourceShift.station,
+        notes: sourceShift.notes || "",
+      });
+
+      created++;
+    }
+
+    return { created, skipped };
+  },
 };
