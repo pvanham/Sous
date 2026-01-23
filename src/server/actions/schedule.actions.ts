@@ -344,3 +344,42 @@ export async function publishSchedule(
     return { success: false, error: message };
   }
 }
+
+/**
+ * Clear all shifts from a schedule (delete all shifts for a week).
+ * @param scheduleId - Schedule document ID
+ * @returns ActionResponse with count of deleted shifts
+ */
+export async function clearWeekShifts(
+  scheduleId: string
+): Promise<ActionResponse<{ shiftsDeleted: number }>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. DB connect
+    await dbConnect();
+
+    // 3. Verify schedule ownership
+    const schedule = await ScheduleService.getById(userId, scheduleId);
+    if (!schedule) {
+      return { success: false, error: "Schedule not found" };
+    }
+
+    // 4. Delete all shifts for this schedule
+    const shiftsDeleted = await ShiftService.deleteBySchedule(scheduleId);
+
+    // 5. Return response
+    return {
+      success: true,
+      data: { shiftsDeleted },
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to clear week shifts";
+    return { success: false, error: message };
+  }
+}

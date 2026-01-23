@@ -45,7 +45,8 @@ import {
 } from "@/lib/utils/date";
 import type { ShiftDTO } from "@/types/shift";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
-import type { StaffDTO } from "@/types/staff";
+
+import { StaffSearchCombobox } from "./StaffSearchCombobox";
 
 // Client-side form schema
 const shiftFormSchema = z
@@ -103,12 +104,17 @@ interface ShiftFormDialogProps {
   // For create mode - pre-filled values
   staffId?: string;
   date?: Date;
+  startTime?: string; // Pre-filled start time in "HH:mm" format
+  station?: string; // Pre-filled station
 
   // For edit mode - existing shift data
   shift?: ShiftDTO;
 
   // Optional callback for delete action
   onDeleteClick?: () => void;
+
+  // Enable staff selection via combobox (for Time/Day views)
+  allowStaffSelection?: boolean;
 }
 
 /**
@@ -156,8 +162,11 @@ export function ShiftFormDialog({
   scheduleId,
   staffId,
   date,
+  startTime: prefilledStartTime,
+  station: prefilledStation,
   shift,
   onDeleteClick,
+  allowStaffSelection = false,
 }: ShiftFormDialogProps) {
   const queryClient = useQueryClient();
 
@@ -189,6 +198,9 @@ export function ShiftFormDialog({
   // Get current date for display
   const currentDate = mode === "edit" && shift ? new Date(shift.start) : date;
 
+  // Filter to active staff only
+  const activeStaff = allStaff.filter((s) => s.isActive);
+
   // Calculate default values
   const defaultValues = useMemo((): ShiftFormValues => {
     if (mode === "edit" && shift) {
@@ -202,19 +214,20 @@ export function ShiftFormDialog({
       };
     }
 
-    // Create mode defaults
-    const defaultStart = getDefaultStartTime(config, date || new Date());
+    // Create mode defaults - use prefilled values if available
+    const defaultStart = prefilledStartTime || getDefaultStartTime(config, date || new Date());
     const defaultEnd = getDefaultEndTime(defaultStart);
+    const defaultStation = prefilledStation || config?.stations[0] || "";
 
     return {
       staffId: staffId || "",
       date: date || new Date(),
       startTime: defaultStart,
       endTime: defaultEnd,
-      station: config?.stations[0] || "",
+      station: defaultStation,
       notes: "",
     };
-  }, [mode, shift, staffId, date, config]);
+  }, [mode, shift, staffId, date, config, prefilledStartTime, prefilledStation]);
 
   // Initialize form
   const form = useForm<ShiftFormValues>({
@@ -429,15 +442,36 @@ export function ShiftFormDialog({
         ) : (
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              {/* Staff Name (readonly display) */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Staff Member</label>
-                <Input
-                  value={currentStaffMember?.name || "Unknown"}
-                  disabled
-                  className="bg-muted"
+              {/* Staff Member - either searchable combobox or readonly display */}
+              {allowStaffSelection && mode === "create" ? (
+                <FormField
+                  control={form.control}
+                  name="staffId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Staff Member</FormLabel>
+                      <FormControl>
+                        <StaffSearchCombobox
+                          staff={activeStaff}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          placeholder="Search and select staff..."
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Staff Member</label>
+                  <Input
+                    value={currentStaffMember?.name || "Unknown"}
+                    disabled
+                    className="bg-muted"
+                  />
+                </div>
+              )}
 
               {/* Date (readonly display) */}
               <div className="space-y-2">

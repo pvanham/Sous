@@ -177,3 +177,155 @@ export function combineDateTime(date: Date, timeString: string): Date {
 export function extractTimeString(date: Date): string {
   return format(date, "HH:mm");
 }
+
+/**
+ * Generate an array of time slots between start and end times.
+ * @param startTime - Start time in "HH:mm" format
+ * @param endTime - End time in "HH:mm" format
+ * @param intervalMinutes - Interval between slots (default: 30)
+ * @returns Array of time strings in "HH:mm" format
+ */
+export function generateTimeSlots(
+  startTime: string,
+  endTime: string,
+  intervalMinutes: number = 30
+): string[] {
+  const slots: string[] = [];
+  const [startHour, startMin] = startTime.split(":").map(Number);
+  const [endHour, endMin] = endTime.split(":").map(Number);
+
+  let currentMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin;
+
+  while (currentMinutes < endMinutes) {
+    const hours = Math.floor(currentMinutes / 60);
+    const minutes = currentMinutes % 60;
+    slots.push(
+      `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+    );
+    currentMinutes += intervalMinutes;
+  }
+
+  return slots;
+}
+
+/**
+ * Get the earliest opening and latest closing times from kitchen config.
+ * @param operatingHours - Weekly operating hours from KitchenConfig
+ * @returns Object with earliest open time and latest close time
+ */
+export function getOperatingHoursRange(operatingHours: {
+  monday: { isOpen: boolean; open?: string; close?: string };
+  tuesday: { isOpen: boolean; open?: string; close?: string };
+  wednesday: { isOpen: boolean; open?: string; close?: string };
+  thursday: { isOpen: boolean; open?: string; close?: string };
+  friday: { isOpen: boolean; open?: string; close?: string };
+  saturday: { isOpen: boolean; open?: string; close?: string };
+  sunday: { isOpen: boolean; open?: string; close?: string };
+}): { earliest: string; latest: string } {
+  const days = [
+    operatingHours.monday,
+    operatingHours.tuesday,
+    operatingHours.wednesday,
+    operatingHours.thursday,
+    operatingHours.friday,
+    operatingHours.saturday,
+    operatingHours.sunday,
+  ];
+
+  let earliestMinutes = 24 * 60; // Start with end of day
+  let latestMinutes = 0; // Start with beginning of day
+
+  for (const day of days) {
+    if (day.isOpen && day.open && day.close) {
+      const [openHour, openMin] = day.open.split(":").map(Number);
+      const [closeHour, closeMin] = day.close.split(":").map(Number);
+
+      const openMinutes = openHour * 60 + openMin;
+      const closeMinutes = closeHour * 60 + closeMin;
+
+      if (openMinutes < earliestMinutes) {
+        earliestMinutes = openMinutes;
+      }
+      if (closeMinutes > latestMinutes) {
+        latestMinutes = closeMinutes;
+      }
+    }
+  }
+
+  // Default to 6am - 11pm if no hours are set
+  if (earliestMinutes === 24 * 60) earliestMinutes = 6 * 60;
+  if (latestMinutes === 0) latestMinutes = 23 * 60;
+
+  const earliestHours = Math.floor(earliestMinutes / 60);
+  const earliestMins = earliestMinutes % 60;
+  const latestHours = Math.floor(latestMinutes / 60);
+  const latestMins = latestMinutes % 60;
+
+  return {
+    earliest: `${String(earliestHours).padStart(2, "0")}:${String(earliestMins).padStart(2, "0")}`,
+    latest: `${String(latestHours).padStart(2, "0")}:${String(latestMins).padStart(2, "0")}`,
+  };
+}
+
+/**
+ * Format a time string (HH:mm) for display.
+ * @param timeString - Time in "HH:mm" format
+ * @returns String like "9:00am" or "5:30pm"
+ */
+export function formatTimeString(timeString: string): string {
+  const [hours, minutes] = timeString.split(":").map(Number);
+  const period = hours >= 12 ? "pm" : "am";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${String(minutes).padStart(2, "0")}${period}`;
+}
+
+/**
+ * Calculate the vertical position percentage for a time within a range.
+ * @param time - Time in "HH:mm" format
+ * @param rangeStart - Range start time in "HH:mm" format
+ * @param rangeEnd - Range end time in "HH:mm" format
+ * @returns Position as a percentage (0-100)
+ */
+export function getTimePositionPercent(
+  time: string,
+  rangeStart: string,
+  rangeEnd: string
+): number {
+  const [timeHour, timeMin] = time.split(":").map(Number);
+  const [startHour, startMin] = rangeStart.split(":").map(Number);
+  const [endHour, endMin] = rangeEnd.split(":").map(Number);
+
+  const timeMinutes = timeHour * 60 + timeMin;
+  const startMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin;
+
+  const totalRange = endMinutes - startMinutes;
+  if (totalRange <= 0) return 0;
+
+  return ((timeMinutes - startMinutes) / totalRange) * 100;
+}
+
+/**
+ * Calculate the height percentage for a duration within a range.
+ * @param durationMinutes - Duration in minutes
+ * @param rangeStart - Range start time in "HH:mm" format
+ * @param rangeEnd - Range end time in "HH:mm" format
+ * @returns Height as a percentage (0-100)
+ */
+export function getDurationHeightPercent(
+  durationMinutes: number,
+  rangeStart: string,
+  rangeEnd: string
+): number {
+  const [startHour, startMin] = rangeStart.split(":").map(Number);
+  const [endHour, endMin] = rangeEnd.split(":").map(Number);
+
+  const startMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin;
+
+  const totalRange = endMinutes - startMinutes;
+  if (totalRange <= 0) return 0;
+
+  return (durationMinutes / totalRange) * 100;
+}

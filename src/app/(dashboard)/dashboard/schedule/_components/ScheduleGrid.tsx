@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -11,20 +11,21 @@ import {
   deleteShift,
 } from "@/server/actions/shift.actions";
 import { listStaff } from "@/server/actions/staff.actions";
+import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import {
   getWeekDays,
   getNextWeekStart,
   getPrevWeekStart,
-  formatDayLabel,
 } from "@/lib/utils/date";
 import type { ShiftDTO } from "@/types/shift";
 
 import { ScheduleHeader } from "./ScheduleHeader";
 import { ScheduleActions } from "./ScheduleActions";
 import { WeekSummary } from "./WeekSummary";
-import { StaffRow } from "./StaffRow";
-import { ShiftCard } from "./ShiftCard";
-import { GridCell } from "./GridCell";
+import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
+import { StaffGridView } from "./StaffGridView";
+import { TimeGridView } from "./TimeGridView";
+import { DayStationView } from "./DayStationView";
 import { ShiftFormDialog } from "./ShiftFormDialog";
 import { ShiftDeleteConfirm } from "./ShiftDeleteConfirm";
 
@@ -46,38 +47,24 @@ const staffKeys = {
   list: () => [...staffKeys.all, "list"] as const,
 };
 
-// Dialog state type
+const kitchenConfigKeys = {
+  all: ["kitchenConfig"] as const,
+};
+
+// Dialog state type - extended for new views
 interface DialogState {
   mode: "create" | "edit";
   open: boolean;
   staffId?: string;
   date?: Date;
+  startTime?: string;
+  station?: string;
   shift?: ShiftDTO;
+  allowStaffSelection?: boolean;
 }
 
 interface ScheduleGridProps {
   initialWeek: Date;
-}
-
-/**
- * Helper function to find a shift for a specific staff member on a specific day.
- */
-function getShiftForStaffAndDay(
-  shifts: ShiftDTO[],
-  staffId: string,
-  day: Date
-): ShiftDTO | undefined {
-  return shifts.find((shift) => {
-    if (shift.staffId !== staffId) return false;
-
-    // Check if shift starts on this day
-    const shiftDay = new Date(shift.start);
-    return (
-      shiftDay.getFullYear() === day.getFullYear() &&
-      shiftDay.getMonth() === day.getMonth() &&
-      shiftDay.getDate() === day.getDate()
-    );
-  });
 }
 
 export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
@@ -85,6 +72,12 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   // State for current week
   const [currentWeek, setCurrentWeek] = useState<Date>(initialWeek);
+
+  // State for current view
+  const [currentView, setCurrentView] = useState<ScheduleViewType>("staff");
+
+  // State for selected day (for Day View)
+  const [selectedDay, setSelectedDay] = useState<Date>(initialWeek);
 
   // State for shift form dialog
   const [dialogState, setDialogState] = useState<DialogState>({
@@ -104,6 +97,9 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   // Convert week start to ISO string for query key
   const weekStartKey = currentWeek.toISOString();
 
+  // Get week days for column headers
+  const weekDays = getWeekDays(currentWeek);
+
   // Query: Get or create schedule for current week
   const {
     data: scheduleResponse,
@@ -121,7 +117,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   const { data: shiftsResponse, isLoading: isShiftsLoading } = useQuery({
     queryKey: shiftKeys.bySchedule(schedule?.id ?? ""),
     queryFn: () => listShiftsBySchedule({ scheduleId: schedule!.id }),
-    enabled: !!schedule?.id, // Only run when we have a schedule ID
+    enabled: !!schedule?.id,
   });
 
   // Extract shifts data
@@ -133,12 +129,16 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     queryFn: () => listStaff(),
   });
 
-  // Extract active staff (filter to active only)
+  // Extract staff data
   const allStaff = staffResponse?.success ? staffResponse.data : [];
-  const activeStaff = allStaff.filter((s) => s.isActive);
 
-  // Get week days for column headers
-  const weekDays = getWeekDays(currentWeek);
+  // Query: Get kitchen config for time views
+  const { data: configResponse } = useQuery({
+    queryKey: kitchenConfigKeys.all,
+    queryFn: () => getKitchenConfig(),
+  });
+
+  const config = configResponse?.success ? configResponse.data : null;
 
   // Delete mutation with optimistic updates
   const deleteMutation = useMutation({
@@ -148,17 +148,14 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     onMutate: async (shiftId) => {
       if (!schedule?.id) return;
 
-      // Cancel outgoing refetches
       await queryClient.cancelQueries({
         queryKey: shiftKeys.bySchedule(schedule.id),
       });
 
-      // Snapshot previous value
       const previousShifts = queryClient.getQueryData(
         shiftKeys.bySchedule(schedule.id)
       );
 
-      // Optimistically remove shift
       queryClient.setQueryData(
         shiftKeys.bySchedule(schedule.id),
         (old: { success: boolean; data: ShiftDTO[] } | undefined) => {
@@ -172,8 +169,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
       return { previousShifts };
     },
-    onError: (err, _shiftId, context) => {
-      // Rollback on error
+    onError: (_err, _shiftId, context) => {
       if (context?.previousShifts && schedule?.id) {
         queryClient.setQueryData(
           shiftKeys.bySchedule(schedule.id),
@@ -183,7 +179,6 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
       toast.error("Failed to delete shift");
     },
     onSettled: () => {
-      // Refetch to sync with server
       if (schedule?.id) {
         queryClient.invalidateQueries({
           queryKey: shiftKeys.bySchedule(schedule.id),
@@ -203,19 +198,65 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   // Week navigation handlers
   const handlePrevWeek = () => {
     setCurrentWeek((prev) => getPrevWeekStart(prev));
+    // Update selected day to first day of new week
+    setSelectedDay(getPrevWeekStart(currentWeek));
   };
 
   const handleNextWeek = () => {
     setCurrentWeek((prev) => getNextWeekStart(prev));
+    // Update selected day to first day of new week
+    setSelectedDay(getNextWeekStart(currentWeek));
   };
 
-  // Dialog handlers
-  const handleCreateShift = (staffId: string, date: Date) => {
+  // View change handler
+  const handleViewChange = (view: ScheduleViewType) => {
+    setCurrentView(view);
+    // Reset selected day to first day of week when switching to day view
+    if (view === "day") {
+      setSelectedDay(weekDays[0]);
+    }
+  };
+
+  // Day change handler (for Day View)
+  const handleDayChange = (day: Date) => {
+    setSelectedDay(day);
+  };
+
+  // Dialog handlers for Staff View
+  const handleCreateShiftFromStaff = (staffId: string, date: Date) => {
     setDialogState({
       mode: "create",
       open: true,
       staffId,
       date,
+      allowStaffSelection: false,
+    });
+  };
+
+  // Dialog handlers for Time View
+  const handleCreateShiftFromTime = (date: Date, startTime: string) => {
+    setDialogState({
+      mode: "create",
+      open: true,
+      date,
+      startTime,
+      allowStaffSelection: true,
+    });
+  };
+
+  // Dialog handlers for Day/Station View
+  const handleCreateShiftFromStation = (
+    date: Date,
+    startTime: string,
+    station: string
+  ) => {
+    setDialogState({
+      mode: "create",
+      open: true,
+      date,
+      startTime,
+      station,
+      allowStaffSelection: true,
     });
   };
 
@@ -224,6 +265,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
       mode: "edit",
       open: true,
       shift,
+      allowStaffSelection: false,
     });
   };
 
@@ -233,9 +275,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   const handleDeleteClick = () => {
     if (dialogState.shift) {
-      // Close the edit dialog first
       setDialogState((prev) => ({ ...prev, open: false }));
-      // Open delete confirmation
       setDeleteConfirmState({
         open: true,
         shift: dialogState.shift,
@@ -246,6 +286,18 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   const handleDeleteConfirm = () => {
     if (deleteConfirmState.shift) {
       deleteMutation.mutate(deleteConfirmState.shift.id);
+    }
+  };
+
+  // Handler for refreshing schedule data after status change
+  const handleStatusChange = () => {
+    queryClient.invalidateQueries({
+      queryKey: scheduleKeys.week(weekStartKey),
+    });
+    if (schedule?.id) {
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.bySchedule(schedule.id),
+      });
     }
   };
 
@@ -261,15 +313,43 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     );
   }
 
-  // Handler for refreshing schedule data after status change
-  const handleStatusChange = () => {
-    queryClient.invalidateQueries({
-      queryKey: scheduleKeys.week(weekStartKey),
-    });
-    if (schedule?.id) {
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
-      });
+  // Render the appropriate view based on currentView
+  const renderView = () => {
+    switch (currentView) {
+      case "staff":
+        return (
+          <StaffGridView
+            shifts={shifts}
+            staff={allStaff}
+            weekDays={weekDays}
+            onCreateShift={handleCreateShiftFromStaff}
+            onEditShift={handleEditShift}
+          />
+        );
+      case "time":
+        return (
+          <TimeGridView
+            shifts={shifts}
+            staff={allStaff}
+            weekDays={weekDays}
+            config={config}
+            onCreateShift={handleCreateShiftFromTime}
+            onEditShift={handleEditShift}
+          />
+        );
+      case "day":
+        return (
+          <DayStationView
+            shifts={shifts}
+            staff={allStaff}
+            selectedDay={selectedDay}
+            config={config}
+            onCreateShift={handleCreateShiftFromStation}
+            onEditShift={handleEditShift}
+          />
+        );
+      default:
+        return null;
     }
   };
 
@@ -284,7 +364,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         isLoading={isLoading}
       />
 
-      {/* Schedule Actions (Publish, Copy Week) and Week Summary */}
+      {/* Schedule Actions (Publish, Copy Week, Clear Week) and Week Summary */}
       {!isLoading && schedule && (
         <>
           <ScheduleActions
@@ -297,6 +377,17 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </>
       )}
 
+      {/* View Switcher */}
+      {!isLoading && (
+        <ViewSwitcher
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          weekDays={weekDays}
+          selectedDay={selectedDay}
+          onDayChange={handleDayChange}
+        />
+      )}
+
       {/* Loading overlay */}
       {isLoading && (
         <div className="flex items-center justify-center py-12">
@@ -304,74 +395,15 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </div>
       )}
 
-      {/* Grid */}
-      {!isLoading && (
-        <>
-          {/* Empty state - no staff */}
-          {activeStaff.length === 0 ? (
-            <div className="rounded-lg border border-border bg-muted/50 p-8 text-center">
-              <p className="text-muted-foreground">
-                No active staff members found.
-              </p>
-              <p className="text-sm text-muted-foreground mt-1">
-                Add staff members to start creating schedules.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <div className="grid grid-cols-[150px_repeat(7,minmax(100px,1fr))] gap-1 min-w-[900px]">
-                {/* Header Row - Column Labels */}
-                <div className="font-semibold text-sm p-2 border-b border-border">
-                  Staff
-                </div>
-                {weekDays.map((day) => (
-                  <div
-                    key={day.toISOString()}
-                    className="font-semibold text-sm text-center p-2 border-b border-border"
-                  >
-                    {formatDayLabel(day)}
-                  </div>
-                ))}
+      {/* Grid Views */}
+      {!isLoading && renderView()}
 
-                {/* Staff Rows */}
-                {activeStaff.map((staff) => (
-                  <Fragment key={staff.id}>
-                    <StaffRow staff={staff} />
-                    {weekDays.map((day) => {
-                      const shift = getShiftForStaffAndDay(
-                        shifts,
-                        staff.id,
-                        day
-                      );
-                      return shift ? (
-                        <ShiftCard
-                          key={shift.id}
-                          shift={shift}
-                          onClick={() => handleEditShift(shift)}
-                        />
-                      ) : (
-                        <GridCell
-                          key={`cell-${staff.id}-${day.toISOString()}`}
-                          staffId={staff.id}
-                          date={day}
-                          onClick={() => handleCreateShift(staff.id, day)}
-                        />
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Loading shifts indicator */}
-          {isShiftsLoading && shifts.length === 0 && (
-            <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading shifts...
-            </div>
-          )}
-        </>
+      {/* Loading shifts indicator */}
+      {isShiftsLoading && shifts.length === 0 && (
+        <div className="flex items-center justify-center py-4 text-muted-foreground text-sm">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+          Loading shifts...
+        </div>
       )}
 
       {/* Shift Form Dialog */}
@@ -383,8 +415,13 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
           scheduleId={schedule.id}
           staffId={dialogState.staffId}
           date={dialogState.date}
+          startTime={dialogState.startTime}
+          station={dialogState.station}
           shift={dialogState.shift}
-          onDeleteClick={dialogState.mode === "edit" ? handleDeleteClick : undefined}
+          onDeleteClick={
+            dialogState.mode === "edit" ? handleDeleteClick : undefined
+          }
+          allowStaffSelection={dialogState.allowStaffSelection}
         />
       )}
 

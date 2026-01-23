@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Copy, ChevronDown, Loader2, Undo2 } from "lucide-react";
+import { Send, Copy, ChevronDown, Loader2, Undo2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -16,12 +16,14 @@ import {
   updateScheduleStatus,
   copyWeekShifts,
   publishSchedule,
+  clearWeekShifts,
 } from "@/server/actions/schedule.actions";
 import { getPrevWeekStart } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
 
 import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
+import { ClearWeekDialog } from "./ClearWeekDialog";
 
 // Query keys for TanStack Query - must match ScheduleGrid
 const scheduleKeys = {
@@ -55,6 +57,7 @@ export function ScheduleActions({
 }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
   // Publish mutation
   const publishMutation = useMutation({
@@ -193,9 +196,32 @@ export function ScheduleActions({
     }
   };
 
+  // Clear week mutation
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const result = await clearWeekShifts(schedule.id);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Cleared ${data.shiftsDeleted} shifts`);
+      setClearDialogOpen(false);
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.bySchedule(schedule.id),
+      });
+      onStatusChange();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending;
   const isCopying = copyWeekMutation.isPending;
+  const isClearing = clearMutation.isPending;
 
   return (
     <div className="mb-4 flex items-center justify-between">
@@ -233,25 +259,48 @@ export function ScheduleActions({
         )}
       </div>
 
-      {/* Copy Week Dropdown */}
-      <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
-        <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" disabled={isCopying}>
-            {isCopying ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Copy className="mr-2 h-4 w-4" />
-            )}
-            Copy Week
-            <ChevronDown className="ml-2 h-4 w-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={handleCopyFromPreviousWeek}>
-            Copy from Previous Week
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <div className="flex items-center gap-2">
+        {/* Clear Week Button */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setClearDialogOpen(true)}
+          disabled={isClearing || shifts.length === 0}
+          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+        >
+          <Trash2 className="mr-2 h-4 w-4" />
+          Clear Week
+        </Button>
+
+        {/* Copy Week Dropdown */}
+        <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" disabled={isCopying}>
+              {isCopying ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Copy className="mr-2 h-4 w-4" />
+              )}
+              Copy Week
+              <ChevronDown className="ml-2 h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleCopyFromPreviousWeek}>
+              Copy from Previous Week
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Clear Week Confirmation Dialog */}
+      <ClearWeekDialog
+        open={clearDialogOpen}
+        onOpenChange={setClearDialogOpen}
+        onConfirm={() => clearMutation.mutate()}
+        isClearing={isClearing}
+        shiftCount={shifts.length}
+      />
     </div>
   );
 }
