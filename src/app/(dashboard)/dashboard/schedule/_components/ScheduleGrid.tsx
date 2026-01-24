@@ -22,6 +22,7 @@ import type { ShiftDTO } from "@/types/shift";
 import { ScheduleHeader } from "./ScheduleHeader";
 import { ScheduleActions } from "./ScheduleActions";
 import { WeekSummary } from "./WeekSummary";
+import { StationLegend } from "./StationLegend";
 import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
 import { StaffGridView } from "./StaffGridView";
 import { TimeGridView } from "./TimeGridView";
@@ -377,15 +378,23 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </>
       )}
 
-      {/* View Switcher */}
+      {/* Station Legend and View Switcher */}
       {!isLoading && (
-        <ViewSwitcher
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          weekDays={weekDays}
-          selectedDay={selectedDay}
-          onDayChange={handleDayChange}
-        />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* Station Color Legend */}
+          {config?.stations && config.stations.length > 0 && (
+            <StationLegend stations={config.stations} />
+          )}
+          
+          {/* View Switcher */}
+          <ViewSwitcher
+            currentView={currentView}
+            onViewChange={handleViewChange}
+            weekDays={weekDays}
+            selectedDay={selectedDay}
+            onDayChange={handleDayChange}
+          />
+        </div>
       )}
 
       {/* Loading overlay */}

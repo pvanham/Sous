@@ -13,22 +13,11 @@ import {
   getTimePositionPercent,
   getDurationHeightPercent,
 } from "@/lib/utils/date";
+import { assignLanes } from "@/lib/utils/shift-overlap";
+import { getStationColor } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
-
-// Station color mapping for shift cards
-const stationColors: Record<string, string> = {
-  Grill: "bg-red-200 border-red-400 dark:bg-red-900/50 dark:border-red-700",
-  Prep: "bg-green-200 border-green-400 dark:bg-green-900/50 dark:border-green-700",
-  Assembly: "bg-blue-200 border-blue-400 dark:bg-blue-900/50 dark:border-blue-700",
-  Register: "bg-purple-200 border-purple-400 dark:bg-purple-900/50 dark:border-purple-700",
-  default: "bg-gray-200 border-gray-400 dark:bg-gray-800/50 dark:border-gray-600",
-};
-
-function getStationColor(station: string): string {
-  return stationColors[station] ?? stationColors.default;
-}
 
 interface TimeGridViewProps {
   shifts: ShiftDTO[];
@@ -156,58 +145,63 @@ export function TimeGridView({
                   </div>
                 ))}
 
-                {/* Shifts */}
-                {dayShifts.map((shift) => {
-                  const startTime = extractTimeString(new Date(shift.start));
-                  const endTime = extractTimeString(new Date(shift.end));
+                {/* Shifts with lane assignment for overlapping */}
+                {(() => {
+                  const laneAssignments = assignLanes(dayShifts);
+                  
+                  return laneAssignments.map(({ shift, lane, totalLanes }) => {
+                    const startTime = extractTimeString(new Date(shift.start));
+                    const endTime = extractTimeString(new Date(shift.end));
 
-                  // Calculate position and height
-                  const topPercent = getTimePositionPercent(
-                    startTime,
-                    earliest,
-                    latest
-                  );
-                  const durationMinutes =
-                    (new Date(shift.end).getTime() -
-                      new Date(shift.start).getTime()) /
-                    (1000 * 60);
-                  const heightPercent = getDurationHeightPercent(
-                    durationMinutes,
-                    earliest,
-                    latest
-                  );
+                    // Calculate vertical position and height
+                    const topPercent = getTimePositionPercent(
+                      startTime,
+                      earliest,
+                      latest
+                    );
+                    const durationMinutes =
+                      (new Date(shift.end).getTime() -
+                        new Date(shift.start).getTime()) /
+                      (1000 * 60);
+                    const heightPercent = getDurationHeightPercent(
+                      durationMinutes,
+                      earliest,
+                      latest
+                    );
 
-                  const staffName = getStaffName(staff, shift.staffId);
-                  const stationColor = getStationColor(shift.station);
+                    // Calculate horizontal position based on lane
+                    const widthPercent = 100 / totalLanes;
+                    const leftPercent = lane * widthPercent;
 
-                  return (
-                    <div
-                      key={shift.id}
-                      className={cn(
-                        "absolute left-1 right-1 rounded-md border px-2 py-1 text-xs cursor-pointer hover:shadow-md transition-shadow overflow-hidden",
-                        stationColor
-                      )}
-                      style={{
-                        top: `${topPercent}%`,
-                        height: `${Math.max(heightPercent, 3)}%`,
-                        minHeight: "24px",
-                      }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onEditShift(shift);
-                      }}
-                    >
-                      <div className="font-medium truncate">{staffName}</div>
-                      <div className="text-[10px] opacity-80 truncate">
-                        {shift.station}
-                      </div>
-                      <div className="text-[10px] opacity-80">
-                        {formatTimeString(startTime)} -{" "}
-                        {formatTimeString(endTime)}
-                      </div>
-                    </div>
-                  );
-                })}
+                    const staffName = getStaffName(staff, shift.staffId);
+                    const stationColor = getStationColor(shift.station);
+
+                    // Build tooltip text
+                    const tooltipText = `${staffName}\n${shift.station}\n${formatTimeString(startTime)} - ${formatTimeString(endTime)}`;
+
+                    return (
+                      <div
+                        key={shift.id}
+                        className={cn(
+                          "absolute rounded-md border cursor-pointer hover:shadow-md hover:ring-2 hover:ring-ring transition-shadow",
+                          stationColor
+                        )}
+                        style={{
+                          top: `${topPercent}%`,
+                          height: `${Math.max(heightPercent, 3)}%`,
+                          minHeight: "16px",
+                          left: `calc(${leftPercent}% + 2px)`,
+                          width: `calc(${widthPercent}% - 4px)`,
+                        }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditShift(shift);
+                        }}
+                        title={tooltipText}
+                      />
+                    );
+                  });
+                })()}
               </div>
             );
           })}
