@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { Plus, AlertCircle } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ import {
   extractTimeString,
   getTimePositionPercent,
   getDurationHeightPercent,
+  getTimeFromPositionPercent,
 } from "@/lib/utils/date";
 import { assignLanes } from "@/lib/utils/shift-overlap";
 import { getStationColor } from "@/lib/utils/station-colors";
@@ -73,6 +74,156 @@ function getStaffName(staff: StaffDTO[], staffId: string): string {
 }
 
 /**
+ * StationShiftBlock - Individual shift block with dynamic hover overlay for DayStationView.
+ * Separated component to scope hover state and prevent parent re-renders.
+ */
+interface StationShiftBlockProps {
+  shift: ShiftDTO;
+  station: string;
+  selectedDay: Date;
+  startTime: string;
+  endTime: string;
+  topPercent: number;
+  heightPercent: number;
+  leftPercent: number;
+  widthPercent: number;
+  staffName: string;
+  stationColor: string;
+  tooltipText: string;
+  onShiftClick: (shift: ShiftDTO) => void;
+  onCreateShift: (date: Date, time: string, station: string) => void;
+  onDoubleClickCreate: (time: string, station: string) => void;
+}
+
+function StationShiftBlock({
+  shift,
+  station,
+  selectedDay,
+  startTime,
+  endTime,
+  topPercent,
+  heightPercent,
+  leftPercent,
+  widthPercent,
+  staffName,
+  stationColor,
+  tooltipText,
+  onShiftClick,
+  onCreateShift,
+  onDoubleClickCreate,
+}: StationShiftBlockProps) {
+  // Use refs to track hover position without causing re-renders
+  const containerRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const hoverTimeRef = useRef<string>(startTime);
+  const [isHovering, setIsHovering] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current || !buttonRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseY = e.clientY - rect.top;
+    const blockHeight = rect.height;
+    const yPercent = (mouseY / blockHeight) * 100;
+
+    // Calculate snapped time at this position (30-min intervals)
+    const snappedTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    hoverTimeRef.current = snappedTime;
+
+    // Convert snapped time back to Y position for button placement
+    // This makes the button snap to 30-min grid lines instead of following cursor exactly
+    const snappedYPercent = getTimePositionPercent(snappedTime, startTime, endTime);
+    const snappedY = (snappedYPercent / 100) * blockHeight;
+
+    // Clamp button position to stay within bounds
+    const clampedY = Math.max(8, Math.min(snappedY, blockHeight - 8));
+    buttonRef.current.style.top = `${clampedY}px`;
+  };
+
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+
+    if (!containerRef.current) {
+      onDoubleClickCreate(startTime, station);
+      return;
+    }
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const clickY = e.clientY - rect.top;
+    const blockHeight = rect.height;
+    const yPercent = (clickY / blockHeight) * 100;
+
+    // Calculate time at click position
+    const clickTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    onDoubleClickCreate(clickTime, station);
+  };
+
+  const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    onCreateShift(selectedDay, hoverTimeRef.current, station);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="absolute"
+      style={{
+        top: `${topPercent}%`,
+        height: `${Math.max(heightPercent, 3)}%`,
+        minHeight: "24px",
+        left: `calc(${leftPercent}% + 2px)`,
+        width: `calc(${widthPercent}% - 4px)`,
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {/* Shift block */}
+      <div
+        className={cn(
+          "absolute inset-0 rounded-md border px-1 py-1 text-xs cursor-pointer hover:shadow-md hover:ring-2 hover:ring-ring transition-shadow overflow-hidden",
+          stationColor
+        )}
+        onClick={(e) => {
+          e.stopPropagation();
+          onShiftClick(shift);
+        }}
+        onDoubleClick={handleDoubleClick}
+        title={tooltipText}
+      >
+        <div className="font-medium truncate">{staffName}</div>
+        <div className="text-[10px] opacity-80">
+          {formatTimeString(startTime)} - {formatTimeString(endTime)}
+        </div>
+      </div>
+
+      {/* Dynamic hover overlay with + icon */}
+      <button
+        ref={buttonRef}
+        className={cn(
+          "absolute right-0.5 p-0.5 rounded-full bg-background/80 hover:bg-accent border border-border z-20 cursor-pointer transition-opacity",
+          isHovering ? "opacity-100" : "opacity-0"
+        )}
+        style={{ top: "8px", transform: "translateY(-50%)" }}
+        onClick={handleButtonClick}
+        aria-label={`Add new shift at ${formatTimeString(hoverTimeRef.current)}`}
+        title={`Add shift at ${formatTimeString(hoverTimeRef.current)}`}
+      >
+        <Plus className="h-3 w-3" />
+      </button>
+    </div>
+  );
+}
+
+/**
  * Check if a station has coverage gaps during operating hours.
  */
 function hasGaps(
@@ -132,6 +283,52 @@ export function DayStationView({
   onCreateShift,
   onEditShift,
 }: DayStationViewProps) {
+  // State for managing click timing to distinguish single vs double click
+  const clickTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [pendingEdit, setPendingEdit] = useState<ShiftDTO | null>(null);
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Handle delayed single-click edit
+  useEffect(() => {
+    if (pendingEdit) {
+      clickTimerRef.current = setTimeout(() => {
+        onEditShift(pendingEdit);
+        setPendingEdit(null);
+      }, 250);
+
+      return () => {
+        if (clickTimerRef.current) {
+          clearTimeout(clickTimerRef.current);
+        }
+      };
+    }
+  }, [pendingEdit, onEditShift]);
+
+  // Handle shift single click - delayed to allow double-click to cancel
+  const handleShiftClick = (shift: ShiftDTO) => {
+    setPendingEdit(shift);
+  };
+
+  // Handle shift double click - creates new shift at that time and station
+  const handleShiftDoubleClick = (startTime: string, station: string) => {
+    // Cancel pending single-click edit
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    setPendingEdit(null);
+    // Create shift at this location
+    onCreateShift(selectedDay, startTime, station);
+  };
+
   // Get stations from config
   const stations = config?.stations || [];
 
@@ -176,7 +373,16 @@ export function DayStationView({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div
+      className="overflow-x-auto"
+      style={{ userSelect: "none" }}
+      onMouseDown={(e) => {
+        // Prevent text selection on double-click
+        if (e.detail > 1) {
+          e.preventDefault();
+        }
+      }}
+    >
       <div className="min-w-[700px]">
         {/* Header Row - Station Labels */}
         <div
@@ -288,31 +494,28 @@ export function DayStationView({
                     const staffName = getStaffName(staff, shift.staffId);
                     const stationColor = getStationColor(shift.station);
 
+                    // Build tooltip text
+                    const tooltipText = `${staffName}\n${station}\n${formatTimeString(startTime)} - ${formatTimeString(endTime)}`;
+
                     return (
-                      <div
+                      <StationShiftBlock
                         key={shift.id}
-                        className={cn(
-                          "absolute rounded-md border px-1 py-1 text-xs cursor-pointer hover:shadow-md transition-shadow overflow-hidden",
-                          stationColor
-                        )}
-                        style={{
-                          top: `${topPercent}%`,
-                          height: `${Math.max(heightPercent, 3)}%`,
-                          minHeight: "24px",
-                          left: `calc(${leftPercent}% + 2px)`,
-                          width: `calc(${widthPercent}% - 4px)`,
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onEditShift(shift);
-                        }}
-                      >
-                        <div className="font-medium truncate">{staffName}</div>
-                        <div className="text-[10px] opacity-80">
-                          {formatTimeString(startTime)} -{" "}
-                          {formatTimeString(endTime)}
-                        </div>
-                      </div>
+                        shift={shift}
+                        station={station}
+                        selectedDay={selectedDay}
+                        startTime={startTime}
+                        endTime={endTime}
+                        topPercent={topPercent}
+                        heightPercent={heightPercent}
+                        leftPercent={leftPercent}
+                        widthPercent={widthPercent}
+                        staffName={staffName}
+                        stationColor={stationColor}
+                        tooltipText={tooltipText}
+                        onShiftClick={handleShiftClick}
+                        onCreateShift={onCreateShift}
+                        onDoubleClickCreate={handleShiftDoubleClick}
+                      />
                     );
                   });
                 })()}

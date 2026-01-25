@@ -211,8 +211,11 @@ export function generateTimeSlots(
 
 /**
  * Get the earliest opening and latest closing times from kitchen config.
+ * Adds 2 hours padding before opening and after closing to accommodate
+ * opening/closing shifts (prep before open, cleanup after close).
+ * 
  * @param operatingHours - Weekly operating hours from KitchenConfig
- * @returns Object with earliest open time and latest close time
+ * @returns Object with earliest open time and latest close time (with 2hr padding)
  */
 export function getOperatingHoursRange(operatingHours: {
   monday: { isOpen: boolean; open?: string; close?: string };
@@ -256,6 +259,11 @@ export function getOperatingHoursRange(operatingHours: {
   // Default to 6am - 11pm if no hours are set
   if (earliestMinutes === 24 * 60) earliestMinutes = 6 * 60;
   if (latestMinutes === 0) latestMinutes = 23 * 60;
+
+  // Add 2 hours padding before and after for opening/closing shifts
+  // Clamp to valid range (0:00 - 24:00)
+  earliestMinutes = Math.max(0, earliestMinutes - 120);
+  latestMinutes = Math.min(24 * 60, latestMinutes + 120);
 
   const earliestHours = Math.floor(earliestMinutes / 60);
   const earliestMins = earliestMinutes % 60;
@@ -328,4 +336,52 @@ export function getDurationHeightPercent(
   if (totalRange <= 0) return 0;
 
   return (durationMinutes / totalRange) * 100;
+}
+
+/**
+ * Calculate time from Y-position percentage within a time range.
+ * Inverse of getTimePositionPercent.
+ *
+ * @param yPercent - Y position as percentage (0-100)
+ * @param rangeStart - Range start time in "HH:mm" format
+ * @param rangeEnd - Range end time in "HH:mm" format
+ * @param snapToInterval - Snap result to nearest interval in minutes (default: 30)
+ * @returns Time in "HH:mm" format
+ *
+ * @example
+ * // Click at 50% of 9am-5pm range → returns "13:00" (1pm)
+ * getTimeFromPositionPercent(50, "09:00", "17:00") // "13:00"
+ *
+ * // Click at 25% with 30-min snapping → snaps to nearest 30 min
+ * getTimeFromPositionPercent(25, "09:00", "17:00", 30) // "11:00"
+ */
+export function getTimeFromPositionPercent(
+  yPercent: number,
+  rangeStart: string,
+  rangeEnd: string,
+  snapToInterval: number = 30
+): string {
+  const [startHour, startMin] = rangeStart.split(":").map(Number);
+  const [endHour, endMin] = rangeEnd.split(":").map(Number);
+
+  const startMinutes = startHour * 60 + startMin;
+  const endMinutes = endHour * 60 + endMin;
+  const totalRange = endMinutes - startMinutes;
+
+  if (totalRange <= 0) return rangeStart;
+
+  // Calculate raw minutes from percentage
+  const offsetMinutes = (yPercent / 100) * totalRange;
+  let targetMinutes = startMinutes + offsetMinutes;
+
+  // Snap to nearest interval
+  targetMinutes = Math.round(targetMinutes / snapToInterval) * snapToInterval;
+
+  // Clamp to range
+  targetMinutes = Math.max(startMinutes, Math.min(targetMinutes, endMinutes));
+
+  const hours = Math.floor(targetMinutes / 60);
+  const minutes = targetMinutes % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
