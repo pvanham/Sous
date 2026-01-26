@@ -1,96 +1,1054 @@
-PROJECT SOUS: ARCHITECTURE CONSTITUTION
-1. Directory Structure (Feature-Based)
-We avoid the "drawer" method (putting all components in one folder, all hooks in another). We use Feature-Based Architecture where related code lives together.
+# PROJECT SOUS: ARCHITECTURE CONSTITUTION
 
-Plaintext
+> The definitive guide to Sous's codebase structure, patterns, and conventions.
 
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Directory Structure](#2-directory-structure)
+3. [The 3-Layer Architecture](#3-the-3-layer-architecture)
+4. [Data Models](#4-data-models)
+5. [Service Layer Patterns](#5-service-layer-patterns)
+6. [Action Layer Patterns](#6-action-layer-patterns)
+7. [UI Layer Patterns](#7-ui-layer-patterns)
+8. [AI/LLM Integration](#8-aillm-integration)
+9. [Validation & Types](#9-validation--types)
+10. [API Routes](#10-api-routes)
+11. [Design Patterns](#11-design-patterns)
+12. [Testing Strategy](#12-testing-strategy)
+
+---
+
+## 1. Overview
+
+Sous is a reactive, AI-powered scheduling platform for high-volume kitchens. The architecture prioritizes:
+
+- **Separation of Concerns**: Strict 3-layer architecture prevents spaghetti code
+- **Type Safety**: End-to-end TypeScript with Zod validation
+- **AI-First Design**: LLM integration at the core, not bolted on
+- **Multi-Tenancy**: All data scoped by `userId` (Clerk)
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16, React 19, TanStack Query v5 |
+| Styling | Tailwind CSS v4, shadcn/ui |
+| Backend | Next.js Server Actions, Mongoose 9 |
+| Database | MongoDB Atlas |
+| Auth | Clerk |
+| AI | OpenAI API (GPT-4o), Vercel AI SDK |
+| SMS | Twilio |
+
+---
+
+## 2. Directory Structure
+
+```
 src/
-├── app/
-│   ├── (auth)/               # Route Group: Public/Auth pages
-│   ├── (dashboard)/          # Route Group: Protected App
-│   │   ├── dashboard/
-│   │   │   ├── layout.tsx    # Dashboard Shell (Sidebar/Nav)
-│   │   │   ├── page.tsx      # Dashboard Home
-│   │   │   ├── schedule/     # Feature: Schedule
-│   │   │   │   ├── page.tsx
-│   │   │   │   └── _components/ # Feature-specific components
-│   │   │   └── staff/        # Feature: Staff
-│   │       └── inbox/        # Feature: SMS Inbox
-│   └── api/                  # Route Handlers (Webhooks only)
+├── app/                              # Next.js App Router
+│   ├── (auth)/                       # Route Group: Public/Auth
+│   │   └── sign-in/[[...sign-in]]/
+│   │       └── page.tsx
+│   │
+│   ├── (dashboard)/                  # Route Group: Protected (Manager/Owner)
+│   │   └── dashboard/
+│   │       ├── layout.tsx            # Dashboard shell (sidebar, nav)
+│   │       ├── page.tsx              # Dashboard home
+│   │       │
+│   │       ├── schedule/             # Feature: Schedule Management
+│   │       │   ├── page.tsx
+│   │       │   └── _components/
+│   │       │       ├── ScheduleGrid.tsx
+│   │       │       ├── ScheduleHeader.tsx
+│   │       │       ├── ShiftCard.tsx
+│   │       │       ├── ShiftFormDialog.tsx
+│   │       │       ├── ViewSwitcher.tsx
+│   │       │       ├── StaffGridView.tsx
+│   │       │       ├── TimeGridView.tsx
+│   │       │       ├── DayStationView.tsx
+│   │       │       └── ...
+│   │       │
+│   │       ├── staff/                # Feature: Staff Management
+│   │       │   ├── page.tsx
+│   │       │   ├── [id]/
+│   │       │   │   └── availability/
+│   │       │   │       └── page.tsx
+│   │       │   └── _components/
+│   │       │       ├── StaffTable.tsx
+│   │       │       ├── StaffFormDialog.tsx
+│   │       │       └── StaffCsvImportDialog.tsx
+│   │       │
+│   │       ├── labor/                # Feature: Labor Requirements (Phase 3)
+│   │       │   ├── page.tsx
+│   │       │   └── _components/
+│   │       │
+│   │       ├── inbox/                # Feature: SMS Inbox (Phase 4)
+│   │       │   ├── page.tsx
+│   │       │   └── _components/
+│   │       │
+│   │       └── settings/             # Feature: Kitchen Configuration
+│   │           ├── page.tsx
+│   │           └── _components/
+│   │               └── KitchenConfigForm.tsx
+│   │
+│   ├── (staff)/                      # Route Group: Staff Portal (Phase 5)
+│   │   ├── layout.tsx
+│   │   ├── my-shifts/
+│   │   └── my-availability/
+│   │
+│   ├── api/                          # API Routes (Webhooks ONLY)
+│   │   └── webhooks/
+│   │       ├── twilio/
+│   │       │   └── route.ts
+│   │       └── clerk/
+│   │           └── route.ts
+│   │
+│   ├── layout.tsx                    # Root layout
+│   ├── page.tsx                      # Landing page
+│   └── globals.css                   # Global styles
+│
 ├── components/
-│   ├── ui/                   # Shadcn Primitives (Button, Input) - Dumb
-│   └── shared/               # Global components (ThemeToggle, UserNav)
+│   ├── ui/                           # shadcn/ui primitives (dumb components)
+│   │   ├── button.tsx
+│   │   ├── dialog.tsx
+│   │   ├── form.tsx
+│   │   ├── table.tsx
+│   │   ├── tabs.tsx
+│   │   ├── time-picker.tsx
+│   │   └── ...
+│   │
+│   └── shared/                       # Global smart components
+│       ├── providers.tsx             # Theme, Query, Clerk providers
+│       ├── ThemeToggle.tsx
+│       └── ErrorFallback.tsx
+│
 ├── lib/
-│   ├── db.ts                 # Mongoose Connection Singleton
-│   ├── utils.ts              # cn() and basic helpers
-│   └── safe-action.ts        # Server Action Wrapper (Error handling)
-├── server/                   # SERVER-SIDE LOGIC (The "Backend")
-│   ├── actions/              # Server Actions (Mutations)
-│   │   ├── staff.actions.ts
-│   │   └── schedule.actions.ts
-│   ├── services/             # Business Logic (DB interactions)
+│   ├── db.ts                         # Mongoose connection singleton
+│   ├── utils.ts                      # cn() and basic helpers
+│   ├── safe-action.ts                # ActionResponse type
+│   │
+│   ├── ai/                           # AI client utilities
+│   │   └── openai-client.ts
+│   │
+│   ├── sms/                          # SMS utilities
+│   │   └── twilio-client.ts
+│   │
+│   ├── utils/                        # Domain-specific utilities
+│   │   ├── date.ts                   # date-fns wrappers
+│   │   ├── shift-overlap.ts          # Lane assignment algorithm
+│   │   └── station-colors.ts         # Station color mapping
+│   │
+│   └── validations/                  # Zod schemas (shared FE/BE)
+│       ├── kitchen-config.schema.ts
+│       ├── staff.schema.ts
+│       ├── schedule.schema.ts
+│       ├── shift.schema.ts
+│       ├── labor-requirement.schema.ts
+│       └── message.schema.ts
+│
+├── server/                           # Server-side logic ("Backend")
+│   │
+│   ├── models/                       # Mongoose schemas
+│   │   ├── KitchenConfig.ts
+│   │   ├── Staff.ts
+│   │   ├── Schedule.ts
+│   │   ├── Shift.ts
+│   │   ├── LaborRequirement.ts       # Phase 3
+│   │   ├── StaffAvailability.ts      # Phase 3
+│   │   ├── Message.ts                # Phase 4
+│   │   └── CoverageRequest.ts        # Phase 4
+│   │
+│   ├── services/                     # Business logic (DB access)
+│   │   ├── kitchen-config.service.ts
 │   │   ├── staff.service.ts
-│   │   └── ai.service.ts
-│   └── models/               # Mongoose Schemas
-│       ├── Staff.ts
-│       └── Schedule.ts
-└── types/                    # Global TS Types
-2. The Data Flow Pattern (Strict Unidirectional)
-AI agents love to put DB calls directly inside Server Components. Do not allow this. We follow a strict 3-layer architecture.
+│   │   ├── schedule.service.ts
+│   │   ├── shift.service.ts
+│   │   ├── labor-requirement.service.ts
+│   │   ├── staff-availability.service.ts
+│   │   ├── coverage-analyzer.service.ts
+│   │   ├── message.service.ts
+│   │   ├── notification.service.ts
+│   │   │
+│   │   └── ai/                       # AI/LLM services
+│   │       ├── scheduling-agent.service.ts
+│   │       ├── message-agent.service.ts
+│   │       ├── prompt-builder.ts
+│   │       └── prompts/
+│   │           ├── schedule-generation.ts
+│   │           └── message-parsing.ts
+│   │
+│   └── actions/                      # Server Actions
+│       ├── kitchen-config.actions.ts
+│       ├── staff.actions.ts
+│       ├── schedule.actions.ts
+│       ├── shift.actions.ts
+│       ├── labor-requirement.actions.ts
+│       ├── staff-availability.actions.ts
+│       ├── schedule-generation.actions.ts
+│       ├── message.actions.ts
+│       └── notification.actions.ts
+│
+├── types/                            # TypeScript types & DTOs
+│   ├── kitchen-config.ts
+│   ├── staff.ts
+│   ├── schedule.ts
+│   ├── shift.ts
+│   ├── labor-requirement.ts
+│   ├── staff-availability.ts
+│   ├── message.ts
+│   └── ai-scheduling.ts
+│
+└── proxy.ts                          # Clerk proxy configuration
+```
 
-1. The UI Layer (Client & Server Components)
+---
 
-Responsibility: Rendering, Interaction, Form State.
+## 3. The 3-Layer Architecture
 
-Rule: NEVER import Mongoose models directly here.
+This is the **most important rule** in the codebase. All data flows through exactly three layers:
 
-Rule: Use useQuery for reading data (via a fetcher or Server Action passed as initial data).
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                               UI LAYER                                       │
+│                                                                              │
+│   src/app/**/*.tsx              src/components/**/*.tsx                      │
+│                                                                              │
+│   ┌──────────────────┐          ┌──────────────────┐                        │
+│   │ Server Component │          │ Client Component │                        │
+│   │                  │          │ "use client"     │                        │
+│   │ • Initial data   │          │ • useQuery()     │                        │
+│   │ • Static render  │          │ • useMutation()  │                        │
+│   │ • No hooks       │          │ • useState()     │                        │
+│   └──────────────────┘          └──────────────────┘                        │
+│                                                                              │
+│   RULES:                                                                     │
+│   • NEVER import Mongoose models                                             │
+│   • NEVER call database directly                                             │
+│   • ONLY call Server Actions for data                                        │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  │ Server Actions (RPC)
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              ACTION LAYER                                    │
+│                                                                              │
+│   src/server/actions/*.actions.ts                                           │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ export async function createShift(input: unknown): ActionResponse   │   │
+│   │   1. const { userId } = await auth();          // Auth check        │   │
+│   │   2. const parsed = schema.safeParse(input);   // Validation        │   │
+│   │   3. await dbConnect();                        // DB connection     │   │
+│   │   4. const result = await Service.create(...); // Service call      │   │
+│   │   5. return { success: true, data: result };   // Response          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│   RULES:                                                                     │
+│   • MUST call auth() before any operation                                    │
+│   • MUST validate with Zod before processing                                 │
+│   • MUST call dbConnect() before DB operations                               │
+│   • MUST call Service Layer (never DB directly)                              │
+│   • MUST return ActionResponse<T>                                            │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  │ Service methods
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             SERVICE LAYER                                    │
+│                                                                              │
+│   src/server/services/*.service.ts                                          │
+│                                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ export const ShiftService = {                                       │   │
+│   │   async create(userId, data) {                                      │   │
+│   │     // Business logic (e.g., overlap check)                         │   │
+│   │     const hasOverlap = await this.checkOverlap(...);                │   │
+│   │     if (hasOverlap) throw new Error("Overlap");                     │   │
+│   │                                                                     │   │
+│   │     // Database operation                                           │   │
+│   │     const doc = await Shift.create({ userId, ...data });            │   │
+│   │                                                                     │   │
+│   │     // Return DTO (not Mongoose document)                           │   │
+│   │     return toShiftDTO(doc);                                         │   │
+│   │   }                                                                 │   │
+│   │ };                                                                  │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+│   RULES:                                                                     │
+│   • ONLY place Mongoose models are imported                                  │
+│   • Contains ALL business logic                                              │
+│   • Returns DTOs (plain objects), NEVER Mongoose documents                   │
+│   • Pure functions where possible                                            │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  │ Mongoose operations
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              DATABASE                                        │
+│                                                                              │
+│   MongoDB Atlas                                                              │
+│   └── sous (database)                                                        │
+│       ├── kitchenconfigs                                                     │
+│       ├── staff                                                              │
+│       ├── schedules                                                          │
+│       ├── shifts                                                             │
+│       ├── laborrequirements                                                  │
+│       ├── staffavailabilities                                                │
+│       ├── messages                                                           │
+│       └── coveragerequests                                                   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-Rule: Use Server Actions for writing data (Mutations).
+### Why This Matters
 
-2. The Action Layer (src/server/actions)
+| Without Layers | With Layers |
+|----------------|-------------|
+| DB calls scattered everywhere | DB calls in one place |
+| Auth checks missed | Auth always checked |
+| Business logic duplicated | Business logic centralized |
+| Hard to test | Easy to test services |
+| Mongoose docs leak to UI | Clean DTOs everywhere |
 
-Responsibility: Validation, Auth Checks, Response Formatting.
+---
 
-Rule: MUST use Zod to validate inputs.
+## 4. Data Models
 
-Rule: MUST check auth() (Clerk) before proceeding.
+### Current Models (Phase 1-2)
 
-Rule: Calls the Service Layer, never the DB directly.
+```typescript
+// KitchenConfig - Restaurant settings
+{
+  userId: string,           // Clerk user ID (owner)
+  name: string,
+  stations: string[],       // ["Grill", "Prep", "Assembly"]
+  roles: string[],          // ["Manager", "Cook", "Host"]
+  operatingHours: {
+    monday: { isOpen: boolean, open: string, close: string },
+    // ... other days
+  }
+}
 
-Rule: Returns a standard ActionResponse<T>:
+// Staff - Employee records
+{
+  userId: string,           // Kitchen owner
+  name: string,
+  email: string,
+  phone: string,
+  roles: string[],          // From KitchenConfig.roles
+  skills: [{ station: string, proficiency: 1-5 }],
+  isActive: boolean,
+  maxHoursPerWeek: number,  // Phase 3
+  minHoursPerWeek: number,  // Phase 3
+  preferredStations: string[] // Phase 3
+}
 
-TypeScript
+// Schedule - Week container
+{
+  userId: string,
+  weekStartDate: Date,      // Always a Monday
+  status: 'DRAFT' | 'PUBLISHED',
+  notes: string
+}
 
-type ActionResponse<T> = { success: true; data: T } | { success: false; error: string };
-3. The Service Layer (src/server/services)
+// Shift - Individual work assignment
+{
+  userId: string,
+  scheduleId: ObjectId,
+  staffId: ObjectId,
+  start: Date,
+  end: Date,
+  station: string,
+  notes: string
+}
+```
 
-Responsibility: Pure Business Logic & Database Queries.
+### Phase 3 Models
 
-Rule: This is the ONLY place mongoose.model is imported.
+```typescript
+// LaborRequirement - Staffing targets
+{
+  userId: string,
+  dayOfWeek: 0-6,
+  station: string,
+  startTime: string,
+  endTime: string,
+  minStaff: number,
+  preferredStaff: number,
+  priority: 'critical' | 'high' | 'normal' | 'low'
+}
 
-Rule: Pure functions where possible. "Get the staff, calculate overtime, save."
+// StaffAvailability - When staff can work
+{
+  userId: string,
+  staffId: ObjectId,
+  dayOfWeek: 0-6,
+  availableFrom: string,
+  availableTo: string,
+  preference: 'preferred' | 'available' | 'unavailable'
+}
+```
 
-3. Core Design Patterns
-A. The "Service Object" Pattern
-Instead of scattered functions, group domain logic into services.
+### Phase 4 Models
 
-TypeScript
+```typescript
+// Message - SMS records
+{
+  userId: string,
+  staffId: ObjectId,
+  from: string,
+  to: string,
+  body: string,
+  direction: 'inbound' | 'outbound',
+  status: 'received' | 'processing' | 'handled' | 'escalated',
+  intent: 'CALL_OUT' | 'LATE' | 'SHIFT_SWAP' | 'QUESTION' | 'OTHER',
+  parsedData: { date, reason, confidence },
+  threadId: string
+}
 
+// CoverageRequest - Shift coverage tracking
+{
+  messageId: ObjectId,
+  shiftId: ObjectId,
+  requestedBy: ObjectId,
+  status: 'searching' | 'offered' | 'accepted' | 'declined',
+  candidates: [{ staffId, status, offeredAt, respondedAt }],
+  acceptedBy: ObjectId
+}
+```
+
+---
+
+## 5. Service Layer Patterns
+
+### Service Object Pattern
+
+Group related operations into service objects:
+
+```typescript
 // src/server/services/staff.service.ts
+import Staff from "@/server/models/Staff";
+import { toStaffDTO } from "@/types/staff";
+import type { StaffDTO, StaffInput } from "@/types/staff";
+
 export const StaffService = {
-  async getAll(kitchenId: string) { ... },
-  async create(data: CreateStaffDTO) { ... },
-  async findAvailable(date: Date, skill: string) { ... }
+  /**
+   * Get all staff for a kitchen
+   */
+  async getAll(userId: string): Promise<StaffDTO[]> {
+    const docs = await Staff.find({ userId }).sort({ name: 1 }).lean();
+    return docs.map(toStaffDTO);
+  },
+
+  /**
+   * Create a new staff member
+   */
+  async create(userId: string, data: StaffInput): Promise<StaffDTO> {
+    const doc = await Staff.create({ userId, ...data });
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Find available staff for a time slot
+   */
+  async findAvailable(
+    userId: string,
+    date: Date,
+    startTime: string,
+    endTime: string,
+    station: string
+  ): Promise<StaffDTO[]> {
+    // Complex query combining:
+    // - Staff skills matching station
+    // - Staff availability for day/time
+    // - Not already scheduled
+    // ...
+  },
+
+  /**
+   * Delete all staff for testing cleanup
+   */
+  async deleteAllByUserId(userId: string): Promise<number> {
+    const result = await Staff.deleteMany({ userId });
+    return result.deletedCount;
+  },
 };
-B. The "Smart vs. Dumb" Component Pattern
-Dumb Components (src/components/ui): Props in, UI out. No side effects. No API calls.
+```
 
-Feature Components (_components/ScheduleGrid.tsx): Connect to state. Call useQuery or useMutation. Pass data down to Dumb Components.
+### DTO Conversion Pattern
 
-C. Zod-First Validation
-We share schemas between the Frontend (Forms) and Backend (Actions).
+Always convert Mongoose documents to plain DTOs:
 
-Define schemas in src/lib/validations/*.ts.
+```typescript
+// src/types/staff.ts
+import type { Types, Document } from "mongoose";
 
-Example: staffSchema is used in StaffForm.tsx (via zodResolver) AND staff.actions.ts (via schema.parse()).
+// Raw Mongoose document shape
+interface StaffDocument {
+  _id: Types.ObjectId;
+  userId: string;
+  name: string;
+  email: string;
+  phone: string;
+  roles: string[];
+  skills: Array<{ station: string; proficiency: number }>;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Clean DTO for UI
+export interface StaffDTO {
+  id: string;              // ObjectId → string
+  userId: string;
+  name: string;
+  email: string;
+  phone: string;
+  roles: string[];
+  skills: Array<{ station: string; proficiency: number }>;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Converter
+export function toStaffDTO(doc: StaffDocument): StaffDTO {
+  return {
+    id: doc._id.toString(),
+    userId: doc.userId,
+    name: doc.name,
+    email: doc.email,
+    phone: doc.phone,
+    roles: doc.roles,
+    skills: doc.skills,
+    isActive: doc.isActive,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+```
+
+---
+
+## 6. Action Layer Patterns
+
+### Standard Action Template
+
+```typescript
+// src/server/actions/example.actions.ts
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { dbConnect } from "@/lib/db";
+import { exampleSchema } from "@/lib/validations/example.schema";
+import { ExampleService } from "@/server/services/example.service";
+import type { ActionResponse } from "@/lib/safe-action";
+import type { ExampleDTO } from "@/types/example";
+
+/**
+ * Create a new example
+ */
+export async function createExample(
+  input: unknown
+): Promise<ActionResponse<ExampleDTO>> {
+  // 1. Auth check (REQUIRED)
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  // 2. Validation (REQUIRED)
+  const parsed = exampleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" };
+  }
+
+  // 3. DB Connection (REQUIRED)
+  await dbConnect();
+
+  // 4. Service call with error handling
+  try {
+    const result = await ExampleService.create(userId, parsed.data);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("createExample error:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to create",
+    };
+  }
+}
+
+/**
+ * Get all examples
+ */
+export async function getExamples(): Promise<ActionResponse<ExampleDTO[]>> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  await dbConnect();
+
+  try {
+    const result = await ExampleService.getAll(userId);
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("getExamples error:", error);
+    return { success: false, error: "Failed to fetch" };
+  }
+}
+```
+
+### ActionResponse Type
+
+```typescript
+// src/lib/safe-action.ts
+export type ActionResponse<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+```
+
+---
+
+## 7. UI Layer Patterns
+
+### Client Component with TanStack Query
+
+```typescript
+// src/app/(dashboard)/dashboard/example/_components/ExampleList.tsx
+"use client";
+
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getExamples, createExample, deleteExample } from "@/server/actions/example.actions";
+import { toast } from "sonner";
+
+// Consistent query keys
+const exampleKeys = {
+  all: ["examples"] as const,
+  list: () => [...exampleKeys.all, "list"] as const,
+  detail: (id: string) => [...exampleKeys.all, "detail", id] as const,
+};
+
+export function ExampleList() {
+  const queryClient = useQueryClient();
+
+  // Fetch data
+  const { data: examples, isLoading, error } = useQuery({
+    queryKey: exampleKeys.list(),
+    queryFn: async () => {
+      const result = await getExamples();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+  });
+
+  // Create mutation with optimistic update
+  const createMutation = useMutation({
+    mutationFn: createExample,
+    onMutate: async (newData) => {
+      await queryClient.cancelQueries({ queryKey: exampleKeys.list() });
+      const previous = queryClient.getQueryData(exampleKeys.list());
+      
+      // Optimistic update
+      queryClient.setQueryData(exampleKeys.list(), (old: ExampleDTO[] = []) => [
+        ...old,
+        { ...newData, id: `temp-${Date.now()}` },
+      ]);
+      
+      return { previous };
+    },
+    onError: (err, _, context) => {
+      queryClient.setQueryData(exampleKeys.list(), context?.previous);
+      toast.error("Failed to create");
+    },
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success("Created!");
+      } else {
+        toast.error(result.error);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: exampleKeys.list() });
+    },
+  });
+
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Error: {error.message}</div>;
+
+  return (
+    <div>
+      {examples?.map((example) => (
+        <div key={example.id}>{example.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+### Feature Component Structure
+
+```
+_components/
+├── FeatureGrid.tsx        # Main orchestrating component (client)
+├── FeatureHeader.tsx      # Header with actions
+├── FeatureCard.tsx        # Individual item display
+├── FeatureFormDialog.tsx  # Create/Edit form
+├── FeatureFilters.tsx     # Filter controls
+└── FeatureEmptyState.tsx  # Empty state display
+```
+
+---
+
+## 8. AI/LLM Integration
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Action Layer                             │
+│   schedule-generation.actions.ts                             │
+│   message.actions.ts                                         │
+└─────────────────────────────┬───────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    AI Service Layer                          │
+│                                                              │
+│   ┌─────────────────────┐    ┌─────────────────────┐        │
+│   │SchedulingAgentService│   │ MessageAgentService │        │
+│   │  • buildContext()    │   │  • parseMessage()   │        │
+│   │  • generateSchedule()│   │  • canHandle()      │        │
+│   │  • refineSchedule()  │   │  • handleRequest()  │        │
+│   └──────────┬──────────┘    └──────────┬──────────┘        │
+│              │                          │                    │
+│              ▼                          ▼                    │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │              Prompt Builder                          │   │
+│   │  prompts/schedule-generation.ts                      │   │
+│   │  prompts/message-parsing.ts                          │   │
+│   └──────────────────────────┬──────────────────────────┘   │
+│                              │                               │
+│                              ▼                               │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │              OpenAI Client                           │   │
+│   │  src/lib/ai/openai-client.ts                         │   │
+│   │  • generateCompletion()                              │   │
+│   │  • generateJSON<T>()                                 │   │
+│   └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### AI Service Pattern
+
+```typescript
+// src/server/services/ai/scheduling-agent.service.ts
+import { generateJSON } from "@/lib/ai/openai-client";
+import { buildSchedulingPrompt } from "./prompts/schedule-generation";
+import type { SchedulingContext, GeneratedSchedule } from "@/types/ai-scheduling";
+
+export const SchedulingAgentService = {
+  /**
+   * Build context from all data sources
+   */
+  async buildContext(userId: string, weekStart: Date): Promise<SchedulingContext> {
+    const [config, staff, requirements, existingShifts] = await Promise.all([
+      KitchenConfigService.getByUserId(userId),
+      StaffService.getAllWithAvailability(userId),
+      LaborRequirementService.getByUserId(userId),
+      ShiftService.getByWeek(userId, weekStart),
+    ]);
+
+    return { config, staff, requirements, existingShifts, weekStart };
+  },
+
+  /**
+   * Generate schedule using LLM
+   */
+  async generateSchedule(context: SchedulingContext): Promise<GeneratedSchedule> {
+    const { systemPrompt, userPrompt } = buildSchedulingPrompt(context);
+    
+    const result = await generateJSON<GeneratedSchedule>(systemPrompt, userPrompt);
+    
+    return result;
+  },
+
+  /**
+   * Validate generated schedule
+   */
+  async validate(schedule: GeneratedSchedule, context: SchedulingContext) {
+    const errors: string[] = [];
+    
+    for (const shift of schedule.shifts) {
+      // Check staff exists
+      // Check availability
+      // Check no overlaps
+      // Check max hours
+    }
+    
+    return { valid: errors.length === 0, errors };
+  },
+};
+```
+
+---
+
+## 9. Validation & Types
+
+### Zod Schema Pattern
+
+```typescript
+// src/lib/validations/shift.schema.ts
+import { z } from "zod";
+
+// Time string format: "HH:MM"
+const timeStringSchema = z.string().regex(
+  /^([01]\d|2[0-3]):([0-5]\d)$/,
+  "Time must be in HH:MM format"
+);
+
+// Create shift schema
+export const createShiftSchema = z.object({
+  staffId: z.string().min(1, "Staff member is required"),
+  date: z.coerce.date(),
+  startTime: timeStringSchema,
+  endTime: timeStringSchema,
+  station: z.string().min(1, "Station is required"),
+  notes: z.string().max(500).optional(),
+}).refine(
+  (data) => {
+    const start = parseInt(data.startTime.replace(":", ""));
+    const end = parseInt(data.endTime.replace(":", ""));
+    return start < end;
+  },
+  { message: "End time must be after start time", path: ["endTime"] }
+);
+
+export type CreateShiftInput = z.infer<typeof createShiftSchema>;
+
+// Update shift schema (partial)
+export const updateShiftSchema = createShiftSchema.partial();
+export type UpdateShiftInput = z.infer<typeof updateShiftSchema>;
+```
+
+### Type Organization
+
+```
+src/types/
+├── kitchen-config.ts    # KitchenConfigDTO, converter
+├── staff.ts             # StaffDTO, StaffInput, converter
+├── schedule.ts          # ScheduleDTO, ScheduleStatus, converter
+├── shift.ts             # ShiftDTO, converter
+├── labor-requirement.ts # LaborRequirementDTO, converter
+├── message.ts           # MessageDTO, MessageIntent, converter
+└── ai-scheduling.ts     # SchedulingContext, GeneratedSchedule, etc.
+```
+
+---
+
+## 10. API Routes
+
+API routes are **only** for external webhooks. All app data uses Server Actions.
+
+```typescript
+// src/app/api/webhooks/twilio/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import twilio from "twilio";
+
+export async function POST(request: NextRequest) {
+  // 1. Validate signature
+  const signature = request.headers.get("x-twilio-signature") ?? "";
+  const body = await request.text();
+  
+  const isValid = twilio.validateRequest(
+    process.env.TWILIO_AUTH_TOKEN!,
+    signature,
+    `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/twilio`,
+    Object.fromEntries(new URLSearchParams(body))
+  );
+
+  if (!isValid) {
+    return NextResponse.json({ error: "Invalid" }, { status: 401 });
+  }
+
+  // 2. Extract message
+  const params = new URLSearchParams(body);
+  const from = params.get("From") ?? "";
+  const messageBody = params.get("Body") ?? "";
+
+  // 3. Process asynchronously (don't block)
+  // MessageService.processIncoming(from, messageBody);
+
+  // 4. Return TwiML
+  return new NextResponse(
+    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+    { headers: { "Content-Type": "text/xml" } }
+  );
+}
+```
+
+---
+
+## 11. Design Patterns
+
+### A. Service Object Pattern
+
+Group domain logic into cohesive services instead of scattered functions:
+
+```typescript
+export const StaffService = {
+  getAll: async (userId) => { ... },
+  create: async (userId, data) => { ... },
+  update: async (userId, id, data) => { ... },
+  delete: async (userId, id) => { ... },
+  findAvailable: async (userId, date, time, station) => { ... },
+};
+```
+
+### B. Smart vs Dumb Components
+
+| Type | Location | Characteristics |
+|------|----------|-----------------|
+| Dumb | `src/components/ui/` | Props in, UI out. No side effects. |
+| Smart | `_components/*.tsx` | Connects to state, calls queries/mutations |
+
+### C. Zod-First Validation
+
+Same schema validates both frontend and backend:
+
+```typescript
+// Frontend (react-hook-form)
+const form = useForm({ resolver: zodResolver(staffSchema) });
+
+// Backend (server action)
+const parsed = staffSchema.safeParse(input);
+```
+
+### D. Query Key Factory
+
+Consistent query key structure:
+
+```typescript
+const shiftKeys = {
+  all: ["shifts"] as const,
+  bySchedule: (id: string) => [...shiftKeys.all, "schedule", id] as const,
+  byStaff: (id: string) => [...shiftKeys.all, "staff", id] as const,
+};
+```
+
+### E. Optimistic Updates
+
+Update UI immediately, rollback on error:
+
+```typescript
+onMutate: async (newData) => {
+  await queryClient.cancelQueries({ queryKey });
+  const previous = queryClient.getQueryData(queryKey);
+  queryClient.setQueryData(queryKey, (old) => [...old, newData]);
+  return { previous };
+},
+onError: (err, _, context) => {
+  queryClient.setQueryData(queryKey, context?.previous);
+},
+```
+
+---
+
+## 12. Testing Strategy
+
+### Verification Scripts
+
+Each phase has a verification script:
+
+```
+scripts/
+├── test-phase-1.ts   # Kitchen config, staff CRUD, CSV import
+├── test-phase-2.ts   # Schedules, shifts, overlap detection
+├── test-phase-3.ts   # Labor requirements, AI generation
+└── test-phase-4.ts   # Messages, SMS handling
+```
+
+### Test Script Pattern
+
+```typescript
+// scripts/test-phase-X.ts
+import dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+
+import { dbConnect } from "../src/lib/db";
+import mongoose from "mongoose";
+
+const TEST_USER_ID = "user_test_phase_X";
+
+async function cleanup() {
+  // Delete test data
+}
+
+async function testFeature1() {
+  // Test implementation
+}
+
+async function main() {
+  console.log("PHASE X VERIFICATION");
+  
+  await dbConnect();
+  await cleanup();
+  
+  try {
+    await testFeature1();
+    await testFeature2();
+    console.log("✓ All tests passed");
+  } catch (error) {
+    console.error("✗ Failed:", error);
+    process.exit(1);
+  } finally {
+    await cleanup();
+    await mongoose.disconnect();
+  }
+}
+
+main();
+```
+
+---
+
+## Quick Reference
+
+### File Naming
+
+| Type | Pattern | Example |
+|------|---------|---------|
+| Model | `PascalCase.ts` | `Staff.ts` |
+| Service | `kebab-case.service.ts` | `staff.service.ts` |
+| Action | `kebab-case.actions.ts` | `staff.actions.ts` |
+| Schema | `kebab-case.schema.ts` | `staff.schema.ts` |
+| Types | `kebab-case.ts` | `staff.ts` |
+| Component | `PascalCase.tsx` | `StaffTable.tsx` |
+
+### Import Aliases
+
+```typescript
+import { dbConnect } from "@/lib/db";
+import { StaffService } from "@/server/services/staff.service";
+import { createStaff } from "@/server/actions/staff.actions";
+import { staffSchema } from "@/lib/validations/staff.schema";
+import type { StaffDTO } from "@/types/staff";
+import { Button } from "@/components/ui/button";
+```
+
+### NPM Scripts
+
+```bash
+npm run dev           # Development server
+npm run build         # Production build
+npm run lint          # ESLint
+npm run test:phase-1  # Phase 1 verification
+npm run test:phase-2  # Phase 2 verification
+```
+
+---
+
+*Last Updated: January 2026*

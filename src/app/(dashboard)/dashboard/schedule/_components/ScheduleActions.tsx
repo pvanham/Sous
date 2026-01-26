@@ -17,13 +17,16 @@ import {
   copyWeekShifts,
   publishSchedule,
   clearWeekShifts,
+  type PublishScheduleResult,
 } from "@/server/actions/schedule.actions";
+import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 import { getPrevWeekStart } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
 
 import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 import { ClearWeekDialog } from "./ClearWeekDialog";
+import { ManagerCoverageWarningDialog } from "./ManagerCoverageWarningDialog";
 
 // Query keys for TanStack Query - must match ScheduleGrid
 const scheduleKeys = {
@@ -58,6 +61,10 @@ export function ScheduleActions({
   const queryClient = useQueryClient();
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [managerWarnings, setManagerWarnings] = useState<ManagerCoverageGap[]>(
+    [],
+  );
+  const [warningDialogOpen, setWarningDialogOpen] = useState(false);
 
   // Publish mutation
   const publishMutation = useMutation({
@@ -68,8 +75,15 @@ export function ScheduleActions({
       }
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (data: PublishScheduleResult) => {
       toast.success("Schedule published successfully");
+
+      // Show manager coverage warnings dialog if any gaps detected
+      if (data.managerWarnings.length > 0) {
+        setManagerWarnings(data.managerWarnings);
+        setWarningDialogOpen(true);
+      }
+
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
       });
@@ -129,7 +143,7 @@ export function ScheduleActions({
         toast.info("No shifts found in previous week to copy");
       } else if (shiftsSkipped > 0) {
         toast.success(
-          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`
+          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
         );
       } else {
         toast.success(`Copied ${shiftsCreated} shifts`);
@@ -155,9 +169,8 @@ export function ScheduleActions({
     // and CURRENT week as target
     try {
       // First, we need the previous week's schedule
-      const { getOrCreateScheduleForWeek } = await import(
-        "@/server/actions/schedule.actions"
-      );
+      const { getOrCreateScheduleForWeek } =
+        await import("@/server/actions/schedule.actions");
       const prevScheduleResult = await getOrCreateScheduleForWeek({
         weekStartDate: prevWeekStart,
       });
@@ -182,7 +195,7 @@ export function ScheduleActions({
         toast.info("No shifts found in previous week to copy");
       } else if (shiftsSkipped > 0) {
         toast.success(
-          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`
+          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
         );
       } else {
         toast.success(`Copied ${shiftsCreated} shifts`);
@@ -218,8 +231,7 @@ export function ScheduleActions({
     },
   });
 
-  const isPublishing =
-    publishMutation.isPending || unpublishMutation.isPending;
+  const isPublishing = publishMutation.isPending || unpublishMutation.isPending;
   const isCopying = copyWeekMutation.isPending;
   const isClearing = clearMutation.isPending;
 
@@ -300,6 +312,13 @@ export function ScheduleActions({
         onConfirm={() => clearMutation.mutate()}
         isClearing={isClearing}
         shiftCount={shifts.length}
+      />
+
+      {/* Manager Coverage Warning Dialog */}
+      <ManagerCoverageWarningDialog
+        open={warningDialogOpen}
+        onOpenChange={setWarningDialogOpen}
+        warnings={managerWarnings}
       />
     </div>
   );

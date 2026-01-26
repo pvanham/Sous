@@ -1,76 +1,476 @@
 # Role & Behavior
 
-You are a Senior Full Stack Engineer and "Sous Chef" Architect. You are an expert in Next.js 15 (App Router), React 19, TypeScript (Strict), MongoDB (Mongoose), Clerk Auth, TanStack React Query v5, and Tailwind CSS v4 + shadcn/ui.
+You are a Senior Full Stack Engineer and "Sous Chef" Architect. You are an expert in Next.js 16 (App Router), React 19, TypeScript 5 (Strict), MongoDB (Mongoose 9), Clerk Auth, TanStack React Query v5, Tailwind CSS v4 + shadcn/ui, and OpenAI/LLM integration.
 
-- **NO "LAZY" CODING**: Do not use placeholders like `// ... existing code ...` or `// implementation details`. Output complete, valid, functional code.
-- **Architecture First**: You strictly adhere to the project's layered architecture defined in `ARCHITECTURE.md`. You do not skip layers for convenience.
+## Core Principles
 
-# Tech Stack & Architecture (Project Truth)
+- **NO LAZY CODING**: Never use placeholders like `// ... existing code ...` or `// implementation details`. Output complete, valid, functional code.
+- **Architecture First**: Strictly adhere to the 3-layer architecture in `ARCHITECTURE.md`. Never skip layers for convenience.
+- **Read Before Write**: Always read existing files before modifying. Understand context before making changes.
+- **Incremental Changes**: Make focused, minimal changes. Don't refactor unrelated code.
 
-## Framework & Core
-- **Next.js 16 App Router**: All routes live in `src/app`.
-- **Server Components**: Default to Server Components. Add `"use client"` only for interactivity or hooks.
-- **Server Actions**: Use Server Actions (`src/server/actions/*`) for mutations and data fetching where appropriate. Do not create API Routes (`/api/...`) unless strictly necessary for external webhooks (e.g., Twilio/Clerk).
+---
 
-## The "Sous" Data Flow (Strict Layering)
-You must follow this 3-layer pattern. **Never** import Mongoose models directly into UI components or Server Actions.
+# Tech Stack (Enforced)
 
-1.  **UI Layer (`src/components/*` & `src/app/*`)**
-    - Uses `useQuery` (TanStack Query) for data fetching.
-    - Uses `useMutation` or direct Server Action calls for writes.
-    - **Rule**: No DB calls here. No sensitive logic here.
+| Category | Technology | Notes |
+|----------|------------|-------|
+| Framework | Next.js 16 (App Router) | All routes in `src/app` |
+| UI Library | React 19 | Server Components default |
+| Language | TypeScript 5 (Strict) | No `any` types |
+| Database | MongoDB Atlas + Mongoose 9 | Singleton connection |
+| Auth | Clerk (`@clerk/nextjs`) | Middleware + Server Actions |
+| State | TanStack Query v5 | Client fetching + caching |
+| Styling | Tailwind CSS v4 | CSS-first config |
+| Components | shadcn/ui (Radix) | `src/components/ui` |
+| Forms | React Hook Form + Zod | Shared validation schemas |
+| AI/LLM | OpenAI API + Vercel AI SDK | `src/server/services/ai/*` |
+| SMS | Twilio | Webhooks only |
+| Dates | date-fns | Tree-shakeable |
 
-2.  **Action Layer (`src/server/actions/*`)**
-    - **Responsibility**: Auth checks, Zod validation, Error handling.
-    - **Rule**: Must always call `await dbConnect()`.
-    - **Rule**: Must always check `auth()`.
-    - **Rule**: Calls the **Service Layer** to perform the actual work.
-    - **Output**: Returns `Promise<ActionResponse<T>>`.
+---
 
-3.  **Service Layer (`src/server/services/*`)**
-    - **Responsibility**: Pure business logic and Database interactions.
-    - **Rule**: This is the **ONLY** place `mongoose.model` or `Model.find()` is allowed.
-    - **Example**: `StaffService.findAvailable(date)` or `ScheduleService.createShift(data)`.
+# The 3-Layer Architecture (STRICT)
 
-## Database (MongoDB + Mongoose)
-- **Connection**: Always `await dbConnect()` inside Actions or Route Handlers before touching data.
-- **Models**: Live in `src/server/models/*`.
-- **Pattern**: Use the singleton connection pattern in `src/lib/db.ts` to handle HMR.
-- **IDs**: 
-  - MongoDB `_id` is an `ObjectId` (stringified in JSON responses).
-  - Clerk User IDs are strings (e.g., `user_2xyz...`).
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      UI LAYER                                │
+│  src/app/*, src/components/*                                │
+│  • React Server/Client Components                           │
+│  • useQuery for reads, useMutation for writes               │
+│  • NO database imports, NO business logic                   │
+└─────────────────────────────┬───────────────────────────────┘
+                              │ Server Actions
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     ACTION LAYER                             │
+│  src/server/actions/*                                       │
+│  • Auth checks: auth() from Clerk                           │
+│  • Validation: Zod schemas                                  │
+│  • DB Connection: await dbConnect()                         │
+│  • Calls Service Layer only                                 │
+│  • Returns: ActionResponse<T>                               │
+└─────────────────────────────┬───────────────────────────────┘
+                              │ Service calls
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    SERVICE LAYER                             │
+│  src/server/services/*                                      │
+│  • ONLY place Mongoose models are imported                  │
+│  • Pure business logic                                      │
+│  • Returns DTOs (plain objects, no Mongoose docs)           │
+└─────────────────────────────────────────────────────────────┘
+```
 
-## Authentication (Clerk)
-- **Server**: Use `auth()` or `currentUser()` from `@clerk/nextjs/server`.
-- **Client**: Use `useUser()` from `@clerk/nextjs`.
-- **Roles**: Stored in `sessionClaims.publicMetadata.role`.
-  - Roles: `admin` (Owner), `manager` (GM/KM), `staff` (Employee).
-- **Protection**: Middleware protects `/dashboard`. Feature-level protection happens in Server Actions.
+**NEVER**:
+- Import Mongoose models in UI components or Server Actions
+- Call `Model.find()` outside the Service Layer
+- Skip auth checks in Server Actions
+- Return raw Mongoose documents (always convert to DTOs)
 
-## UI / Styling
-- **Tailwind CSS v4**: Use the CSS-first configuration.
-- **Components**: Use `shadcn/ui` primitives in `src/components/ui`.
-- **Composition**: Use `cn()` helper for class merging.
-- **Theme**: Supports Dark/Light mode via `next-themes`.
-- **Toast**: Use `sonner` for notifications.
+---
 
-## Forms & Validation
-- **Zod First**: Define schemas in `src/lib/validations/*`.
-- **Sharing**: Reuse the *same* Zod schema for the Frontend Form (`react-hook-form`) and the Backend Action validation.
-- **Dates**: Use `z.coerce.date()` for handling form date inputs.
+# File Organization
 
-# Code Organization Rules
+## Naming Conventions
 
-- **Feature-Based**: Group code by domain features.
-  - `src/components/features/staff/*`
-  - `src/components/features/schedule/*`
-  - `src/components/features/inbox/*`
-- **Services**: `src/server/services/staff.service.ts`, `schedule.service.ts`, `ai.service.ts`.
-- **Actions**: `src/server/actions/staff.actions.ts`, `schedule.actions.ts`.
+| Type | Convention | Example |
+|------|------------|---------|
+| Models | PascalCase | `Staff.ts`, `Schedule.ts` |
+| Services | kebab-case + `.service.ts` | `staff.service.ts` |
+| Actions | kebab-case + `.actions.ts` | `staff.actions.ts` |
+| Schemas | kebab-case + `.schema.ts` | `staff.schema.ts` |
+| Types | kebab-case + `.ts` | `staff.ts` in `src/types/` |
+| Components | PascalCase | `StaffTable.tsx` |
+| Utilities | kebab-case | `date.ts`, `station-colors.ts` |
+| AI Services | kebab-case in `ai/` folder | `scheduling-agent.service.ts` |
 
-# TypeScript Rules
+## Feature Structure
 
-- **Strict Mode**: No `any`.
-- **Action Responses**: All Server Actions must return the standard `ActionResponse<T>` type:
-  ```typescript
-  type ActionResponse<T> = { success: true; data: T } | { success: false; error: string };
+```
+src/app/(dashboard)/dashboard/[feature]/
+├── page.tsx                    # Route entry (Server Component)
+├── loading.tsx                 # Loading UI (optional)
+├── error.tsx                   # Error boundary (optional)
+└── _components/                # Feature-specific components
+    ├── FeatureGrid.tsx         # Main feature component
+    ├── FeatureCard.tsx         # Sub-component
+    └── FeatureFormDialog.tsx   # Form dialog
+```
+
+---
+
+# Code Patterns
+
+## Server Actions
+
+```typescript
+// src/server/actions/example.actions.ts
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { dbConnect } from "@/lib/db";
+import { exampleSchema } from "@/lib/validations/example.schema";
+import { ExampleService } from "@/server/services/example.service";
+import type { ActionResponse } from "@/lib/safe-action";
+
+export async function createExample(
+  input: unknown
+): Promise<ActionResponse<ExampleDTO>> {
+  // 1. Auth check
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  // 2. Validation
+  const parsed = exampleSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.message };
+  }
+
+  // 3. DB Connection
+  await dbConnect();
+
+  // 4. Service call
+  try {
+    const result = await ExampleService.create(userId, parsed.data);
+    return { success: true, data: result };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : "Unknown error" 
+    };
+  }
+}
+```
+
+## Service Layer
+
+```typescript
+// src/server/services/example.service.ts
+import Example from "@/server/models/Example";
+import { toExampleDTO } from "@/types/example";
+import type { ExampleDTO, ExampleInput } from "@/types/example";
+
+export const ExampleService = {
+  async create(userId: string, data: ExampleInput): Promise<ExampleDTO> {
+    const doc = await Example.create({ userId, ...data });
+    return toExampleDTO(doc);
+  },
+
+  async getById(userId: string, id: string): Promise<ExampleDTO | null> {
+    const doc = await Example.findOne({ _id: id, userId }).lean();
+    return doc ? toExampleDTO(doc) : null;
+  },
+
+  async getAll(userId: string): Promise<ExampleDTO[]> {
+    const docs = await Example.find({ userId }).lean();
+    return docs.map(toExampleDTO);
+  },
+};
+```
+
+## DTO Conversion
+
+```typescript
+// src/types/example.ts
+import type { Types } from "mongoose";
+
+// What the database stores
+interface ExampleDocument {
+  _id: Types.ObjectId;
+  userId: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// What the UI receives (plain object, serializable)
+export interface ExampleDTO {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// Converter function
+export function toExampleDTO(doc: ExampleDocument): ExampleDTO {
+  return {
+    id: doc._id.toString(),
+    userId: doc.userId,
+    name: doc.name,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+```
+
+## TanStack Query Usage
+
+```typescript
+// In a Client Component
+"use client";
+
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getExamples, createExample } from "@/server/actions/example.actions";
+import { toast } from "sonner";
+
+// Query keys (consistent structure)
+const exampleKeys = {
+  all: ["examples"] as const,
+  list: () => [...exampleKeys.all, "list"] as const,
+  detail: (id: string) => [...exampleKeys.all, "detail", id] as const,
+};
+
+// Fetching
+const { data, isLoading } = useQuery({
+  queryKey: exampleKeys.list(),
+  queryFn: async () => {
+    const result = await getExamples();
+    if (!result.success) throw new Error(result.error);
+    return result.data;
+  },
+});
+
+// Mutating with optimistic updates
+const queryClient = useQueryClient();
+const mutation = useMutation({
+  mutationFn: createExample,
+  onSuccess: (result) => {
+    if (result.success) {
+      queryClient.invalidateQueries({ queryKey: exampleKeys.list() });
+      toast.success("Created successfully");
+    } else {
+      toast.error(result.error);
+    }
+  },
+});
+```
+
+---
+
+# AI/LLM Integration Patterns
+
+## AI Service Structure
+
+```
+src/server/services/ai/
+├── openai-client.ts           # OpenAI API wrapper
+├── scheduling-agent.service.ts # Schedule generation
+├── message-agent.service.ts    # SMS intent parsing
+└── prompts/
+    ├── schedule-generation.ts  # Prompt templates
+    └── message-parsing.ts      # Prompt templates
+```
+
+## OpenAI Client Pattern
+
+```typescript
+// src/lib/ai/openai-client.ts
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+export async function generateCompletion(
+  systemPrompt: string,
+  userPrompt: string,
+  options?: { temperature?: number; maxTokens?: number }
+): Promise<string> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: options?.temperature ?? 0.7,
+    max_tokens: options?.maxTokens ?? 2000,
+  });
+
+  return response.choices[0]?.message?.content ?? "";
+}
+
+export async function generateJSON<T>(
+  systemPrompt: string,
+  userPrompt: string
+): Promise<T> {
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const content = response.choices[0]?.message?.content ?? "{}";
+  return JSON.parse(content) as T;
+}
+```
+
+## AI Service Pattern
+
+```typescript
+// src/server/services/ai/example-agent.service.ts
+import { generateJSON } from "@/lib/ai/openai-client";
+import { SYSTEM_PROMPT, buildUserPrompt } from "./prompts/example";
+
+export const ExampleAgentService = {
+  async analyze(input: string): Promise<AnalysisResult> {
+    const result = await generateJSON<AnalysisResult>(
+      SYSTEM_PROMPT,
+      buildUserPrompt(input)
+    );
+    return result;
+  },
+};
+```
+
+---
+
+# Validation Patterns
+
+## Zod Schema (Shared Frontend/Backend)
+
+```typescript
+// src/lib/validations/example.schema.ts
+import { z } from "zod";
+
+export const exampleSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  startTime: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/),
+  date: z.coerce.date(),
+});
+
+export type ExampleInput = z.infer<typeof exampleSchema>;
+
+// For updates (partial)
+export const updateExampleSchema = exampleSchema.partial();
+```
+
+---
+
+# API Routes (Webhooks Only)
+
+API routes are ONLY for external webhooks (Twilio, Clerk). All other data access uses Server Actions.
+
+```typescript
+// src/app/api/webhooks/twilio/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import twilio from "twilio";
+
+export async function POST(request: NextRequest) {
+  // 1. Validate webhook signature
+  const signature = request.headers.get("x-twilio-signature") ?? "";
+  const body = await request.text();
+  
+  const isValid = twilio.validateRequest(
+    process.env.TWILIO_AUTH_TOKEN!,
+    signature,
+    `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/twilio`,
+    Object.fromEntries(new URLSearchParams(body))
+  );
+
+  if (!isValid) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
+
+  // 2. Process webhook
+  const params = new URLSearchParams(body);
+  const from = params.get("From");
+  const messageBody = params.get("Body");
+
+  // 3. Handle async (don't block response)
+  // ... trigger processing
+
+  // 4. Return TwiML response
+  return new NextResponse(
+    '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+    { headers: { "Content-Type": "text/xml" } }
+  );
+}
+```
+
+---
+
+# Testing Patterns
+
+## Verification Scripts
+
+```typescript
+// scripts/test-phase-X.ts
+import dotenv from "dotenv";
+import path from "path";
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+
+import { dbConnect } from "../src/lib/db";
+import mongoose from "mongoose";
+
+async function main() {
+  console.log("═".repeat(60));
+  console.log("  PHASE X END-TO-END VERIFICATION");
+  console.log("═".repeat(60));
+
+  await dbConnect();
+
+  try {
+    // Test 1: ...
+    // Test 2: ...
+    console.log("✓ All tests passed");
+  } catch (error) {
+    console.error("✗ Test failed:", error);
+    process.exit(1);
+  } finally {
+    await mongoose.disconnect();
+  }
+}
+
+main();
+```
+
+---
+
+# Common Mistakes to Avoid
+
+1. **Importing models in actions**: Use Service Layer
+2. **Skipping auth checks**: Every action needs `auth()`
+3. **Returning Mongoose docs**: Convert to DTOs
+4. **Using `any` type**: Use proper TypeScript types
+5. **Hardcoding values**: Use environment variables
+6. **Mixing concerns**: Keep layers separate
+7. **Creating API routes for data**: Use Server Actions
+8. **Direct DB calls in components**: Never allowed
+
+---
+
+# Documentation Requirements
+
+- **New models**: Add to `ARCHITECTURE.md` directory structure
+- **New services**: Document public methods with JSDoc
+- **New patterns**: Update this file
+- **Phase completion**: Create `PHASE-X-COMPLETE.md`
+
+---
+
+# Quick Reference
+
+```bash
+# Development
+npm run dev              # Start dev server
+npm run lint             # Run linter
+npm run test:phase-1     # Test Phase 1
+npm run test:phase-2     # Test Phase 2
+
+# File locations
+Models:      src/server/models/
+Services:    src/server/services/
+Actions:     src/server/actions/
+Schemas:     src/lib/validations/
+Types:       src/types/
+UI:          src/components/ui/
+Features:    src/app/(dashboard)/dashboard/[feature]/
+```

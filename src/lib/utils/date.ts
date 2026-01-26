@@ -188,7 +188,7 @@ export function extractTimeString(date: Date): string {
 export function generateTimeSlots(
   startTime: string,
   endTime: string,
-  intervalMinutes: number = 30
+  intervalMinutes: number = 30,
 ): string[] {
   const slots: string[] = [];
   const [startHour, startMin] = startTime.split(":").map(Number);
@@ -201,7 +201,7 @@ export function generateTimeSlots(
     const hours = Math.floor(currentMinutes / 60);
     const minutes = currentMinutes % 60;
     slots.push(
-      `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`
+      `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
     );
     currentMinutes += intervalMinutes;
   }
@@ -213,7 +213,7 @@ export function generateTimeSlots(
  * Get the earliest opening and latest closing times from kitchen config.
  * Adds 2 hours padding before opening and after closing to accommodate
  * opening/closing shifts (prep before open, cleanup after close).
- * 
+ *
  * @param operatingHours - Weekly operating hours from KitchenConfig
  * @returns Object with earliest open time and latest close time (with 2hr padding)
  */
@@ -277,6 +277,70 @@ export function getOperatingHoursRange(operatingHours: {
 }
 
 /**
+ * Day key type for operating hours lookup.
+ */
+export type DayKey =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+/**
+ * Get the day key from a Date object.
+ * @param date - Any date
+ * @returns Day key for operating hours lookup
+ */
+export function getDayKey(date: Date): DayKey {
+  const dayIndex = getDay(date); // 0 = Sunday, 1 = Monday, etc.
+  const dayKeys: DayKey[] = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ];
+  return dayKeys[dayIndex];
+}
+
+/**
+ * Get the store hours for a specific day (WITHOUT buffer).
+ * Returns the actual open/close times from operating hours config.
+ *
+ * @param operatingHours - Weekly operating hours from KitchenConfig
+ * @param day - The day to get store hours for
+ * @returns Object with open and close times, or null if closed
+ */
+export function getStoreHoursForDay(
+  operatingHours: {
+    monday: { isOpen: boolean; open?: string; close?: string };
+    tuesday: { isOpen: boolean; open?: string; close?: string };
+    wednesday: { isOpen: boolean; open?: string; close?: string };
+    thursday: { isOpen: boolean; open?: string; close?: string };
+    friday: { isOpen: boolean; open?: string; close?: string };
+    saturday: { isOpen: boolean; open?: string; close?: string };
+    sunday: { isOpen: boolean; open?: string; close?: string };
+  },
+  day: Date,
+): { open: string; close: string } | null {
+  const dayKey = getDayKey(day);
+  const dayHours = operatingHours[dayKey];
+
+  if (!dayHours.isOpen || !dayHours.open || !dayHours.close) {
+    return null;
+  }
+
+  return {
+    open: dayHours.open,
+    close: dayHours.close,
+  };
+}
+
+/**
  * Format a time string (HH:mm) for display.
  * @param timeString - Time in "HH:mm" format
  * @returns String like "9:00am" or "5:30pm"
@@ -298,7 +362,7 @@ export function formatTimeString(timeString: string): string {
 export function getTimePositionPercent(
   time: string,
   rangeStart: string,
-  rangeEnd: string
+  rangeEnd: string,
 ): number {
   const [timeHour, timeMin] = time.split(":").map(Number);
   const [startHour, startMin] = rangeStart.split(":").map(Number);
@@ -324,7 +388,7 @@ export function getTimePositionPercent(
 export function getDurationHeightPercent(
   durationMinutes: number,
   rangeStart: string,
-  rangeEnd: string
+  rangeEnd: string,
 ): number {
   const [startHour, startMin] = rangeStart.split(":").map(Number);
   const [endHour, endMin] = rangeEnd.split(":").map(Number);
@@ -359,7 +423,7 @@ export function getTimeFromPositionPercent(
   yPercent: number,
   rangeStart: string,
   rangeEnd: string,
-  snapToInterval: number = 30
+  snapToInterval: number = 30,
 ): string {
   const [startHour, startMin] = rangeStart.split(":").map(Number);
   const [endHour, endMin] = rangeEnd.split(":").map(Number);

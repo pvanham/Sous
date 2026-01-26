@@ -8,10 +8,23 @@ import {
   scheduleNotesUpdateSchema,
   copyWeekSchema,
 } from "@/lib/validations/schedule.schema";
-import { ScheduleService } from "@/server/services/schedule.service";
+import {
+  ScheduleService,
+  ManagerCoverageGap,
+} from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
+import { StaffService } from "@/server/services/staff.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
+
+/**
+ * Publish result with optional manager coverage warnings.
+ */
+export interface PublishScheduleResult {
+  schedule: ScheduleDTO;
+  managerWarnings: ManagerCoverageGap[];
+}
 
 /**
  * Get or create a schedule for a specific week.
@@ -19,7 +32,7 @@ import type { ScheduleDTO } from "@/types/schedule";
  * @returns ActionResponse containing ScheduleDTO
  */
 export async function getOrCreateScheduleForWeek(
-  input: unknown
+  input: unknown,
 ): Promise<ActionResponse<ScheduleDTO>> {
   try {
     // 1. Auth check
@@ -42,13 +55,18 @@ export async function getOrCreateScheduleForWeek(
     await dbConnect();
 
     // 4. Service call
-    const schedule = await ScheduleService.getOrCreateForWeek(userId, weekStartDate);
+    const schedule = await ScheduleService.getOrCreateForWeek(
+      userId,
+      weekStartDate,
+    );
 
     // 5. Return response
     return { success: true, data: schedule };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to get or create schedule";
+      error instanceof Error
+        ? error.message
+        : "Failed to get or create schedule";
     return { success: false, error: message };
   }
 }
@@ -59,7 +77,7 @@ export async function getOrCreateScheduleForWeek(
  * @returns ActionResponse containing ScheduleDTO or null
  */
 export async function getScheduleByWeek(
-  input: unknown
+  input: unknown,
 ): Promise<ActionResponse<ScheduleDTO | null>> {
   try {
     // 1. Auth check
@@ -99,7 +117,7 @@ export async function getScheduleByWeek(
  * @returns ActionResponse containing updated ScheduleDTO
  */
 export async function updateScheduleStatus(
-  input: unknown
+  input: unknown,
 ): Promise<ActionResponse<ScheduleDTO>> {
   try {
     // 1. Auth check
@@ -122,7 +140,11 @@ export async function updateScheduleStatus(
     await dbConnect();
 
     // 4. Service call
-    const schedule = await ScheduleService.updateStatus(userId, scheduleId, status);
+    const schedule = await ScheduleService.updateStatus(
+      userId,
+      scheduleId,
+      status,
+    );
 
     if (!schedule) {
       return { success: false, error: "Schedule not found" };
@@ -132,7 +154,9 @@ export async function updateScheduleStatus(
     return { success: true, data: schedule };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to update schedule status";
+      error instanceof Error
+        ? error.message
+        : "Failed to update schedule status";
     return { success: false, error: message };
   }
 }
@@ -143,7 +167,7 @@ export async function updateScheduleStatus(
  * @returns ActionResponse containing updated ScheduleDTO
  */
 export async function updateScheduleNotes(
-  input: unknown
+  input: unknown,
 ): Promise<ActionResponse<ScheduleDTO>> {
   try {
     // 1. Auth check
@@ -166,7 +190,11 @@ export async function updateScheduleNotes(
     await dbConnect();
 
     // 4. Service call
-    const schedule = await ScheduleService.updateNotes(userId, scheduleId, notes ?? "");
+    const schedule = await ScheduleService.updateNotes(
+      userId,
+      scheduleId,
+      notes ?? "",
+    );
 
     if (!schedule) {
       return { success: false, error: "Schedule not found" };
@@ -176,7 +204,9 @@ export async function updateScheduleNotes(
     return { success: true, data: schedule };
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to update schedule notes";
+      error instanceof Error
+        ? error.message
+        : "Failed to update schedule notes";
     return { success: false, error: message };
   }
 }
@@ -187,7 +217,7 @@ export async function updateScheduleNotes(
  * @returns ActionResponse with deletion status
  */
 export async function deleteSchedule(
-  scheduleId: string
+  scheduleId: string,
 ): Promise<ActionResponse<{ deleted: boolean; shiftsDeleted: number }>> {
   try {
     // 1. Auth check
@@ -225,7 +255,7 @@ export async function deleteSchedule(
  * @returns ActionResponse with count of created and skipped shifts
  */
 export async function copyWeekShifts(
-  input: unknown
+  input: unknown,
 ): Promise<ActionResponse<{ shiftsCreated: number; shiftsSkipped: number }>> {
   try {
     // 1. Auth check
@@ -248,7 +278,10 @@ export async function copyWeekShifts(
     await dbConnect();
 
     // 4. Get source schedule to validate ownership and get source week start
-    const sourceSchedule = await ScheduleService.getById(userId, sourceScheduleId);
+    const sourceSchedule = await ScheduleService.getById(
+      userId,
+      sourceScheduleId,
+    );
     if (!sourceSchedule) {
       return { success: false, error: "Source schedule not found" };
     }
@@ -265,18 +298,22 @@ export async function copyWeekShifts(
 
     // 6. Calculate day offset between weeks
     const dayOffset = Math.round(
-      (targetWeekNormalized.getTime() - sourceWeekStart.getTime()) / (1000 * 60 * 60 * 24)
+      (targetWeekNormalized.getTime() - sourceWeekStart.getTime()) /
+        (1000 * 60 * 60 * 24),
     );
 
     // 7. Get or create target schedule
-    const targetSchedule = await ScheduleService.getOrCreateForWeek(userId, targetWeekStart);
+    const targetSchedule = await ScheduleService.getOrCreateForWeek(
+      userId,
+      targetWeekStart,
+    );
 
     // 8. Copy shifts using service
     const result = await ShiftService.copyShiftsToNewWeek(
       userId,
       sourceScheduleId,
       targetSchedule.id,
-      dayOffset
+      dayOffset,
     );
 
     // 9. Return response
@@ -297,12 +334,13 @@ export async function copyWeekShifts(
 /**
  * Publish a schedule (change status to PUBLISHED).
  * Validates that at least one shift exists before publishing.
+ * Also checks for manager coverage gaps and returns warnings.
  * @param scheduleId - Schedule document ID
- * @returns ActionResponse containing updated ScheduleDTO
+ * @returns ActionResponse containing updated ScheduleDTO and any manager coverage warnings
  */
 export async function publishSchedule(
-  scheduleId: string
-): Promise<ActionResponse<ScheduleDTO>> {
+  scheduleId: string,
+): Promise<ActionResponse<PublishScheduleResult>> {
   try {
     // 1. Auth check
     const { userId } = await auth();
@@ -327,17 +365,47 @@ export async function publishSchedule(
     // 5. Verify at least one shift exists
     const shifts = await ShiftService.getBySchedule(scheduleId);
     if (shifts.length === 0) {
-      return { success: false, error: "Cannot publish an empty schedule. Add at least one shift first." };
+      return {
+        success: false,
+        error:
+          "Cannot publish an empty schedule. Add at least one shift first.",
+      };
     }
 
-    // 6. Update status to PUBLISHED
-    const updatedSchedule = await ScheduleService.updateStatus(userId, scheduleId, "PUBLISHED");
+    // 6. Check for manager coverage gaps
+    let managerWarnings: ManagerCoverageGap[] = [];
+    const [staff, config] = await Promise.all([
+      StaffService.list(userId),
+      KitchenConfigService.getByUserId(userId),
+    ]);
+
+    if (config) {
+      managerWarnings = ScheduleService.validateManagerCoverage(
+        new Date(schedule.weekStartDate),
+        shifts,
+        staff,
+        config,
+      );
+    }
+
+    // 7. Update status to PUBLISHED
+    const updatedSchedule = await ScheduleService.updateStatus(
+      userId,
+      scheduleId,
+      "PUBLISHED",
+    );
     if (!updatedSchedule) {
       return { success: false, error: "Failed to update schedule status" };
     }
 
-    // 7. Return response
-    return { success: true, data: updatedSchedule };
+    // 8. Return response with warnings
+    return {
+      success: true,
+      data: {
+        schedule: updatedSchedule,
+        managerWarnings,
+      },
+    };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to publish schedule";
@@ -351,7 +419,7 @@ export async function publishSchedule(
  * @returns ActionResponse with count of deleted shifts
  */
 export async function clearWeekShifts(
-  scheduleId: string
+  scheduleId: string,
 ): Promise<ActionResponse<{ shiftsDeleted: number }>> {
   try {
     // 1. Auth check

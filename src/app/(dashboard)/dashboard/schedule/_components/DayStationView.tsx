@@ -8,6 +8,7 @@ import {
   formatTimeString,
   generateTimeSlots,
   getOperatingHoursRange,
+  getStoreHoursForDay,
   extractTimeString,
   getTimePositionPercent,
   getDurationHeightPercent,
@@ -47,7 +48,7 @@ function getShiftsForDay(shifts: ShiftDTO[], day: Date): ShiftDTO[] {
  */
 function getShiftsByStation(
   shifts: ShiftDTO[],
-  stations: string[]
+  stations: string[],
 ): Map<string, ShiftDTO[]> {
   const grouped = new Map<string, ShiftDTO[]>();
 
@@ -127,12 +128,21 @@ function StationShiftBlock({
     const yPercent = (mouseY / blockHeight) * 100;
 
     // Calculate snapped time at this position (30-min intervals)
-    const snappedTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    const snappedTime = getTimeFromPositionPercent(
+      yPercent,
+      startTime,
+      endTime,
+      30,
+    );
     hoverTimeRef.current = snappedTime;
 
     // Convert snapped time back to Y position for button placement
     // This makes the button snap to 30-min grid lines instead of following cursor exactly
-    const snappedYPercent = getTimePositionPercent(snappedTime, startTime, endTime);
+    const snappedYPercent = getTimePositionPercent(
+      snappedTime,
+      startTime,
+      endTime,
+    );
     const snappedY = (snappedYPercent / 100) * blockHeight;
 
     // Clamp button position to stay within bounds
@@ -162,7 +172,12 @@ function StationShiftBlock({
     const yPercent = (clickY / blockHeight) * 100;
 
     // Calculate time at click position
-    const clickTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    const clickTime = getTimeFromPositionPercent(
+      yPercent,
+      startTime,
+      endTime,
+      30,
+    );
     onDoubleClickCreate(clickTime, station);
   };
 
@@ -190,7 +205,7 @@ function StationShiftBlock({
       <div
         className={cn(
           "absolute inset-0 rounded-md border px-1 py-1 text-xs cursor-pointer hover:shadow-md hover:ring-2 hover:ring-ring transition-shadow overflow-hidden",
-          stationColor
+          stationColor,
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -210,7 +225,7 @@ function StationShiftBlock({
         ref={buttonRef}
         className={cn(
           "absolute right-0.5 p-0.5 rounded-full bg-background/80 hover:bg-accent border border-border z-20 cursor-pointer transition-opacity",
-          isHovering ? "opacity-100" : "opacity-0"
+          isHovering ? "opacity-100" : "opacity-0",
         )}
         style={{ top: "8px", transform: "translateY(-50%)" }}
         onClick={handleButtonClick}
@@ -229,13 +244,13 @@ function StationShiftBlock({
 function hasGaps(
   shifts: ShiftDTO[],
   earliest: string,
-  latest: string
+  latest: string,
 ): boolean {
   if (shifts.length === 0) return true;
 
   // Sort shifts by start time
   const sorted = [...shifts].sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()
+    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
   );
 
   const [startHour, startMin] = earliest.split(":").map(Number);
@@ -254,8 +269,7 @@ function hasGaps(
   for (let i = 0; i < sorted.length - 1; i++) {
     const currentEnd = new Date(sorted[i].end);
     const nextStart = new Date(sorted[i + 1].start);
-    const gap =
-      (nextStart.getTime() - currentEnd.getTime()) / (1000 * 60);
+    const gap = (nextStart.getTime() - currentEnd.getTime()) / (1000 * 60);
     if (gap > 30) return true; // More than 30 min gap
   }
 
@@ -332,7 +346,7 @@ export function DayStationView({
   // Get stations from config
   const stations = config?.stations || [];
 
-  // Calculate time range based on operating hours
+  // Calculate time range based on operating hours (includes 2hr buffer for display)
   const { earliest, latest } = useMemo(() => {
     if (!config) {
       return { earliest: "06:00", latest: "23:00" };
@@ -340,21 +354,27 @@ export function DayStationView({
     return getOperatingHoursRange(config.operatingHours);
   }, [config]);
 
+  // Get actual store hours for the selected day (no buffer) for coverage warnings
+  const storeHours = useMemo(() => {
+    if (!config) return null;
+    return getStoreHoursForDay(config.operatingHours, selectedDay);
+  }, [config, selectedDay]);
+
   // Generate time slots for Y-axis labels (every 30 minutes)
   const timeSlots = useMemo(
     () => generateTimeSlots(earliest, latest, 30),
-    [earliest, latest]
+    [earliest, latest],
   );
 
   // Get shifts for the selected day, grouped by station
   const dayShifts = useMemo(
     () => getShiftsForDay(shifts, selectedDay),
-    [shifts, selectedDay]
+    [shifts, selectedDay],
   );
 
   const shiftsByStation = useMemo(
     () => getShiftsByStation(dayShifts, stations),
-    [dayShifts, stations]
+    [dayShifts, stations],
   );
 
   // Height per slot (30 minutes = 40px)
@@ -396,7 +416,11 @@ export function DayStationView({
           </div>
           {stations.map((station) => {
             const stationShifts = shiftsByStation.get(station) || [];
-            const hasCoverageGaps = hasGaps(stationShifts, earliest, latest);
+            // Only check for gaps during actual store hours (not buffered range)
+            // If store is closed on this day, no coverage warning needed
+            const hasCoverageGaps = storeHours
+              ? hasGaps(stationShifts, storeHours.open, storeHours.close)
+              : false;
 
             return (
               <div
@@ -405,7 +429,7 @@ export function DayStationView({
               >
                 <span>{station}</span>
                 {hasCoverageGaps && (
-                  <span title="Coverage gaps detected">
+                  <span title="Coverage gaps detected during store hours">
                     <AlertCircle className="h-4 w-4 text-amber-500" />
                   </span>
                 )}
@@ -452,7 +476,7 @@ export function DayStationView({
                     key={time}
                     className={cn(
                       "absolute left-0 right-0 border-t border-border/50 cursor-pointer hover:bg-muted/50 transition-colors group",
-                      index % 2 === 0 && "border-border"
+                      index % 2 === 0 && "border-border",
                     )}
                     style={{ top: index * slotHeight, height: slotHeight }}
                     onClick={() => onCreateShift(selectedDay, time, station)}
@@ -466,7 +490,7 @@ export function DayStationView({
                 {/* Shifts with lane assignment for overlapping */}
                 {(() => {
                   const laneAssignments = assignLanes(stationShifts);
-                  
+
                   return laneAssignments.map(({ shift, lane, totalLanes }) => {
                     const startTime = extractTimeString(new Date(shift.start));
                     const endTime = extractTimeString(new Date(shift.end));
@@ -475,7 +499,7 @@ export function DayStationView({
                     const topPercent = getTimePositionPercent(
                       startTime,
                       earliest,
-                      latest
+                      latest,
                     );
                     const durationMinutes =
                       (new Date(shift.end).getTime() -
@@ -484,7 +508,7 @@ export function DayStationView({
                     const heightPercent = getDurationHeightPercent(
                       durationMinutes,
                       earliest,
-                      latest
+                      latest,
                     );
 
                     // Calculate horizontal position based on lane
