@@ -1,10 +1,11 @@
 "use client";
 
-import { AlertTriangle, Clock } from "lucide-react";
+import { AlertTriangle, Clock, Loader2 } from "lucide-react";
 
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -18,17 +19,22 @@ interface ManagerCoverageWarningDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   warnings: ManagerCoverageGap[];
+  onPublishAnyway: () => void;
+  isPublishing?: boolean;
 }
 
 /**
  * ManagerCoverageWarningDialog - Shows warnings about manager coverage gaps.
- * Displayed after a schedule is successfully published if there are days
- * where no manager is scheduled during store hours.
+ * Displayed before publishing a schedule if there are days where no manager
+ * is scheduled during store hours. User can cancel to keep editing or
+ * publish anyway.
  */
 export function ManagerCoverageWarningDialog({
   open,
   onOpenChange,
   warnings,
+  onPublishAnyway,
+  isPublishing = false,
 }: ManagerCoverageWarningDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -41,8 +47,8 @@ export function ManagerCoverageWarningDialog({
           <AlertDialogDescription asChild>
             <div className="space-y-3">
               <p>
-                The schedule was published successfully, but the following time
-                periods have no manager coverage during store hours:
+                The following time periods have no manager coverage during store
+                hours:
               </p>
               <div className="max-h-60 overflow-y-auto space-y-2">
                 {warnings.map((warning, index) => (
@@ -71,14 +77,33 @@ export function ManagerCoverageWarningDialog({
                 ))}
               </div>
               <p className="text-sm">
-                Consider scheduling a manager during these times to ensure
-                proper supervision.
+                Would you like to continue editing to add manager coverage, or
+                publish anyway?
               </p>
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogAction>Acknowledge</AlertDialogAction>
+          <AlertDialogCancel disabled={isPublishing}>
+            Keep Editing
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              onPublishAnyway();
+            }}
+            disabled={isPublishing}
+            className="bg-amber-600 hover:bg-amber-700"
+          >
+            {isPublishing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Publishing...
+              </>
+            ) : (
+              "Publish Anyway"
+            )}
+          </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

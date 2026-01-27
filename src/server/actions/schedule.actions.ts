@@ -433,6 +433,66 @@ export async function publishSchedule(
 }
 
 /**
+ * Check for manager coverage gaps without publishing.
+ * Use this to preview warnings before confirming publish.
+ * @param scheduleId - Schedule document ID
+ * @returns ActionResponse containing array of manager coverage gaps
+ */
+export async function checkManagerCoverage(
+  scheduleId: string,
+): Promise<ActionResponse<{ warnings: ManagerCoverageGap[] }>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
+
+    // 3. Get schedule to verify ownership
+    const schedule = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      scheduleId,
+    );
+    if (!schedule) {
+      return { success: false, error: "Schedule not found" };
+    }
+
+    // 4. Get shifts, staff, and config
+    const [shifts, staff, config] = await Promise.all([
+      ShiftService.getBySchedule(scheduleId),
+      StaffService.list(ctx.orgId, ctx.locationId),
+      KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
+    ]);
+
+    // 5. Check for manager coverage gaps
+    let warnings: ManagerCoverageGap[] = [];
+    if (config) {
+      warnings = ScheduleService.validateManagerCoverage(
+        new Date(schedule.weekStartDate),
+        shifts,
+        staff,
+        config,
+      );
+    }
+
+    return {
+      success: true,
+      data: { warnings },
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to check manager coverage";
+    return { success: false, error: message };
+  }
+}
+
+/**
  * Clear all shifts from a schedule (delete all shifts for a week).
  * @param scheduleId - Schedule document ID
  * @returns ActionResponse with count of deleted shifts

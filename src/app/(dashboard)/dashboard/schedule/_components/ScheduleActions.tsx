@@ -16,8 +16,8 @@ import {
   updateScheduleStatus,
   copyWeekShifts,
   publishSchedule,
+  checkManagerCoverage,
   clearWeekShifts,
-  type PublishScheduleResult,
 } from "@/server/actions/schedule.actions";
 import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 import { getPrevWeekStart } from "@/lib/utils/date";
@@ -65,8 +65,9 @@ export function ScheduleActions({
     [],
   );
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
+  const [isCheckingCoverage, setIsCheckingCoverage] = useState(false);
 
-  // Publish mutation
+  // Publish mutation (called directly or after user confirms warnings)
   const publishMutation = useMutation({
     mutationFn: async () => {
       const result = await publishSchedule(schedule.id);
@@ -75,14 +76,10 @@ export function ScheduleActions({
       }
       return result.data;
     },
-    onSuccess: (data: PublishScheduleResult) => {
+    onSuccess: () => {
       toast.success("Schedule published successfully");
-
-      // Show manager coverage warnings dialog if any gaps detected
-      if (data.managerWarnings.length > 0) {
-        setManagerWarnings(data.managerWarnings);
-        setWarningDialogOpen(true);
-      }
+      setWarningDialogOpen(false);
+      setManagerWarnings([]);
 
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
@@ -91,8 +88,40 @@ export function ScheduleActions({
     },
     onError: (error: Error) => {
       toast.error(error.message);
+      setWarningDialogOpen(false);
     },
   });
+
+  // Handle publish button click - check for warnings first
+  const handlePublishClick = async () => {
+    setIsCheckingCoverage(true);
+    try {
+      const result = await checkManagerCoverage(schedule.id);
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      const { warnings } = result.data;
+      if (warnings.length > 0) {
+        // Show warning dialog, let user decide
+        setManagerWarnings(warnings);
+        setWarningDialogOpen(true);
+      } else {
+        // No warnings, publish directly
+        publishMutation.mutate();
+      }
+    } catch {
+      toast.error("Failed to check manager coverage");
+    } finally {
+      setIsCheckingCoverage(false);
+    }
+  };
+
+  // Called when user clicks "Publish Anyway" in the warning dialog
+  const handlePublishAnyway = () => {
+    publishMutation.mutate();
+  };
 
   // Unpublish mutation (revert to DRAFT)
   const unpublishMutation = useMutation({
@@ -231,7 +260,8 @@ export function ScheduleActions({
     },
   });
 
-  const isPublishing = publishMutation.isPending || unpublishMutation.isPending;
+  const isPublishing =
+    publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
   const isCopying = copyWeekMutation.isPending;
   const isClearing = clearMutation.isPending;
 
@@ -244,7 +274,7 @@ export function ScheduleActions({
         {schedule.status === "DRAFT" ? (
           <Button
             size="sm"
-            onClick={() => publishMutation.mutate()}
+            onClick={handlePublishClick}
             disabled={isPublishing || shifts.length === 0}
           >
             {isPublishing ? (
@@ -319,6 +349,8 @@ export function ScheduleActions({
         open={warningDialogOpen}
         onOpenChange={setWarningDialogOpen}
         warnings={managerWarnings}
+        onPublishAnyway={handlePublishAnyway}
+        isPublishing={publishMutation.isPending}
       />
     </div>
   );
