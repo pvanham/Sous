@@ -147,6 +147,8 @@ src/
 │       ├── schedule.schema.ts
 │       ├── shift.schema.ts
 │       ├── labor-requirement.schema.ts
+│       ├── staff-availability.schema.ts
+│       ├── time-off-request.schema.ts
 │       └── message.schema.ts
 │
 ├── server/                           # Server-side logic ("Backend")
@@ -158,6 +160,7 @@ src/
 │   │   ├── Shift.ts
 │   │   ├── LaborRequirement.ts       # Phase 3
 │   │   ├── StaffAvailability.ts      # Phase 3
+│   │   ├── TimeOffRequest.ts         # Phase 3
 │   │   ├── Message.ts                # Phase 4
 │   │   └── CoverageRequest.ts        # Phase 4
 │   │
@@ -168,6 +171,7 @@ src/
 │   │   ├── shift.service.ts
 │   │   ├── labor-requirement.service.ts
 │   │   ├── staff-availability.service.ts
+│   │   ├── time-off-request.service.ts
 │   │   ├── coverage-analyzer.service.ts
 │   │   ├── message.service.ts
 │   │   ├── notification.service.ts
@@ -187,6 +191,7 @@ src/
 │       ├── shift.actions.ts
 │       ├── labor-requirement.actions.ts
 │       ├── staff-availability.actions.ts
+│       ├── time-off-request.actions.ts
 │       ├── schedule-generation.actions.ts
 │       ├── message.actions.ts
 │       └── notification.actions.ts
@@ -198,6 +203,7 @@ src/
 │   ├── shift.ts
 │   ├── labor-requirement.ts
 │   ├── staff-availability.ts
+│   ├── time-off-request.ts
 │   ├── message.ts
 │   └── ai-scheduling.ts
 │
@@ -297,6 +303,7 @@ This is the **most important rule** in the codebase. All data flows through exac
 │       ├── shifts                                                             │
 │       ├── laborrequirements                                                  │
 │       ├── staffavailabilities                                                │
+│       ├── timeoffrequests                                                    │
 │       ├── messages                                                           │
 │       └── coveragerequests                                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -342,7 +349,10 @@ This is the **most important rule** in the codebase. All data flows through exac
   isActive: boolean,
   maxHoursPerWeek: number,  // Phase 3
   minHoursPerWeek: number,  // Phase 3
-  preferredStations: string[] // Phase 3
+  preferredStations: string[], // Phase 3
+  hourlyRate: number,       // Phase 3 - Required for labor cost calculations
+  smsConsent: boolean,      // Phase 4 - TCPA compliance, default false
+  smsConsentDate?: Date,    // Phase 4 - When consent was given
 }
 
 // Schedule - Week container
@@ -388,6 +398,19 @@ This is the **most important rule** in the codebase. All data flows through exac
   availableFrom: string,
   availableTo: string,
   preference: 'preferred' | 'available' | 'unavailable'
+}
+
+// TimeOffRequest - Specific date-range time-off requests
+{
+  userId: string,
+  staffId: ObjectId,
+  startDate: Date,
+  endDate: Date,
+  reason?: string,
+  status: 'pending' | 'approved' | 'denied',
+  createdAt: Date,
+  reviewedAt?: Date,
+  reviewedBy?: string
 }
 ```
 
