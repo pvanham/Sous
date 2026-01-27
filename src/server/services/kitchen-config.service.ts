@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import KitchenConfig from "@/server/models/KitchenConfig";
 import type { KitchenConfigInput } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
@@ -8,12 +9,19 @@ import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
  */
 export const KitchenConfigService = {
   /**
-   * Get kitchen config by Clerk user ID.
-   * @param userId - Clerk user ID
+   * Get kitchen config by organization and location.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns KitchenConfigDTO or null if not found
    */
-  async getByUserId(userId: string): Promise<KitchenConfigDTO | null> {
-    const doc = await KitchenConfig.findOne({ userId }).lean();
+  async getByLocation(
+    orgId: string,
+    locationId: string
+  ): Promise<KitchenConfigDTO | null> {
+    const doc = await KitchenConfig.findOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).lean();
 
     if (!doc) {
       return null;
@@ -23,19 +31,25 @@ export const KitchenConfigService = {
   },
 
   /**
-   * Create or update kitchen config for a user (upsert pattern).
-   * @param userId - Clerk user ID
+   * Create or update kitchen config for a location (upsert pattern).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param data - Validated kitchen config input
    * @returns Created or updated KitchenConfigDTO
    */
   async upsert(
-    userId: string,
+    orgId: string,
+    locationId: string,
     data: KitchenConfigInput
   ): Promise<KitchenConfigDTO> {
+    const orgObjectId = new Types.ObjectId(orgId);
+    const locationObjectId = new Types.ObjectId(locationId);
+
     const doc = await KitchenConfig.findOneAndUpdate(
-      { userId },
+      { orgId: orgObjectId, locationId: locationObjectId },
       {
-        userId,
+        orgId: orgObjectId,
+        locationId: locationObjectId,
         name: data.name,
         stations: data.stations.filter((s) => s.trim() !== ""),
         roles: data.roles.filter((r) => r.trim() !== ""),
@@ -56,13 +70,29 @@ export const KitchenConfigService = {
   },
 
   /**
-   * Delete kitchen config by user ID.
+   * Delete kitchen config by organization and location.
    * Used primarily for testing/cleanup.
-   * @param userId - Clerk user ID
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns true if deleted, false if not found
    */
-  async deleteByUserId(userId: string): Promise<boolean> {
-    const result = await KitchenConfig.deleteOne({ userId });
+  async deleteByLocation(orgId: string, locationId: string): Promise<boolean> {
+    const result = await KitchenConfig.deleteOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
     return result.deletedCount > 0;
+  },
+
+  /**
+   * Delete all kitchen configs for an organization.
+   * @param orgId - Organization ID
+   * @returns Number of deleted documents
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await KitchenConfig.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
+    return result.deletedCount;
   },
 };

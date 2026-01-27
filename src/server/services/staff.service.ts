@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import Staff from "@/server/models/Staff";
 import type { StaffInput } from "@/lib/validations/staff.schema";
 import {
@@ -14,30 +15,41 @@ import {
  */
 export const StaffService = {
   /**
-   * List all staff for a user (includes both active and inactive).
-   * @param userId - Clerk user ID (restaurant owner)
+   * List all staff for a location (includes both active and inactive).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns Array of StaffDTO
    */
-  async list(userId: string): Promise<StaffDTO[]> {
-    const docs = await Staff.find({ userId }).sort({ name: 1 }).lean();
+  async list(orgId: string, locationId: string): Promise<StaffDTO[]> {
+    const docs = await Staff.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .sort({ name: 1 })
+      .lean();
     return docs.map(toStaffDTO);
   },
 
   /**
    * List staff with pagination, sorting by last name, and search.
-   * @param userId - Clerk user ID (restaurant owner)
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param params - Pagination and filter parameters
    * @returns PaginatedStaffResult with staff array and pagination metadata
    */
   async listPaginated(
-    userId: string,
+    orgId: string,
+    locationId: string,
     params: StaffListParams
   ): Promise<PaginatedStaffResult> {
     const { page, pageSize, sortOrder, search } = params;
     const skip = (page - 1) * pageSize;
 
     // Build match filter
-    const matchFilter: Record<string, unknown> = { userId };
+    const matchFilter: Record<string, unknown> = {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    };
 
     // Add search filter if provided
     if (search && search.trim() !== "") {
@@ -90,28 +102,40 @@ export const StaffService = {
 
   /**
    * Get a single staff member by ID.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param staffId - Staff document ID
    * @returns StaffDTO or null if not found
    */
-  async getById(userId: string, staffId: string): Promise<StaffDTO | null> {
-    const doc = await Staff.findOne({ _id: staffId, userId }).lean();
+  async getById(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOne({
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).lean();
     if (!doc) return null;
     return toStaffDTO(doc);
   },
 
   /**
    * Create a new staff member.
-   * @param userId - Clerk user ID (restaurant owner)
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param data - Validated staff input
    * @returns Created StaffDTO
    */
   async create(
-    userId: string,
+    orgId: string,
+    locationId: string,
     data: Omit<StaffInput, "isActive"> & { isActive?: boolean }
   ): Promise<StaffDTO> {
     const doc = await Staff.create({
-      userId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
       name: data.name,
       email: data.email.toLowerCase(),
       phone: data.phone,
@@ -125,13 +149,15 @@ export const StaffService = {
 
   /**
    * Update an existing staff member.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param staffId - Staff document ID
    * @param data - Partial staff data to update
    * @returns Updated StaffDTO or null if not found
    */
   async update(
-    userId: string,
+    orgId: string,
+    locationId: string,
     staffId: string,
     data: Partial<StaffInput>
   ): Promise<StaffDTO | null> {
@@ -145,7 +171,11 @@ export const StaffService = {
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
 
     const doc = await Staff.findOneAndUpdate(
-      { _id: staffId, userId },
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
       { $set: updateData },
       { new: true, runValidators: true }
     ).lean();
@@ -157,25 +187,39 @@ export const StaffService = {
   /**
    * Bulk upsert staff for CSV import.
    * Matches by email to determine insert vs update.
-   * @param userId - Clerk user ID (restaurant owner)
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param staffData - Array of validated staff input
    * @returns ImportResult with counts
    */
   async bulkUpsert(
-    userId: string,
+    orgId: string,
+    locationId: string,
     staffData: Array<Omit<StaffInput, "isActive">>
   ): Promise<Omit<ImportResult, "skipped" | "errors">> {
     if (staffData.length === 0) {
       return { inserted: 0, updated: 0 };
     }
 
-    // Get existing staff emails for this user
+    const orgObjectId = new Types.ObjectId(orgId);
+    const locationObjectId = new Types.ObjectId(locationId);
+
+    // Get existing staff emails for this location
     const existingEmails = new Set(
-      (await Staff.find({ userId }, { email: 1 }).lean()).map((s) => s.email)
+      (
+        await Staff.find(
+          { orgId: orgObjectId, locationId: locationObjectId },
+          { email: 1 }
+        ).lean()
+      ).map((s) => s.email)
     );
 
     const bulkOps = staffData.map((staff) => {
-      const filter = { userId, email: staff.email.toLowerCase() };
+      const filter = {
+        orgId: orgObjectId,
+        locationId: locationObjectId,
+        email: staff.email.toLowerCase(),
+      };
       const update = {
         $set: {
           name: staff.name,
@@ -185,7 +229,8 @@ export const StaffService = {
           isActive: true,
         },
         $setOnInsert: {
-          userId,
+          orgId: orgObjectId,
+          locationId: locationObjectId,
           email: staff.email.toLowerCase(),
         },
       };
@@ -210,18 +255,24 @@ export const StaffService = {
 
   /**
    * Set staff active/inactive status (soft delete).
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param staffId - Staff document ID
    * @param isActive - New active status
    * @returns Updated StaffDTO or null if not found
    */
   async setActive(
-    userId: string,
+    orgId: string,
+    locationId: string,
     staffId: string,
     isActive: boolean
   ): Promise<StaffDTO | null> {
     const doc = await Staff.findOneAndUpdate(
-      { _id: staffId, userId },
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
       { $set: { isActive } },
       { new: true }
     ).lean();
@@ -232,22 +283,47 @@ export const StaffService = {
 
   /**
    * Permanently delete a single staff member.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param staffId - Staff document ID
    * @returns true if deleted, false if not found
    */
-  async delete(userId: string, staffId: string): Promise<boolean> {
-    const result = await Staff.deleteOne({ _id: staffId, userId });
+  async delete(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<boolean> {
+    const result = await Staff.deleteOne({
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
     return result.deletedCount > 0;
   },
 
   /**
-   * Delete all staff for a user (for testing/cleanup).
-   * @param userId - Clerk user ID
+   * Delete all staff for a location (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns Number of deleted documents
    */
-  async deleteAllByUserId(userId: string): Promise<number> {
-    const result = await Staff.deleteMany({ userId });
+  async deleteAllByLocation(orgId: string, locationId: string): Promise<number> {
+    const result = await Staff.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
+    return result.deletedCount;
+  },
+
+  /**
+   * Delete all staff for an organization (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @returns Number of deleted documents
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await Staff.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
     return result.deletedCount;
   },
 };

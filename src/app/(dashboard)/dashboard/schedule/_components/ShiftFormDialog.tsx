@@ -279,7 +279,8 @@ export function ShiftFormDialog({
 
           const tempShift: ShiftDTO = {
             id: `temp-${Date.now()}`,
-            userId: "",
+            orgId: "",
+            locationId: "",
             scheduleId,
             staffId: newShift.staffId,
             start,

@@ -1,14 +1,14 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { dbConnect } from "@/lib/db";
 import { kitchenConfigSchema } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
 
 /**
- * Get the kitchen config for the currently authenticated user.
+ * Get the kitchen config for the current user's location.
  * @returns ActionResponse containing the config or null if not found
  */
 export async function getKitchenConfig(): Promise<
@@ -21,11 +21,14 @@ export async function getKitchenConfig(): Promise<
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Service call
-    const config = await KitchenConfigService.getByUserId(userId);
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
 
     // 4. Return response
     return { success: true, data: config };
@@ -37,7 +40,7 @@ export async function getKitchenConfig(): Promise<
 }
 
 /**
- * Save (create or update) the kitchen config for the currently authenticated user.
+ * Save (create or update) the kitchen config for the current user's location.
  * @param input - Kitchen config data to save
  * @returns ActionResponse containing the saved config
  */
@@ -61,11 +64,15 @@ export async function saveKitchenConfig(
     }
     const validatedData = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
-    const config = await KitchenConfigService.upsert(userId, validatedData);
+    const config = await KitchenConfigService.upsert(
+      ctx.orgId,
+      ctx.locationId,
+      validatedData
+    );
 
     // 5. Return response
     return { success: true, data: config };

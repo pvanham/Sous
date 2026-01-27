@@ -1,7 +1,6 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { dbConnect } from "@/lib/db";
 import {
   scheduleWeekSchema,
   scheduleStatusUpdateSchema,
@@ -15,6 +14,7 @@ import {
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
 
@@ -51,12 +51,13 @@ export async function getOrCreateScheduleForWeek(
     }
     const { weekStartDate } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
     const schedule = await ScheduleService.getOrCreateForWeek(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       weekStartDate,
     );
 
@@ -96,11 +97,15 @@ export async function getScheduleByWeek(
     }
     const { weekStartDate } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
-    const schedule = await ScheduleService.getByWeek(userId, weekStartDate);
+    const schedule = await ScheduleService.getByWeek(
+      ctx.orgId,
+      ctx.locationId,
+      weekStartDate,
+    );
 
     // 5. Return response
     return { success: true, data: schedule };
@@ -136,12 +141,13 @@ export async function updateScheduleStatus(
     }
     const { scheduleId, status } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
     const schedule = await ScheduleService.updateStatus(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       scheduleId,
       status,
     );
@@ -186,12 +192,13 @@ export async function updateScheduleNotes(
     }
     const { scheduleId, notes } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
     const schedule = await ScheduleService.updateNotes(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       scheduleId,
       notes ?? "",
     );
@@ -226,14 +233,18 @@ export async function deleteSchedule(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Delete shifts first
     const shiftsDeleted = await ShiftService.deleteBySchedule(scheduleId);
 
     // 4. Delete schedule
-    const deleted = await ScheduleService.delete(userId, scheduleId);
+    const deleted = await ScheduleService.delete(
+      ctx.orgId,
+      ctx.locationId,
+      scheduleId,
+    );
 
     if (!deleted) {
       return { success: false, error: "Schedule not found" };
@@ -274,12 +285,13 @@ export async function copyWeekShifts(
     }
     const { sourceScheduleId, targetWeekStart } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Get source schedule to validate ownership and get source week start
     const sourceSchedule = await ScheduleService.getById(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       sourceScheduleId,
     );
     if (!sourceSchedule) {
@@ -304,13 +316,15 @@ export async function copyWeekShifts(
 
     // 7. Get or create target schedule
     const targetSchedule = await ScheduleService.getOrCreateForWeek(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       targetWeekStart,
     );
 
     // 8. Copy shifts using service
     const result = await ShiftService.copyShiftsToNewWeek(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       sourceScheduleId,
       targetSchedule.id,
       dayOffset,
@@ -348,11 +362,15 @@ export async function publishSchedule(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Get schedule to verify ownership
-    const schedule = await ScheduleService.getById(userId, scheduleId);
+    const schedule = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      scheduleId,
+    );
     if (!schedule) {
       return { success: false, error: "Schedule not found" };
     }
@@ -375,8 +393,8 @@ export async function publishSchedule(
     // 6. Check for manager coverage gaps
     let managerWarnings: ManagerCoverageGap[] = [];
     const [staff, config] = await Promise.all([
-      StaffService.list(userId),
-      KitchenConfigService.getByUserId(userId),
+      StaffService.list(ctx.orgId, ctx.locationId),
+      KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
     ]);
 
     if (config) {
@@ -390,7 +408,8 @@ export async function publishSchedule(
 
     // 7. Update status to PUBLISHED
     const updatedSchedule = await ScheduleService.updateStatus(
-      userId,
+      ctx.orgId,
+      ctx.locationId,
       scheduleId,
       "PUBLISHED",
     );
@@ -428,11 +447,15 @@ export async function clearWeekShifts(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Verify schedule ownership
-    const schedule = await ScheduleService.getById(userId, scheduleId);
+    const schedule = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      scheduleId,
+    );
     if (!schedule) {
       return { success: false, error: "Schedule not found" };
     }

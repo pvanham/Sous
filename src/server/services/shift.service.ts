@@ -10,7 +10,8 @@ export const ShiftService = {
   /**
    * Check if a shift would overlap with existing shifts for a staff member.
    * Two shifts overlap if: (A.start < B.end) AND (A.end > B.start)
-   * @param userId - Clerk user ID (for filtering)
+   * @param orgId - Organization ID (for filtering)
+   * @param locationId - Location ID (for filtering)
    * @param staffId - Staff member ID
    * @param start - Proposed shift start time
    * @param end - Proposed shift end time
@@ -18,14 +19,16 @@ export const ShiftService = {
    * @returns true if overlap exists, false otherwise
    */
   async checkOverlap(
-    userId: string,
+    orgId: string,
+    locationId: string,
     staffId: string,
     start: Date,
     end: Date,
     excludeShiftId?: string
   ): Promise<boolean> {
     const query: Record<string, unknown> = {
-      userId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
       staffId: new Types.ObjectId(staffId),
       // Overlap condition: existing.start < new.end AND existing.end > new.start
       start: { $lt: end },
@@ -50,7 +53,8 @@ export const ShiftService = {
   async create(data: CreateShiftInput): Promise<ShiftDTO> {
     // Check for overlap before creating
     const hasOverlap = await this.checkOverlap(
-      data.userId,
+      data.orgId,
+      data.locationId,
       data.staffId,
       data.start,
       data.end
@@ -61,7 +65,8 @@ export const ShiftService = {
     }
 
     const doc = await Shift.create({
-      userId: data.userId,
+      orgId: new Types.ObjectId(data.orgId),
+      locationId: new Types.ObjectId(data.locationId),
       scheduleId: new Types.ObjectId(data.scheduleId),
       staffId: new Types.ObjectId(data.staffId),
       start: data.start,
@@ -75,19 +80,25 @@ export const ShiftService = {
 
   /**
    * Update an existing shift.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param shiftId - Shift document ID
    * @param data - Partial shift data to update
    * @returns Updated ShiftDTO or null if not found
    * @throws Error if updated shift would overlap with existing shift
    */
   async update(
-    userId: string,
+    orgId: string,
+    locationId: string,
     shiftId: string,
     data: UpdateShiftInput
   ): Promise<ShiftDTO | null> {
     // First, get the existing shift to check ownership and get current values
-    const existing = await Shift.findOne({ _id: shiftId, userId }).lean();
+    const existing = await Shift.findOne({
+      _id: shiftId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).lean();
     if (!existing) return null;
 
     // Determine the effective start and end times
@@ -96,7 +107,8 @@ export const ShiftService = {
 
     // Check for overlap with the new times (excluding self)
     const hasOverlap = await this.checkOverlap(
-      userId,
+      orgId,
+      locationId,
       String(existing.staffId),
       effectiveStart,
       effectiveEnd,
@@ -115,7 +127,11 @@ export const ShiftService = {
     if (data.notes !== undefined) updateData.notes = data.notes;
 
     const doc = await Shift.findOneAndUpdate(
-      { _id: shiftId, userId },
+      {
+        _id: shiftId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
       { $set: updateData },
       { new: true, runValidators: true }
     ).lean();
@@ -126,12 +142,21 @@ export const ShiftService = {
 
   /**
    * Delete a shift.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param shiftId - Shift document ID
    * @returns true if deleted, false if not found
    */
-  async delete(userId: string, shiftId: string): Promise<boolean> {
-    const result = await Shift.deleteOne({ _id: shiftId, userId });
+  async delete(
+    orgId: string,
+    locationId: string,
+    shiftId: string
+  ): Promise<boolean> {
+    const result = await Shift.deleteOne({
+      _id: shiftId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
     return result.deletedCount > 0;
   },
 
@@ -175,12 +200,21 @@ export const ShiftService = {
 
   /**
    * Get a single shift by ID.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param shiftId - Shift document ID
    * @returns ShiftDTO or null if not found
    */
-  async getById(userId: string, shiftId: string): Promise<ShiftDTO | null> {
-    const doc = await Shift.findOne({ _id: shiftId, userId }).lean();
+  async getById(
+    orgId: string,
+    locationId: string,
+    shiftId: string
+  ): Promise<ShiftDTO | null> {
+    const doc = await Shift.findOne({
+      _id: shiftId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).lean();
     if (!doc) return null;
     return toShiftDTO(doc);
   },
@@ -198,26 +232,44 @@ export const ShiftService = {
   },
 
   /**
-   * Delete all shifts for a user (for testing/cleanup).
-   * @param userId - Clerk user ID
+   * Delete all shifts for a location (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns Number of deleted documents
    */
-  async deleteAllByUserId(userId: string): Promise<number> {
-    const result = await Shift.deleteMany({ userId });
+  async deleteAllByLocation(orgId: string, locationId: string): Promise<number> {
+    const result = await Shift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
+    return result.deletedCount;
+  },
+
+  /**
+   * Delete all shifts for an organization (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @returns Number of deleted documents
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await Shift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
     return result.deletedCount;
   },
 
   /**
    * Copy shifts from one schedule to another with adjusted dates.
    * Handles overlap detection - skips shifts that would conflict with existing ones.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param sourceScheduleId - Schedule ID to copy from
    * @param targetScheduleId - Schedule ID to copy to
    * @param dayOffset - Number of days to add to shift dates (e.g., 7 for next week)
    * @returns Object with count of created and skipped shifts
    */
   async copyShiftsToNewWeek(
-    userId: string,
+    orgId: string,
+    locationId: string,
     sourceScheduleId: string,
     targetScheduleId: string,
     dayOffset: number
@@ -238,7 +290,8 @@ export const ShiftService = {
 
       // Check if this shift would overlap with existing shifts in target schedule
       const hasOverlap = await this.checkOverlap(
-        userId,
+        orgId,
+        locationId,
         sourceShift.staffId,
         newStart,
         newEnd
@@ -252,7 +305,8 @@ export const ShiftService = {
 
       // Create the new shift in the target schedule
       await Shift.create({
-        userId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
         scheduleId: new Types.ObjectId(targetScheduleId),
         staffId: new Types.ObjectId(sourceShift.staffId),
         start: newStart,

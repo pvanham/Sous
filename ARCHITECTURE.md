@@ -28,7 +28,7 @@ Sous is a reactive, AI-powered scheduling platform for high-volume kitchens. The
 - **Separation of Concerns**: Strict 3-layer architecture prevents spaghetti code
 - **Type Safety**: End-to-end TypeScript with Zod validation
 - **AI-First Design**: LLM integration at the core, not bolted on
-- **Multi-Tenancy**: All data scoped by `userId` (Clerk)
+- **Multi-Tenancy**: All data scoped by `orgId` + `locationId` (supports multi-location)
 
 ### Tech Stack
 
@@ -130,6 +130,9 @@ src/
 │   ├── utils.ts                      # cn() and basic helpers
 │   ├── safe-action.ts                # ActionResponse type
 │   │
+│   ├── auth/                         # Auth utilities
+│   │   └── get-location-context.ts   # Resolve orgId + locationId from userId
+│   │
 │   ├── ai/                           # AI client utilities
 │   │   └── openai-client.ts
 │   │
@@ -154,6 +157,9 @@ src/
 ├── server/                           # Server-side logic ("Backend")
 │   │
 │   ├── models/                       # Mongoose schemas
+│   │   ├── Organization.ts           # Tenant container
+│   │   ├── Location.ts               # Kitchen location within org
+│   │   ├── OrganizationMember.ts     # User-to-location membership
 │   │   ├── KitchenConfig.ts
 │   │   ├── Staff.ts
 │   │   ├── Schedule.ts
@@ -165,6 +171,9 @@ src/
 │   │   └── CoverageRequest.ts        # Phase 4
 │   │
 │   ├── services/                     # Business logic (DB access)
+│   │   ├── organization.service.ts
+│   │   ├── location.service.ts
+│   │   ├── organization-member.service.ts
 │   │   ├── kitchen-config.service.ts
 │   │   ├── staff.service.ts
 │   │   ├── schedule.service.ts
@@ -185,6 +194,8 @@ src/
 │   │           └── message-parsing.ts
 │   │
 │   └── actions/                      # Server Actions
+│       ├── organization.actions.ts
+│       ├── location.actions.ts
 │       ├── kitchen-config.actions.ts
 │       ├── staff.actions.ts
 │       ├── schedule.actions.ts
@@ -197,6 +208,9 @@ src/
 │       └── notification.actions.ts
 │
 ├── types/                            # TypeScript types & DTOs
+│   ├── organization.ts
+│   ├── location.ts
+│   ├── organization-member.ts
 │   ├── kitchen-config.ts
 │   ├── staff.ts
 │   ├── schedule.ts
@@ -297,6 +311,9 @@ This is the **most important rule** in the codebase. All data flows through exac
 │                                                                              │
 │   MongoDB Atlas                                                              │
 │   └── sous (database)                                                        │
+│       ├── organizations                                                      │
+│       ├── locations                                                          │
+│       ├── organization_members                                               │
 │       ├── kitchenconfigs                                                     │
 │       ├── staff                                                              │
 │       ├── schedules                                                          │
@@ -323,12 +340,45 @@ This is the **most important rule** in the codebase. All data flows through exac
 
 ## 4. Data Models
 
+### Multi-Tenancy Models (Foundation)
+
+```typescript
+// Organization - Tenant container
+{
+  ownerId: string,          // Clerk user ID of owner
+  name: string,
+  createdAt: Date,
+  updatedAt: Date
+}
+
+// Location - Kitchen location within an organization
+{
+  orgId: ObjectId,          // Reference to Organization
+  name: string,
+  timezone: string,         // IANA timezone (e.g., "America/New_York")
+  twilioPhoneNumber?: string, // E.164 format, optional
+  createdAt: Date,
+  updatedAt: Date
+}
+
+// OrganizationMember - User-to-location membership
+{
+  orgId: ObjectId,          // Reference to Organization
+  locationId: ObjectId?,    // Reference to Location (null = org-wide access)
+  clerkUserId: string,      // Clerk user ID
+  role: 'owner' | 'manager',
+  createdAt: Date,
+  updatedAt: Date
+}
+```
+
 ### Current Models (Phase 1-2)
 
 ```typescript
 // KitchenConfig - Restaurant settings
 {
-  userId: string,           // Clerk user ID (owner)
+  orgId: ObjectId,          // Reference to Organization
+  locationId: ObjectId,     // Reference to Location
   name: string,
   stations: string[],       // ["Grill", "Prep", "Assembly"]
   roles: string[],          // ["Manager", "Cook", "Host"]
@@ -340,7 +390,8 @@ This is the **most important rule** in the codebase. All data flows through exac
 
 // Staff - Employee records
 {
-  userId: string,           // Kitchen owner
+  orgId: ObjectId,          // Reference to Organization
+  locationId: ObjectId,     // Reference to Location
   name: string,
   email: string,
   phone: string,
@@ -357,7 +408,8 @@ This is the **most important rule** in the codebase. All data flows through exac
 
 // Schedule - Week container
 {
-  userId: string,
+  orgId: ObjectId,          // Reference to Organization
+  locationId: ObjectId,     // Reference to Location
   weekStartDate: Date,      // Always a Monday
   status: 'DRAFT' | 'PUBLISHED',
   notes: string
@@ -365,7 +417,8 @@ This is the **most important rule** in the codebase. All data flows through exac
 
 // Shift - Individual work assignment
 {
-  userId: string,
+  orgId: ObjectId,          // Reference to Organization
+  locationId: ObjectId,     // Reference to Location
   scheduleId: ObjectId,
   staffId: ObjectId,
   start: Date,
@@ -448,28 +501,40 @@ This is the **most important rule** in the codebase. All data flows through exac
 
 ### Service Object Pattern
 
-Group related operations into service objects:
+Group related operations into service objects. All services use `(orgId, locationId)` for multi-location scoping:
 
 ```typescript
 // src/server/services/staff.service.ts
+import { Types } from "mongoose";
 import Staff from "@/server/models/Staff";
 import { toStaffDTO } from "@/types/staff";
 import type { StaffDTO, StaffInput } from "@/types/staff";
 
 export const StaffService = {
   /**
-   * Get all staff for a kitchen
+   * Get all staff for a location
    */
-  async getAll(userId: string): Promise<StaffDTO[]> {
-    const docs = await Staff.find({ userId }).sort({ name: 1 }).lean();
+  async list(orgId: string, locationId: string): Promise<StaffDTO[]> {
+    const docs = await Staff.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).sort({ name: 1 }).lean();
     return docs.map(toStaffDTO);
   },
 
   /**
    * Create a new staff member
    */
-  async create(userId: string, data: StaffInput): Promise<StaffDTO> {
-    const doc = await Staff.create({ userId, ...data });
+  async create(
+    orgId: string,
+    locationId: string,
+    data: StaffInput
+  ): Promise<StaffDTO> {
+    const doc = await Staff.create({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      ...data,
+    });
     return toStaffDTO(doc);
   },
 
@@ -477,7 +542,8 @@ export const StaffService = {
    * Find available staff for a time slot
    */
   async findAvailable(
-    userId: string,
+    orgId: string,
+    locationId: string,
     date: Date,
     startTime: string,
     endTime: string,
@@ -491,10 +557,13 @@ export const StaffService = {
   },
 
   /**
-   * Delete all staff for testing cleanup
+   * Delete all staff for a location (testing cleanup)
    */
-  async deleteAllByUserId(userId: string): Promise<number> {
-    const result = await Staff.deleteMany({ userId });
+  async deleteAllByLocation(orgId: string, locationId: string): Promise<number> {
+    const result = await Staff.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
     return result.deletedCount;
   },
 };
@@ -511,7 +580,8 @@ import type { Types, Document } from "mongoose";
 // Raw Mongoose document shape
 interface StaffDocument {
   _id: Types.ObjectId;
-  userId: string;
+  orgId: Types.ObjectId;
+  locationId: Types.ObjectId;
   name: string;
   email: string;
   phone: string;
@@ -525,7 +595,8 @@ interface StaffDocument {
 // Clean DTO for UI
 export interface StaffDTO {
   id: string;              // ObjectId → string
-  userId: string;
+  orgId: string;           // ObjectId → string
+  locationId: string;      // ObjectId → string
   name: string;
   email: string;
   phone: string;
@@ -540,7 +611,8 @@ export interface StaffDTO {
 export function toStaffDTO(doc: StaffDocument): StaffDTO {
   return {
     id: doc._id.toString(),
-    userId: doc.userId,
+    orgId: doc.orgId.toString(),
+    locationId: doc.locationId.toString(),
     name: doc.name,
     email: doc.email,
     phone: doc.phone,
@@ -564,9 +636,9 @@ export function toStaffDTO(doc: StaffDocument): StaffDTO {
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { dbConnect } from "@/lib/db";
 import { exampleSchema } from "@/lib/validations/example.schema";
 import { ExampleService } from "@/server/services/example.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ExampleDTO } from "@/types/example";
 
@@ -588,12 +660,12 @@ export async function createExample(
     return { success: false, error: parsed.error.errors[0]?.message ?? "Invalid input" };
   }
 
-  // 3. DB Connection (REQUIRED)
-  await dbConnect();
+  // 3. Get location context (handles DB connection + resolves orgId/locationId)
+  const ctx = await getLocationContext(userId);
 
   // 4. Service call with error handling
   try {
-    const result = await ExampleService.create(userId, parsed.data);
+    const result = await ExampleService.create(ctx.orgId, ctx.locationId, parsed.data);
     return { success: true, data: result };
   } catch (error) {
     console.error("createExample error:", error);
@@ -613,10 +685,11 @@ export async function getExamples(): Promise<ActionResponse<ExampleDTO[]>> {
     return { success: false, error: "Unauthorized" };
   }
 
-  await dbConnect();
+  // Get location context (handles DB connection)
+  const ctx = await getLocationContext(userId);
 
   try {
-    const result = await ExampleService.getAll(userId);
+    const result = await ExampleService.getAll(ctx.orgId, ctx.locationId);
     return { success: true, data: result };
   } catch (error) {
     console.error("getExamples error:", error);

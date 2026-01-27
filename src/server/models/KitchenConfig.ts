@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
 // Operating hours interface for a single day
 export interface IOperatingHours {
@@ -20,7 +20,8 @@ export interface IWeeklyOperatingHours {
 
 // Main KitchenConfig interface
 export interface IKitchenConfig {
-  userId: string;
+  orgId: Types.ObjectId;
+  locationId: Types.ObjectId;
   name: string;
   stations: string[];
   roles: string[];
@@ -45,10 +46,16 @@ const OperatingHoursSchema = new Schema<IOperatingHours>(
 // Main KitchenConfig schema
 const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
   {
-    userId: {
-      type: String,
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
       required: true,
-      unique: true,
+      index: true,
+    },
+    locationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Location",
+      required: true,
       index: true,
     },
     name: {
@@ -87,6 +94,9 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
     timestamps: true,
   }
 );
+
+// Unique constraint: one config per location
+KitchenConfigSchema.index({ orgId: 1, locationId: 1 }, { unique: true });
 
 // Singleton pattern for Next.js HMR compatibility
 // Prevents "Cannot overwrite model once compiled" error

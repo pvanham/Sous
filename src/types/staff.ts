@@ -6,7 +6,8 @@ export interface StaffSkill {
 
 // Staff interface matching Mongoose document
 export interface IStaff {
-  userId: string;
+  orgId: unknown; // ObjectId in document, string after conversion
+  locationId: unknown; // ObjectId in document, string after conversion
   name: string;
   email: string;
   phone: string;
@@ -20,7 +21,8 @@ export interface IStaff {
 // DTO returned from service layer (without Mongoose internals)
 export interface StaffDTO {
   id: string;
-  userId: string;
+  orgId: string;
+  locationId: string;
   name: string;
   email: string;
   phone: string;
@@ -67,7 +69,8 @@ export interface PaginatedStaffResult {
 export function toStaffDTO(doc: IStaff & { _id: unknown }): StaffDTO {
   return {
     id: String(doc._id),
-    userId: doc.userId,
+    orgId: String(doc.orgId),
+    locationId: String(doc.locationId),
     name: doc.name,
     email: doc.email,
     phone: doc.phone,

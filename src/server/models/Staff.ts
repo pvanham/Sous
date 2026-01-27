@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { StaffSkill, IStaff } from "@/types/staff";
 
 // Document interface (with Mongoose document methods)
@@ -24,8 +24,15 @@ const SkillSchema = new Schema<StaffSkill>(
 // Main Staff schema
 const StaffSchema = new Schema<IStaffDocument>(
   {
-    userId: {
-      type: String,
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
+    locationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Location",
       required: true,
       index: true,
     },
@@ -69,8 +76,11 @@ const StaffSchema = new Schema<IStaffDocument>(
   }
 );
 
-// Composite unique index: one email per userId (restaurant owner)
-StaffSchema.index({ userId: 1, email: 1 }, { unique: true });
+// Composite unique index: one email per location
+StaffSchema.index({ orgId: 1, locationId: 1, email: 1 }, { unique: true });
+
+// Index for SMS lookup (phone number per location)
+StaffSchema.index({ orgId: 1, locationId: 1, phone: 1 });
 
 // Singleton pattern for Next.js HMR compatibility
 const Staff: Model<IStaffDocument> =

@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model } from "mongoose";
+import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { ISchedule, ScheduleStatus } from "@/types/schedule";
 
 // Document interface (with Mongoose document methods)
@@ -10,8 +10,15 @@ const SCHEDULE_STATUSES: ScheduleStatus[] = ["DRAFT", "PUBLISHED"];
 // Main Schedule schema
 const ScheduleSchema = new Schema<IScheduleDocument>(
   {
-    userId: {
-      type: String,
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
+    locationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Location",
       required: true,
       index: true,
     },
@@ -41,8 +48,8 @@ const ScheduleSchema = new Schema<IScheduleDocument>(
   }
 );
 
-// Composite unique index: one schedule per week per user
-ScheduleSchema.index({ userId: 1, weekStartDate: 1 }, { unique: true });
+// Composite unique index: one schedule per week per location
+ScheduleSchema.index({ orgId: 1, locationId: 1, weekStartDate: 1 }, { unique: true });
 
 // Singleton pattern for Next.js HMR compatibility
 const Schedule: Model<IScheduleDocument> =

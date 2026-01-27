@@ -6,7 +6,8 @@ export type { IOperatingHours, IWeeklyOperatingHours };
 // DTO returned from service layer (without Mongoose internals)
 export interface KitchenConfigDTO {
   id: string;
-  userId: string;
+  orgId: string;
+  locationId: string;
   name: string;
   stations: string[];
   roles: string[];
@@ -19,7 +20,8 @@ export interface KitchenConfigDTO {
 export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): KitchenConfigDTO {
   return {
     id: String(doc._id),
-    userId: doc.userId,
+    orgId: String(doc.orgId),
+    locationId: String(doc.locationId),
     name: doc.name,
     stations: doc.stations,
     roles: doc.roles,

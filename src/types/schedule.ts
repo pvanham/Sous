@@ -3,7 +3,8 @@ export type ScheduleStatus = "DRAFT" | "PUBLISHED";
 
 // Schedule interface matching Mongoose document
 export interface ISchedule {
-  userId: string;
+  orgId: unknown; // ObjectId in document, string after conversion
+  locationId: unknown; // ObjectId in document, string after conversion
   weekStartDate: Date;
   status: ScheduleStatus;
   notes: string;
@@ -14,7 +15,8 @@ export interface ISchedule {
 // DTO returned from service layer (without Mongoose internals)
 export interface ScheduleDTO {
   id: string;
-  userId: string;
+  orgId: string;
+  locationId: string;
   weekStartDate: Date;
   status: ScheduleStatus;
   notes: string;
@@ -26,7 +28,8 @@ export interface ScheduleDTO {
 export function toScheduleDTO(doc: ISchedule & { _id: unknown }): ScheduleDTO {
   return {
     id: String(doc._id),
-    userId: doc.userId,
+    orgId: String(doc.orgId),
+    locationId: String(doc.locationId),
     weekStartDate: doc.weekStartDate,
     status: doc.status,
     notes: doc.notes,

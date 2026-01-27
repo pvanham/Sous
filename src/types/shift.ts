@@ -1,7 +1,8 @@
 // Shift interface matching Mongoose document (raw)
-// Note: scheduleId and staffId are ObjectIds in MongoDB, but may be strings when converted
+// Note: ObjectIds in MongoDB become strings after conversion
 export interface IShift {
-  userId: string;
+  orgId: unknown; // ObjectId in document, string after conversion
+  locationId: unknown; // ObjectId in document, string after conversion
   scheduleId: unknown; // ObjectId in document, string after conversion
   staffId: unknown; // ObjectId in document, string after conversion
   start: Date;
@@ -15,7 +16,8 @@ export interface IShift {
 // DTO returned from service layer (without Mongoose internals)
 export interface ShiftDTO {
   id: string;
-  userId: string;
+  orgId: string;
+  locationId: string;
   scheduleId: string;
   staffId: string;
   start: Date;
@@ -28,7 +30,8 @@ export interface ShiftDTO {
 
 // Input type for creating a shift
 export interface CreateShiftInput {
-  userId: string;
+  orgId: string;
+  locationId: string;
   scheduleId: string;
   staffId: string;
   start: Date;
@@ -49,7 +52,8 @@ export interface UpdateShiftInput {
 export function toShiftDTO(doc: IShift & { _id: unknown }): ShiftDTO {
   return {
     id: String(doc._id),
-    userId: doc.userId,
+    orgId: String(doc.orgId),
+    locationId: String(doc.locationId),
     scheduleId: String(doc.scheduleId),
     staffId: String(doc.staffId),
     start: doc.start,

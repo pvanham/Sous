@@ -1,3 +1,4 @@
+import { Types } from "mongoose";
 import Schedule from "@/server/models/Schedule";
 import { ScheduleDTO, ScheduleStatus, toScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
@@ -156,28 +157,35 @@ function findManagerGapsForDay(
 export const ScheduleService = {
   /**
    * Get or create a schedule for a specific week.
-   * @param userId - Clerk user ID (restaurant owner)
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param weekStartDate - Monday of the week
    * @returns ScheduleDTO
    */
   async getOrCreateForWeek(
-    userId: string,
+    orgId: string,
+    locationId: string,
     weekStartDate: Date,
   ): Promise<ScheduleDTO> {
     // Normalize to start of day
     const normalizedDate = new Date(weekStartDate);
     normalizedDate.setHours(0, 0, 0, 0);
 
+    const orgObjectId = new Types.ObjectId(orgId);
+    const locationObjectId = new Types.ObjectId(locationId);
+
     // Try to find existing schedule
     let doc = await Schedule.findOne({
-      userId,
+      orgId: orgObjectId,
+      locationId: locationObjectId,
       weekStartDate: normalizedDate,
     }).lean();
 
     // If not found, create a new one
     if (!doc) {
       const newSchedule = await Schedule.create({
-        userId,
+        orgId: orgObjectId,
+        locationId: locationObjectId,
         weekStartDate: normalizedDate,
         status: "DRAFT",
         notes: "",
@@ -190,12 +198,14 @@ export const ScheduleService = {
 
   /**
    * Get a schedule by week start date.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param weekStartDate - Monday of the week
    * @returns ScheduleDTO or null if not found
    */
   async getByWeek(
-    userId: string,
+    orgId: string,
+    locationId: string,
     weekStartDate: Date,
   ): Promise<ScheduleDTO | null> {
     // Normalize to start of day
@@ -203,7 +213,8 @@ export const ScheduleService = {
     normalizedDate.setHours(0, 0, 0, 0);
 
     const doc = await Schedule.findOne({
-      userId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
       weekStartDate: normalizedDate,
     }).lean();
 
@@ -213,17 +224,20 @@ export const ScheduleService = {
 
   /**
    * Get a schedule by ID.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param scheduleId - Schedule document ID
    * @returns ScheduleDTO or null if not found
    */
   async getById(
-    userId: string,
+    orgId: string,
+    locationId: string,
     scheduleId: string,
   ): Promise<ScheduleDTO | null> {
     const doc = await Schedule.findOne({
       _id: scheduleId,
-      userId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
     }).lean();
 
     if (!doc) return null;
@@ -232,18 +246,24 @@ export const ScheduleService = {
 
   /**
    * Update schedule status.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param scheduleId - Schedule document ID
    * @param status - New status (DRAFT or PUBLISHED)
    * @returns Updated ScheduleDTO or null if not found
    */
   async updateStatus(
-    userId: string,
+    orgId: string,
+    locationId: string,
     scheduleId: string,
     status: ScheduleStatus,
   ): Promise<ScheduleDTO | null> {
     const doc = await Schedule.findOneAndUpdate(
-      { _id: scheduleId, userId },
+      {
+        _id: scheduleId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
       { $set: { status } },
       { new: true, runValidators: true },
     ).lean();
@@ -254,18 +274,24 @@ export const ScheduleService = {
 
   /**
    * Update schedule notes.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param scheduleId - Schedule document ID
    * @param notes - New notes content
    * @returns Updated ScheduleDTO or null if not found
    */
   async updateNotes(
-    userId: string,
+    orgId: string,
+    locationId: string,
     scheduleId: string,
     notes: string,
   ): Promise<ScheduleDTO | null> {
     const doc = await Schedule.findOneAndUpdate(
-      { _id: scheduleId, userId },
+      {
+        _id: scheduleId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
       { $set: { notes } },
       { new: true, runValidators: true },
     ).lean();
@@ -276,22 +302,47 @@ export const ScheduleService = {
 
   /**
    * Delete a schedule and all associated shifts.
-   * @param userId - Clerk user ID (ownership check)
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
    * @param scheduleId - Schedule document ID
    * @returns true if deleted, false if not found
    */
-  async delete(userId: string, scheduleId: string): Promise<boolean> {
-    const result = await Schedule.deleteOne({ _id: scheduleId, userId });
+  async delete(
+    orgId: string,
+    locationId: string,
+    scheduleId: string
+  ): Promise<boolean> {
+    const result = await Schedule.deleteOne({
+      _id: scheduleId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
     return result.deletedCount > 0;
   },
 
   /**
-   * Delete all schedules for a user (for testing/cleanup).
-   * @param userId - Clerk user ID
+   * Delete all schedules for a location (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @returns Number of deleted documents
    */
-  async deleteAllByUserId(userId: string): Promise<number> {
-    const result = await Schedule.deleteMany({ userId });
+  async deleteAllByLocation(orgId: string, locationId: string): Promise<number> {
+    const result = await Schedule.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
+    return result.deletedCount;
+  },
+
+  /**
+   * Delete all schedules for an organization (for testing/cleanup).
+   * @param orgId - Organization ID
+   * @returns Number of deleted documents
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await Schedule.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
     return result.deletedCount;
   },
 

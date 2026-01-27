@@ -1,7 +1,6 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { dbConnect } from "@/lib/db";
 import {
   createShiftSchema,
   updateShiftSchema,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/validations/shift.schema";
 import { ShiftService } from "@/server/services/shift.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ShiftDTO } from "@/types/shift";
 
@@ -39,15 +39,19 @@ export async function createShift(
     }
     const shiftData = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Validate station against KitchenConfig
-    const config = await KitchenConfigService.getByUserId(userId);
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
     if (!config) {
       return {
         success: false,
-        error: "Kitchen configuration not found. Please configure your kitchen first.",
+        error:
+          "Kitchen configuration not found. Please configure your kitchen first.",
       };
     }
 
@@ -60,7 +64,8 @@ export async function createShift(
 
     // 5. Service call
     const shift = await ShiftService.create({
-      userId,
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
       scheduleId: shiftData.scheduleId,
       staffId: shiftData.staffId,
       start: shiftData.start,
@@ -106,16 +111,20 @@ export async function updateShift(
     }
     const updateData = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Validate station if provided
     if (updateData.station) {
-      const config = await KitchenConfigService.getByUserId(userId);
+      const config = await KitchenConfigService.getByLocation(
+        ctx.orgId,
+        ctx.locationId
+      );
       if (!config) {
         return {
           success: false,
-          error: "Kitchen configuration not found. Please configure your kitchen first.",
+          error:
+            "Kitchen configuration not found. Please configure your kitchen first.",
         };
       }
 
@@ -128,7 +137,12 @@ export async function updateShift(
     }
 
     // 5. Service call
-    const shift = await ShiftService.update(userId, shiftId, updateData);
+    const shift = await ShiftService.update(
+      ctx.orgId,
+      ctx.locationId,
+      shiftId,
+      updateData
+    );
 
     if (!shift) {
       return { success: false, error: "Shift not found" };
@@ -168,11 +182,15 @@ export async function deleteShift(
     }
     const { shiftId } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
-    const deleted = await ShiftService.delete(userId, shiftId);
+    const deleted = await ShiftService.delete(
+      ctx.orgId,
+      ctx.locationId,
+      shiftId
+    );
 
     if (!deleted) {
       return { success: false, error: "Shift not found" };
@@ -212,8 +230,8 @@ export async function listShiftsBySchedule(
     }
     const { scheduleId } = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection - for auth check)
+    await getLocationContext(userId);
 
     // 4. Service call
     const shifts = await ShiftService.getBySchedule(scheduleId);
@@ -242,11 +260,15 @@ export async function getShift(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Service call
-    const shift = await ShiftService.getById(userId, shiftId);
+    const shift = await ShiftService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      shiftId
+    );
 
     // 4. Return response
     return { success: true, data: shift };

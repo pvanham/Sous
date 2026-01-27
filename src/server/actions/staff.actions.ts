@@ -1,7 +1,6 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { dbConnect } from "@/lib/db";
 import {
   staffSchema,
   staffUpdateSchema,
@@ -10,6 +9,7 @@ import {
 } from "@/lib/validations/staff.schema";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
   StaffDTO,
@@ -19,7 +19,7 @@ import type {
 } from "@/types/staff";
 
 /**
- * List all staff for the currently authenticated user (includes both active and inactive).
+ * List all staff for the current user's location (includes both active and inactive).
  * @returns ActionResponse containing array of StaffDTO
  */
 export async function listStaff(): Promise<ActionResponse<StaffDTO[]>> {
@@ -30,11 +30,11 @@ export async function listStaff(): Promise<ActionResponse<StaffDTO[]>> {
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Service call
-    const staff = await StaffService.list(userId);
+    const staff = await StaffService.list(ctx.orgId, ctx.locationId);
 
     // 4. Return response
     return { success: true, data: staff };
@@ -70,11 +70,15 @@ export async function listStaffPaginated(
     }
     const params = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Service call
-    const result = await StaffService.listPaginated(userId, params);
+    const result = await StaffService.listPaginated(
+      ctx.orgId,
+      ctx.locationId,
+      params
+    );
 
     // 5. Return response
     return { success: true, data: result };
@@ -115,11 +119,14 @@ export async function importStaffFromCSV(
       return { success: false, error: "No valid staff data to import" };
     }
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Fetch KitchenConfig to validate roles/stations
-    const config = await KitchenConfigService.getByUserId(userId);
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
     if (!config) {
       return {
         success: false,
@@ -171,7 +178,11 @@ export async function importStaffFromCSV(
     }
 
     // 6. Service call - bulk upsert
-    const result = await StaffService.bulkUpsert(userId, validStaff);
+    const result = await StaffService.bulkUpsert(
+      ctx.orgId,
+      ctx.locationId,
+      validStaff
+    );
 
     // 7. Return response with detailed error information
     return {
@@ -214,11 +225,14 @@ export async function createStaff(
     }
     const staffData = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Validate roles/stations against KitchenConfig
-    const config = await KitchenConfigService.getByUserId(userId);
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
     if (!config) {
       return {
         success: false,
@@ -249,7 +263,11 @@ export async function createStaff(
     }
 
     // 5. Service call
-    const staff = await StaffService.create(userId, staffData);
+    const staff = await StaffService.create(
+      ctx.orgId,
+      ctx.locationId,
+      staffData
+    );
 
     // 6. Return response
     return { success: true, data: staff };
@@ -294,12 +312,15 @@ export async function updateStaff(
     }
     const updateData = parseResult.data;
 
-    // 3. DB connect
-    await dbConnect();
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 4. Validate roles/stations if provided
     if (updateData.roles || updateData.skills) {
-      const config = await KitchenConfigService.getByUserId(userId);
+      const config = await KitchenConfigService.getByLocation(
+        ctx.orgId,
+        ctx.locationId
+      );
       if (!config) {
         return {
           success: false,
@@ -334,7 +355,12 @@ export async function updateStaff(
     }
 
     // 5. Service call
-    const staff = await StaffService.update(userId, staffId, updateData);
+    const staff = await StaffService.update(
+      ctx.orgId,
+      ctx.locationId,
+      staffId,
+      updateData
+    );
 
     if (!staff) {
       return { success: false, error: "Staff member not found" };
@@ -366,11 +392,16 @@ export async function setStaffActive(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Service call
-    const staff = await StaffService.setActive(userId, staffId, isActive);
+    const staff = await StaffService.setActive(
+      ctx.orgId,
+      ctx.locationId,
+      staffId,
+      isActive
+    );
 
     if (!staff) {
       return { success: false, error: "Staff member not found" };
@@ -400,11 +431,15 @@ export async function deleteStaff(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. DB connect
-    await dbConnect();
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
 
     // 3. Service call
-    const deleted = await StaffService.delete(userId, staffId);
+    const deleted = await StaffService.delete(
+      ctx.orgId,
+      ctx.locationId,
+      staffId
+    );
 
     if (!deleted) {
       return { success: false, error: "Staff member not found" };

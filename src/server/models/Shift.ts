@@ -2,7 +2,9 @@ import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { IShift } from "@/types/shift";
 
 // Document interface (with Mongoose document methods)
-export interface IShiftDocument extends Omit<IShift, "scheduleId" | "staffId">, Document {
+export interface IShiftDocument extends Omit<IShift, "orgId" | "locationId" | "scheduleId" | "staffId">, Document {
+  orgId: Types.ObjectId;
+  locationId: Types.ObjectId;
   scheduleId: Types.ObjectId;
   staffId: Types.ObjectId;
 }
@@ -10,8 +12,15 @@ export interface IShiftDocument extends Omit<IShift, "scheduleId" | "staffId">, 
 // Main Shift schema
 const ShiftSchema = new Schema<IShiftDocument>(
   {
-    userId: {
-      type: String,
+    orgId: {
+      type: Schema.Types.ObjectId,
+      ref: "Organization",
+      required: true,
+      index: true,
+    },
+    locationId: {
+      type: Schema.Types.ObjectId,
+      ref: "Location",
       required: true,
       index: true,
     },
@@ -60,8 +69,8 @@ ShiftSchema.pre("validate", function () {
 // Index for finding all shifts in a schedule for a staff member
 ShiftSchema.index({ scheduleId: 1, staffId: 1 });
 
-// Index for date range queries by user
-ShiftSchema.index({ userId: 1, start: 1, end: 1 });
+// Index for date range queries by location
+ShiftSchema.index({ orgId: 1, locationId: 1, start: 1, end: 1 });
 
 // Index for overlap detection (find shifts for a staff member in a time range)
 ShiftSchema.index({ staffId: 1, start: 1, end: 1 });
