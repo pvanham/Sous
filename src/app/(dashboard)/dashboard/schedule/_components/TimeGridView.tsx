@@ -15,7 +15,7 @@ import {
   getTimeFromPositionPercent,
 } from "@/lib/utils/date";
 import { assignLanes } from "@/lib/utils/shift-overlap";
-import { getStationColor } from "@/lib/utils/station-colors";
+import { getStationClasses } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
@@ -65,7 +65,7 @@ interface ShiftBlockProps {
   leftPercent: number;
   widthPercent: number;
   staffName: string;
-  stationColor: string;
+  stationClasses: string;
   tooltipText: string;
   onShiftClick: (shift: ShiftDTO) => void;
   onCreateShift: (day: Date, time: string) => void;
@@ -82,7 +82,7 @@ function ShiftBlock({
   leftPercent,
   widthPercent,
   staffName,
-  stationColor,
+  stationClasses,
   tooltipText,
   onShiftClick,
   onCreateShift,
@@ -162,11 +162,18 @@ function ShiftBlock({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Shift block */}
+      {/* Shift block - Glass pill style */}
       <div
         className={cn(
-          "absolute inset-0 rounded-md border cursor-pointer hover:shadow-md hover:ring-2 hover:ring-ring transition-shadow",
-          stationColor
+          "absolute inset-0 rounded cursor-pointer transition-all",
+          // Glass background
+          "bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm",
+          // Borders
+          "border-y border-r border-slate-200 dark:border-white/10",
+          // Station-specific colors (includes left border)
+          stationClasses,
+          // Hover state
+          "hover:bg-white/80 dark:hover:bg-slate-900/80 hover:ring-2 hover:ring-primary"
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -174,13 +181,21 @@ function ShiftBlock({
         }}
         onDoubleClick={handleDoubleClick}
         title={tooltipText}
-      />
+      >
+        {/* Staff name and station - visible when shift is tall enough */}
+        <div className="absolute inset-0 p-1 overflow-hidden">
+          <div className="font-sans text-[10px] font-medium truncate">{staffName}</div>
+          <div className="font-mono text-[9px] text-muted-foreground truncate">
+            {formatTimeString(startTime)}
+          </div>
+        </div>
+      </div>
 
       {/* Dynamic hover overlay with + icon */}
       <button
         ref={buttonRef}
         className={cn(
-          "absolute right-0.5 p-0.5 rounded-full bg-background/80 hover:bg-accent border border-border z-20 cursor-pointer transition-opacity",
+          "absolute right-0.5 p-0.5 rounded-full bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 z-20 cursor-pointer transition-opacity",
           isHovering ? "opacity-100" : "opacity-0"
         )}
         style={{ top: "8px", transform: "translateY(-50%)" }}
@@ -286,14 +301,14 @@ export function TimeGridView({
     >
       <div className="min-w-[900px]">
         {/* Header Row - Day Labels */}
-        <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-1 border-b border-border pb-2 mb-2">
-          <div className="font-semibold text-sm p-2 text-muted-foreground">
+        <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-1 border-b border-slate-200 dark:border-white/10 pb-2 mb-2">
+          <div className="font-mono text-xs p-2 text-slate-500 dark:text-slate-400">
             Time
           </div>
           {weekDays.map((day) => (
             <div
               key={day.toISOString()}
-              className="font-semibold text-sm text-center p-2"
+              className="font-sans font-semibold text-sm text-center p-2 text-slate-700 dark:text-slate-300"
             >
               {formatDayLabel(day)}
             </div>
@@ -307,7 +322,7 @@ export function TimeGridView({
             {timeSlots.map((time, index) => (
               <div
                 key={time}
-                className="absolute left-0 right-0 text-xs text-muted-foreground pr-2 text-right"
+                className="absolute left-0 right-0 font-mono text-xs text-slate-500 dark:text-slate-400 pr-2 text-right"
                 style={{ top: index * slotHeight, height: slotHeight }}
               >
                 <span className="-translate-y-1/2 inline-block">
@@ -324,22 +339,25 @@ export function TimeGridView({
             return (
               <div
                 key={day.toISOString()}
-                className="relative border-l border-border"
+                className="relative border-l border-slate-200/50 dark:border-white/5"
                 style={{ height: totalHeight }}
               >
-                {/* Time Grid Lines */}
+                {/* Time Grid Lines - Subtle (Industrial) */}
                 {timeSlots.map((time, index) => (
                   <div
                     key={time}
                     className={cn(
-                      "absolute left-0 right-0 border-t border-border/50 cursor-pointer hover:bg-muted/50 transition-colors group",
-                      index % 2 === 0 && "border-border"
+                      "absolute left-0 right-0 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors group",
+                      // Subtle grid lines - barely visible
+                      "border-t border-slate-200/30 dark:border-white/5",
+                      // Hour lines slightly more visible
+                      index % 2 === 0 && "border-slate-200/50 dark:border-white/10"
                     )}
                     style={{ top: index * slotHeight, height: slotHeight }}
                     onClick={() => onCreateShift(day, time)}
                   >
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus className="h-4 w-4 text-muted-foreground" />
+                      <Plus className="h-4 w-4 text-slate-400" />
                     </div>
                   </div>
                 ))}
@@ -373,7 +391,7 @@ export function TimeGridView({
                     const leftPercent = lane * widthPercent;
 
                     const staffName = getStaffName(staff, shift.staffId);
-                    const stationColor = getStationColor(shift.station);
+                    const stationClasses = getStationClasses(shift.station);
 
                     // Build tooltip text
                     const tooltipText = `${staffName}\n${shift.station}\n${formatTimeString(startTime)} - ${formatTimeString(endTime)}`;
@@ -390,7 +408,7 @@ export function TimeGridView({
                         leftPercent={leftPercent}
                         widthPercent={widthPercent}
                         staffName={staffName}
-                        stationColor={stationColor}
+                        stationClasses={stationClasses}
                         tooltipText={tooltipText}
                         onShiftClick={handleShiftClick}
                         onCreateShift={onCreateShift}

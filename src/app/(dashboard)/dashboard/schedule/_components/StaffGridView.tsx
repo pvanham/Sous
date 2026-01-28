@@ -58,7 +58,7 @@ export function StaffGridView({
 
   if (activeStaff.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-muted/50 p-8 text-center">
+      <div className="rounded border border-slate-200 dark:border-white/10 bg-muted/50 p-8 text-center">
         <p className="text-muted-foreground">No active staff members found.</p>
         <p className="text-sm text-muted-foreground mt-1">
           Add staff members to start creating schedules.
@@ -71,13 +71,13 @@ export function StaffGridView({
     <div className="overflow-x-auto">
       <div className="grid grid-cols-[150px_repeat(7,minmax(100px,1fr))] gap-1 min-w-[900px]">
         {/* Header Row - Column Labels */}
-        <div className="font-semibold text-sm p-2 border-b border-border">
+        <div className="font-sans font-semibold text-sm p-2 border-b border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300">
           Staff
         </div>
         {weekDays.map((day) => (
           <div
             key={day.toISOString()}
-            className="font-semibold text-sm text-center p-2 border-b border-border"
+            className="font-sans font-semibold text-sm text-center p-2 border-b border-slate-200 dark:border-white/10 text-slate-700 dark:text-slate-300"
           >
             {formatDayLabel(day)}
           </div>

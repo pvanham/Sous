@@ -2,22 +2,8 @@
 
 import { cn } from "@/lib/utils";
 import { formatTimeRange, formatShiftDuration } from "@/lib/utils/date";
+import { getStationClasses } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
-
-// Station color mapping - uses index for consistent colors
-const stationColors: Record<string, string> = {
-  // Common stations with specific colors
-  Grill: "bg-red-100 border-red-300 dark:bg-red-900/30 dark:border-red-700",
-  Prep: "bg-green-100 border-green-300 dark:bg-green-900/30 dark:border-green-700",
-  Assembly: "bg-blue-100 border-blue-300 dark:bg-blue-900/30 dark:border-blue-700",
-  Register: "bg-purple-100 border-purple-300 dark:bg-purple-900/30 dark:border-purple-700",
-  // Default fallback
-  default: "bg-gray-100 border-gray-300 dark:bg-gray-800/50 dark:border-gray-600",
-};
-
-function getStationColor(station: string): string {
-  return stationColors[station] ?? stationColors.default;
-}
 
 interface ShiftCardProps {
   shift: ShiftDTO;
@@ -27,14 +13,22 @@ interface ShiftCardProps {
 export function ShiftCard({ shift, onClick }: ShiftCardProps) {
   const start = new Date(shift.start);
   const end = new Date(shift.end);
-  const stationColor = getStationColor(shift.station);
 
   return (
     <div
       className={cn(
-        "rounded-md border p-2 text-xs min-h-[80px]",
-        stationColor,
-        onClick && "cursor-pointer hover:shadow-md transition-shadow"
+        // Base layout
+        "rounded p-3 min-h-[80px]",
+        // Glass effect - transparent background
+        "bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm",
+        // Border - subtle on edges, solid accent on left (from station colors)
+        "border-y border-r border-slate-200 dark:border-white/10",
+        // Station-specific colors (glass background + left border accent)
+        getStationClasses(shift.station),
+        // Interactive states
+        onClick && "cursor-pointer hover:bg-white/80 dark:hover:bg-slate-900/80",
+        // Smooth transition
+        "transition-colors duration-150"
       )}
       onClick={onClick}
       role={onClick ? "button" : undefined}
@@ -50,13 +44,20 @@ export function ShiftCard({ shift, onClick }: ShiftCardProps) {
           : undefined
       }
     >
-      <div className="font-medium text-sm">{shift.station}</div>
-      <div className="text-muted-foreground mt-1">
+      {/* Station name - UI text */}
+      <div className="font-sans font-medium text-sm">{shift.station}</div>
+
+      {/* Time range - Monospace for precision */}
+      <div className="font-mono text-xs text-muted-foreground mt-1">
         {formatTimeRange(start, end)}
       </div>
-      <div className="text-muted-foreground">
+
+      {/* Duration - Monospace for data */}
+      <div className="font-mono text-xs text-muted-foreground">
         {formatShiftDuration(start, end)}
       </div>
+
+      {/* Notes - Small text, truncated */}
       {shift.notes && (
         <div className="text-muted-foreground mt-1 truncate text-[10px]">
           {shift.notes}

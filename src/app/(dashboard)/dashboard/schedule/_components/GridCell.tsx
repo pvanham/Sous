@@ -12,8 +12,12 @@ export function GridCell({ staffId, date, onClick }: GridCellProps) {
   return (
     <div
       className={cn(
-        "min-h-[80px] border border-border rounded-sm bg-background",
-        onClick && "cursor-pointer hover:bg-accent/50 transition-colors"
+        // Base styling - subtle grid
+        "min-h-[80px] rounded bg-background",
+        // Subtle border - barely visible (Industrial grid)
+        "border border-slate-200/50 dark:border-white/5",
+        // Interactive states
+        onClick && "cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors"
       )}
       onClick={onClick}
       role={onClick ? "button" : undefined}
@@ -31,7 +35,7 @@ export function GridCell({ staffId, date, onClick }: GridCellProps) {
       data-staff-id={staffId}
       data-date={date.toISOString()}
     >
-      {/* Empty cell - content added in Sprint 2.3 */}
+      {/* Empty cell */}
     </div>
   );
 }

@@ -39,15 +39,15 @@ export function ViewSwitcher({
         <TabsList>
           <TabsTrigger value="staff" className="gap-2">
             <Users className="h-4 w-4" />
-            <span className="hidden sm:inline">Staff View</span>
+            <span className="hidden sm:inline font-sans">Staff View</span>
           </TabsTrigger>
           <TabsTrigger value="time" className="gap-2">
             <Clock className="h-4 w-4" />
-            <span className="hidden sm:inline">Time View</span>
+            <span className="hidden sm:inline font-sans">Time View</span>
           </TabsTrigger>
           <TabsTrigger value="day" className="gap-2">
             <LayoutGrid className="h-4 w-4" />
-            <span className="hidden sm:inline">Day View</span>
+            <span className="hidden sm:inline font-sans">Day View</span>
           </TabsTrigger>
         </TabsList>
       </Tabs>
@@ -65,7 +65,7 @@ export function ViewSwitcher({
                 variant={isSelected ? "default" : "outline"}
                 size="sm"
                 onClick={() => onDayChange(day)}
-                className="min-w-[60px] whitespace-nowrap"
+                className="min-w-[60px] whitespace-nowrap font-mono"
               >
                 {formatDayLabel(day)}
               </Button>

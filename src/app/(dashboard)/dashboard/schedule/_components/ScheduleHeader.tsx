@@ -36,14 +36,14 @@ export function ScheduleHeader({
           Prev Week
         </Button>
 
-        <h2 className="text-lg font-semibold min-w-[220px] text-center">
+        <h2 className="text-lg font-sans font-semibold min-w-[220px] text-center text-slate-900 dark:text-slate-100">
           {isLoading ? (
             <span className="flex items-center justify-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
               Loading...
             </span>
           ) : (
-            formatWeekLabel(weekStart)
+            <span className="font-mono">{formatWeekLabel(weekStart)}</span>
           )}
         </h2>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { getStationBgClass } from "@/lib/utils/station-colors";
+import { getStationBgClasses, getStationBorderClass } from "@/lib/utils/station-colors";
 
 interface StationLegendProps {
   /** List of station names to display in the legend */
@@ -22,20 +22,23 @@ export function StationLegend({ stations, className }: StationLegendProps) {
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-4 text-sm text-muted-foreground",
+        "flex flex-wrap items-center gap-4 text-sm",
         className
       )}
     >
-      <span className="font-medium text-foreground">Stations:</span>
+      <span className="font-sans font-medium text-slate-600 dark:text-slate-400">
+        Stations:
+      </span>
       {stations.map((station) => (
         <div key={station} className="flex items-center gap-1.5">
           <div
             className={cn(
-              "w-3 h-3 rounded-sm border border-border",
-              getStationBgClass(station)
+              "w-3 h-3 rounded",
+              getStationBgClasses(station),
+              getStationBorderClass(station)
             )}
           />
-          <span>{station}</span>
+          <span className="text-slate-700 dark:text-slate-300">{station}</span>
         </div>
       ))}
     </div>

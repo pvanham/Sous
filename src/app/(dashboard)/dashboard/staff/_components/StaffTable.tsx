@@ -237,7 +237,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
           ? `(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}`
           : phone;
         return (
-          <span className={cn(isInactive && "text-muted-foreground/70")}>
+          <span className={cn("font-mono text-sm", isInactive && "text-muted-foreground/70")}>
             {formatted}
           </span>
         );
@@ -467,9 +467,17 @@ export function StaffTable({ initialData }: StaffTableProps) {
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
-          Showing {staff.length > 0 ? (page - 1) * pageSize + 1 : 0} to{" "}
-          {Math.min(page * pageSize, total)} of {total} staff members
+        <div className="text-sm text-slate-500 dark:text-slate-400">
+          Showing{" "}
+          <span className="font-mono tabular-nums">
+            {staff.length > 0 ? (page - 1) * pageSize + 1 : 0}
+          </span>{" "}
+          to{" "}
+          <span className="font-mono tabular-nums">
+            {Math.min(page * pageSize, total)}
+          </span>{" "}
+          of{" "}
+          <span className="font-mono tabular-nums">{total}</span> staff members
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -483,7 +491,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
           </Button>
           <div className="flex items-center gap-1 text-sm">
             Page{" "}
-            <span className="font-medium">
+            <span className="font-mono font-medium tabular-nums">
               {page} of {totalPages}
             </span>
           </div>
