@@ -9,6 +9,7 @@ import {
 } from "@/lib/validations/staff.schema";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { ShiftService } from "@/server/services/shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
@@ -417,13 +418,13 @@ export async function setStaffActive(
 }
 
 /**
- * Permanently delete a staff member.
+ * Permanently delete a staff member and all their associated shifts.
  * @param staffId - Staff document ID
- * @returns ActionResponse with deletion status
+ * @returns ActionResponse with deletion status and count of deleted shifts
  */
 export async function deleteStaff(
   staffId: string
-): Promise<ActionResponse<{ deleted: boolean }>> {
+): Promise<ActionResponse<{ deleted: boolean; shiftsDeleted: number }>> {
   try {
     // 1. Auth check
     const { userId } = await auth();
@@ -434,7 +435,14 @@ export async function deleteStaff(
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 3. Service call
+    // 3. Delete all shifts for this staff member first (cascade delete)
+    const shiftsDeleted = await ShiftService.deleteByStaffId(
+      ctx.orgId,
+      ctx.locationId,
+      staffId
+    );
+
+    // 4. Delete the staff member
     const deleted = await StaffService.delete(
       ctx.orgId,
       ctx.locationId,
@@ -445,8 +453,8 @@ export async function deleteStaff(
       return { success: false, error: "Staff member not found" };
     }
 
-    // 4. Return response
-    return { success: true, data: { deleted: true } };
+    // 5. Return response
+    return { success: true, data: { deleted: true, shiftsDeleted } };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to delete staff member";

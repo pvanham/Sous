@@ -361,7 +361,6 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         weekStart={currentWeek}
         onPrevWeek={handlePrevWeek}
         onNextWeek={handleNextWeek}
-        scheduleStatus={schedule?.status ?? "DRAFT"}
         isLoading={isLoading}
       />
 

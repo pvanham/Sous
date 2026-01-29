@@ -5,124 +5,126 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ============================================
-   Modern Industrial Design System
+   Warm Industrial Design System
+   "The Hearth & The Machine"
    ============================================
-   - Slate palette (cool blue-grey undertones)
-   - Electric Indigo primary (#6366f1)
+   - Stone palette (warm grey undertones)
+   - Rust/Burnt Orange primary (#B45309)
    - 4px radius for sharp, industrial precision
+   - No shadows - borders only
    ============================================ */
 
 :root {
-  /* Light Mode - "Paper White" Theme */
+  /* Light Mode - "Creamy/Almond" Theme */
   --radius: 0.25rem; /* 4px - Industrial precision */
 
   /* Backgrounds */
-  --background: oklch(0.984 0.003 247.858); /* slate-50 #f8fafc */
-  --foreground: oklch(0.129 0.042 264.695); /* slate-950 #020617 */
+  --background: #ebe9e4; /* Deep creamy beige/oat - NOT white */
+  --foreground: #44403c; /* Warm Charcoal (stone-700) */
 
   /* Cards & Surfaces */
-  --card: oklch(1 0 0); /* white */
-  --card-foreground: oklch(0.129 0.042 264.695); /* slate-950 */
-  --popover: oklch(1 0 0); /* white */
-  --popover-foreground: oklch(0.129 0.042 264.695); /* slate-950 */
+  --card: #f5f2ed; /* Lighter beige, "Unbleached Paper" */
+  --card-foreground: #44403c; /* stone-700 */
+  --popover: #f5f2ed; /* Same as card */
+  --popover-foreground: #44403c; /* stone-700 */
 
-  /* Primary - Electric Indigo */
-  --primary: oklch(0.585 0.233 264.052); /* indigo-500 #6366f1 */
-  --primary-foreground: oklch(1 0 0); /* white */
+  /* Primary - Rust / Burnt Orange */
+  --primary: #b45309; /* amber-700 */
+  --primary-foreground: #fefce8; /* yellow-50 for contrast */
 
   /* Secondary */
-  --secondary: oklch(0.968 0.007 247.896); /* slate-100 #f1f5f9 */
-  --secondary-foreground: oklch(0.208 0.042 265.755); /* slate-900 #0f172a */
+  --secondary: #e7e5e4; /* stone-200 */
+  --secondary-foreground: #1c1917; /* stone-900 */
 
   /* Muted */
-  --muted: oklch(0.968 0.007 247.896); /* slate-100 #f1f5f9 */
-  --muted-foreground: oklch(0.446 0.03 256.802); /* slate-600 #475569 */
+  --muted: #e7e5e4; /* stone-200 */
+  --muted-foreground: #78716c; /* stone-500 */
 
   /* Accent */
-  --accent: oklch(0.929 0.013 255.508); /* slate-200 #e2e8f0 */
-  --accent-foreground: oklch(0.208 0.042 265.755); /* slate-900 */
+  --accent: #d6d3d1; /* stone-300 */
+  --accent-foreground: #1c1917; /* stone-900 */
 
   /* Destructive */
-  --destructive: oklch(0.577 0.245 27.325); /* red-500 */
-  --destructive-foreground: oklch(1 0 0); /* white */
+  --destructive: #dc2626; /* red-600 */
+  --destructive-foreground: #fef2f2; /* red-50 */
 
   /* Borders & Inputs */
-  --border: oklch(0 0 0 / 10%); /* black/10 - subtle border */
-  --input: oklch(0.929 0.013 255.508); /* slate-200 - inset input bg */
-  --ring: oklch(0.585 0.233 264.052); /* indigo-500 - focus ring */
+  --border: #d6d3d1; /* stone-300 */
+  --input: #d6d3d1; /* stone-300 */
+  --ring: #b45309; /* Rust - matches primary */
 
-  /* Chart Colors */
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  /* Chart Colors - Earth Tones */
+  --chart-1: #b45309; /* amber-700 (Rust) */
+  --chart-2: #059669; /* emerald-600 (Sage) */
+  --chart-3: #78716c; /* stone-500 */
+  --chart-4: #d97706; /* amber-600 (Mustard) */
+  --chart-5: #0d9488; /* teal-600 */
 
   /* Sidebar */
-  --sidebar: oklch(0.984 0.003 247.858); /* slate-50 */
-  --sidebar-foreground: oklch(0.129 0.042 264.695); /* slate-950 */
-  --sidebar-primary: oklch(0.585 0.233 264.052); /* indigo-500 */
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.929 0.013 255.508); /* slate-200 */
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0 0 0 / 10%);
-  --sidebar-ring: oklch(0.585 0.233 264.052);
+  --sidebar: #f5f2ed; /* Same as card */
+  --sidebar-foreground: #44403c; /* stone-700 */
+  --sidebar-primary: #b45309; /* Rust */
+  --sidebar-primary-foreground: #fefce8;
+  --sidebar-accent: #d6d3d1; /* stone-300 */
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #d6d3d1; /* stone-300 */
+  --sidebar-ring: #b45309;
 }
 
 .dark {
-  /* Dark Mode - "Rich Dark" Theme */
+  /* Dark Mode - "Obsidian/Espresso" Theme */
 
   /* Backgrounds */
-  --background: oklch(0.129 0.042 264.695); /* slate-950 #020617 */
-  --foreground: oklch(0.984 0.003 247.858); /* slate-50 #f8fafc */
+  --background: #1c1917; /* stone-900 / Warm Black */
+  --foreground: #e7e5e4; /* stone-200 / Warm Grey */
 
   /* Cards & Surfaces */
-  --card: oklch(0.208 0.042 265.755); /* slate-900 #0f172a */
-  --card-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
-  --popover: oklch(0.208 0.042 265.755); /* slate-900 */
-  --popover-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
+  --card: #292524; /* stone-800 */
+  --card-foreground: #e7e5e4; /* stone-200 */
+  --popover: #292524; /* stone-800 */
+  --popover-foreground: #e7e5e4; /* stone-200 */
 
-  /* Primary - Electric Indigo (same in dark for consistency) */
-  --primary: oklch(0.585 0.233 264.052); /* indigo-500 */
-  --primary-foreground: oklch(1 0 0); /* white */
+  /* Primary - Rust (slightly brighter for dark mode) */
+  --primary: #d97706; /* amber-600 */
+  --primary-foreground: #1c1917; /* stone-900 */
 
   /* Secondary */
-  --secondary: oklch(0.279 0.041 260.031); /* slate-800 #1e293b */
-  --secondary-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
+  --secondary: #44403c; /* stone-700 */
+  --secondary-foreground: #e7e5e4; /* stone-200 */
 
   /* Muted */
-  --muted: oklch(0.279 0.041 260.031); /* slate-800 */
-  --muted-foreground: oklch(0.704 0.04 256.788); /* slate-400 #94a3b8 */
+  --muted: #44403c; /* stone-700 */
+  --muted-foreground: #a8a29e; /* stone-400 */
 
   /* Accent */
-  --accent: oklch(0.279 0.041 260.031); /* slate-800 */
-  --accent-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
+  --accent: #44403c; /* stone-700 */
+  --accent-foreground: #e7e5e4; /* stone-200 */
 
   /* Destructive */
-  --destructive: oklch(0.704 0.191 22.216); /* red-400 */
-  --destructive-foreground: oklch(1 0 0);
+  --destructive: #f87171; /* red-400 */
+  --destructive-foreground: #1c1917;
 
   /* Borders & Inputs */
-  --border: oklch(1 0 0 / 10%); /* white/10 - subtle glass border */
-  --input: oklch(0.279 0.041 260.031); /* slate-800 - inset input bg */
-  --ring: oklch(0.585 0.233 264.052); /* indigo-500 */
+  --border: #44403c; /* stone-700 */
+  --input: #44403c; /* stone-700 */
+  --ring: #d97706; /* amber-600 */
 
   /* Chart Colors (adjusted for dark mode) */
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  --chart-1: #f59e0b; /* amber-500 */
+  --chart-2: #34d399; /* emerald-400 */
+  --chart-3: #a8a29e; /* stone-400 */
+  --chart-4: #fbbf24; /* amber-400 */
+  --chart-5: #2dd4bf; /* teal-400 */
 
   /* Sidebar */
-  --sidebar: oklch(0.208 0.042 265.755); /* slate-900 */
-  --sidebar-foreground: oklch(0.984 0.003 247.858); /* slate-50 */
-  --sidebar-primary: oklch(0.585 0.233 264.052); /* indigo-500 */
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.279 0.041 260.031); /* slate-800 */
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.585 0.233 264.052);
+  --sidebar: #292524; /* stone-800 */
+  --sidebar-foreground: #e7e5e4; /* stone-200 */
+  --sidebar-primary: #d97706; /* amber-600 */
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-accent: #44403c; /* stone-700 */
+  --sidebar-accent-foreground: #e7e5e4;
+  --sidebar-border: #44403c; /* stone-700 */
+  --sidebar-ring: #d97706;
 }
 
 @theme inline {
@@ -184,11 +186,12 @@
   }
 }
 
-/* AI Button Gradient - for future AI features */
+/* AI Button Gradient - "Heat" theme (Amber to Rose) */
 .ai-gradient {
-  background: linear-gradient(135deg, #8b5cf6 0%, #3b82f6 100%);
+  background: linear-gradient(135deg, #f59e0b 0%, #e11d48 100%);
 }
 
 .ai-gradient:hover {
-  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%);
+  background: linear-gradient(135deg, #d97706 0%, #be123c 100%);
+  box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.4);
 }

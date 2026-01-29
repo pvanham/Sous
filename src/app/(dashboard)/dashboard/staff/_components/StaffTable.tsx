@@ -107,23 +107,20 @@ export function StaffTable({ initialData }: StaffTableProps) {
   // Dialog states
   const [editStaff, setEditStaff] = useState<StaffDTO | null>(null);
   const [deleteConfirmStaff, setDeleteConfirmStaff] = useState<StaffDTO | null>(
-    null
+    null,
   );
 
   // Debounced search - update search after 300ms of no typing
-  const handleSearchChange = useCallback(
-    (value: string) => {
-      setSearchInput(value);
-      // Reset to page 1 when searching
-      setPage(1);
-      // Debounce the actual search
-      const timer = setTimeout(() => {
-        setSearch(value);
-      }, 300);
-      return () => clearTimeout(timer);
-    },
-    []
-  );
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchInput(value);
+    // Reset to page 1 when searching
+    setPage(1);
+    // Debounce the actual search
+    const timer = setTimeout(() => {
+      setSearch(value);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Fetch staff with pagination
   const { data, isLoading, isFetching } = useQuery({
@@ -161,7 +158,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
     },
     onSuccess: (data) => {
       toast.success(
-        `${data.name} is now ${data.isActive ? "active" : "inactive"}`
+        `${data.name} is now ${data.isActive ? "active" : "inactive"}`,
       );
       queryClient.invalidateQueries({ queryKey: ["staff"] });
     },
@@ -237,7 +234,12 @@ export function StaffTable({ initialData }: StaffTableProps) {
           ? `(${phone.slice(0, 3)}) ${phone.slice(3, 6)}-${phone.slice(6)}`
           : phone;
         return (
-          <span className={cn("font-mono text-sm", isInactive && "text-muted-foreground/70")}>
+          <span
+            className={cn(
+              "font-mono text-sm",
+              isInactive && "text-muted-foreground/70",
+            )}
+          >
             {formatted}
           </span>
         );
@@ -280,7 +282,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
                 variant="outline"
                 className={cn(
                   "flex items-center gap-1",
-                  isInactive && "opacity-60"
+                  isInactive && "opacity-60",
                 )}
               >
                 {skill.station}
@@ -417,7 +419,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
                       ? null
                       : flexRender(
                           header.column.columnDef.header,
-                          header.getContext()
+                          header.getContext(),
                         )}
                   </TableHead>
                 ))}
@@ -447,14 +449,14 @@ export function StaffTable({ initialData }: StaffTableProps) {
                 <TableRow
                   key={row.id}
                   className={cn(
-                    !row.original.isActive && "bg-muted/30 opacity-75"
+                    !row.original.isActive && "bg-muted/30 opacity-75",
                   )}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
-                        cell.getContext()
+                        cell.getContext(),
                       )}
                     </TableCell>
                   ))}
@@ -467,7 +469,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
 
       {/* Pagination */}
       <div className="flex items-center justify-between">
-        <div className="text-sm text-slate-500 dark:text-slate-400">
+        <div className="text-sm text-stone-500 dark:text-stone-400">
           Showing{" "}
           <span className="font-mono tabular-nums">
             {staff.length > 0 ? (page - 1) * pageSize + 1 : 0}
@@ -476,8 +478,8 @@ export function StaffTable({ initialData }: StaffTableProps) {
           <span className="font-mono tabular-nums">
             {Math.min(page * pageSize, total)}
           </span>{" "}
-          of{" "}
-          <span className="font-mono tabular-nums">{total}</span> staff members
+          of <span className="font-mono tabular-nums">{total}</span> staff
+          members
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -539,7 +541,8 @@ export function StaffTable({ initialData }: StaffTableProps) {
             <Button
               variant="destructive"
               onClick={() =>
-                deleteConfirmStaff && deleteMutation.mutate(deleteConfirmStaff.id)
+                deleteConfirmStaff &&
+                deleteMutation.mutate(deleteConfirmStaff.id)
               }
               disabled={deleteMutation.isPending}
             >

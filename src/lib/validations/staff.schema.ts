@@ -1,7 +1,27 @@
 import { z } from "zod";
 
-// Phone number regex - allows various formats
-const phoneRegex = /^[\d\s\-\(\)\+]+$/;
+/**
+ * Phone number validation schema.
+ * Accepts various formats (parentheses, dashes, spaces, plus) but validates
+ * that the underlying number has the correct digit count:
+ * - 10 digits for US numbers
+ * - 11 digits if starting with country code 1
+ */
+const phoneSchema = z
+  .string()
+  .min(10, "Phone number must be at least 10 characters")
+  .refine(
+    (val) => {
+      // Strip all non-digit characters
+      const digits = val.replace(/\D/g, "");
+      // Must have exactly 10 digits (US) or 11 (with country code 1)
+      return (
+        digits.length === 10 ||
+        (digits.length === 11 && digits.startsWith("1"))
+      );
+    },
+    { message: "Phone number must contain 10 digits (or 11 with country code)" }
+  );
 
 // Skill schema for individual skill entries
 export const skillSchema = z.object({
@@ -20,10 +40,7 @@ export const staffSchema = z.object({
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters"),
   email: z.string().email("Invalid email address").toLowerCase(),
-  phone: z
-    .string()
-    .min(10, "Phone number must be at least 10 characters")
-    .regex(phoneRegex, "Invalid phone number format"),
+  phone: phoneSchema,
   roles: z
     .array(z.string().min(1, "Role name cannot be empty"))
     .min(1, "At least one role is required"),
@@ -41,10 +58,7 @@ export const csvRowSchema = z.object({
     .min(2, "Name must be at least 2 characters")
     .max(100, "Name must be less than 100 characters"),
   email: z.string().email("Invalid email address").toLowerCase(),
-  phone: z
-    .string()
-    .min(10, "Phone number must be at least 10 characters")
-    .regex(phoneRegex, "Invalid phone number format"),
+  phone: phoneSchema,
   roles: z.string().min(1, "At least one role is required"), // Comma-separated string
   skills: z.string().optional().default(""), // Format: "Station:Proficiency,Station:Proficiency"
 });

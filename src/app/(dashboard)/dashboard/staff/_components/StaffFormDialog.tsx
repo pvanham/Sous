@@ -55,7 +55,7 @@ export function StaffFormDialog({
   const queryClient = useQueryClient();
 
   // Fetch kitchen config for roles/stations
-  const { data: configResult } = useQuery({
+  const { data: configResult, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["kitchenConfig"],
     queryFn: async () => {
       const result = await getKitchenConfig();
@@ -244,35 +244,48 @@ export function StaffFormDialog({
               render={() => (
                 <FormItem>
                   <FormLabel>Roles</FormLabel>
-                  <div className="flex flex-wrap gap-3">
-                    {availableRoles.map((role) => (
-                      <FormField
-                        key={role}
-                        control={form.control}
-                        name="roles"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center space-x-2 space-y-0">
-                            <FormControl>
-                              <Checkbox
-                                checked={field.value?.includes(role)}
-                                onCheckedChange={(checked) => {
-                                  const updated = checked
-                                    ? [...(field.value || []), role]
-                                    : (field.value || []).filter(
-                                        (r) => r !== role
-                                      );
-                                  field.onChange(updated);
-                                }}
-                              />
-                            </FormControl>
-                            <FormLabel className="text-sm font-normal cursor-pointer">
-                              {role}
-                            </FormLabel>
-                          </FormItem>
-                        )}
-                      />
-                    ))}
-                  </div>
+                  {isLoadingConfig ? (
+                    <div className="flex items-center gap-2 py-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">
+                        Loading roles...
+                      </span>
+                    </div>
+                  ) : availableRoles.length === 0 ? (
+                    <p className="text-sm text-muted-foreground py-2">
+                      No roles configured. Add roles in Settings.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-3">
+                      {availableRoles.map((role) => (
+                        <FormField
+                          key={role}
+                          control={form.control}
+                          name="roles"
+                          render={({ field }) => (
+                            <FormItem className="flex items-center space-x-2 space-y-0">
+                              <FormControl>
+                                <Checkbox
+                                  checked={field.value?.includes(role)}
+                                  onCheckedChange={(checked) => {
+                                    const updated = checked
+                                      ? [...(field.value || []), role]
+                                      : (field.value || []).filter(
+                                          (r) => r !== role
+                                        );
+                                    field.onChange(updated);
+                                  }}
+                                />
+                              </FormControl>
+                              <FormLabel className="text-sm font-normal cursor-pointer">
+                                {role}
+                              </FormLabel>
+                            </FormItem>
+                          )}
+                        />
+                      ))}
+                    </div>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
@@ -289,16 +302,29 @@ export function StaffFormDialog({
                   variant="outline"
                   size="sm"
                   onClick={handleAddSkill}
-                  disabled={unusedStations.length === 0}
+                  disabled={isLoadingConfig || unusedStations.length === 0}
                 >
-                  <Plus className="h-4 w-4 mr-1" />
+                  {isLoadingConfig ? (
+                    <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4 mr-1" />
+                  )}
                   Add Skill
                 </Button>
               </div>
 
-              {skillFields.length === 0 && (
+              {isLoadingConfig ? (
+                <div className="flex items-center gap-2 py-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">
+                    Loading stations...
+                  </span>
+                </div>
+              ) : skillFields.length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  No skills added yet. Click &quot;Add Skill&quot; to assign stations.
+                  {availableStations.length === 0
+                    ? "No stations configured. Add stations in Settings."
+                    : "No skills added yet. Click \"Add Skill\" to assign stations."}
                 </p>
               )}
 
@@ -353,7 +379,7 @@ export function StaffFormDialog({
                             }
                             className="flex-1"
                           />
-                          <span className="text-sm font-medium w-8 text-center">
+                          <span className="text-sm font-medium min-w-18 text-right">
                             {"★".repeat(profField.value)}
                           </span>
                         </div>

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import {
   formatTimeString,
   generateTimeSlots,
-  getOperatingHoursRange,
+  getDisplayTimeRange,
   getStoreHoursForDay,
   extractTimeString,
   getTimePositionPercent,
@@ -200,18 +200,18 @@ function StationShiftBlock({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Shift block - Glass pill style */}
+      {/* Shift block - Glass pill style with stone palette */}
       <div
         className={cn(
           "absolute inset-0 rounded px-1.5 py-1 cursor-pointer transition-all overflow-hidden",
-          // Glass background
-          "bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm",
-          // Borders
-          "border-y border-r border-slate-200 dark:border-white/10",
+          // Glass background - stone-based
+          "bg-stone-100/50 dark:bg-stone-900/50 backdrop-blur-sm",
+          // Borders - stone palette
+          "border-y border-r border-stone-300 dark:border-white/10",
           // Station-specific colors (includes left border)
           stationClasses,
-          // Hover state
-          "hover:bg-white/80 dark:hover:bg-slate-900/80 hover:ring-2 hover:ring-primary"
+          // Hover state - brighten border only
+          "hover:border-stone-400 dark:hover:border-white/20 hover:ring-1 hover:ring-primary",
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -220,7 +220,9 @@ function StationShiftBlock({
         onDoubleClick={handleDoubleClick}
         title={tooltipText}
       >
-        <div className="font-sans text-xs font-medium truncate">{staffName}</div>
+        <div className="font-sans text-xs font-medium truncate">
+          {staffName}
+        </div>
         <div className="font-mono text-[10px] text-muted-foreground">
           {formatTimeString(startTime)} - {formatTimeString(endTime)}
         </div>
@@ -230,7 +232,7 @@ function StationShiftBlock({
       <button
         ref={buttonRef}
         className={cn(
-          "absolute right-0.5 p-0.5 rounded-full bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 z-20 cursor-pointer transition-opacity",
+          "absolute right-0.5 p-0.5 rounded-full bg-card hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-300 dark:border-white/10 z-20 cursor-pointer transition-opacity",
           isHovering ? "opacity-100" : "opacity-0",
         )}
         style={{ top: "8px", transform: "translateY(-50%)" }}
@@ -294,6 +296,7 @@ function hasGaps(
  * Y-axis: Time slots from kitchen open to close
  *
  * Helps visualize coverage per station.
+ * Uses Warm Industrial styling with stone palette.
  */
 export function DayStationView({
   shifts,
@@ -352,13 +355,19 @@ export function DayStationView({
   // Get stations from config
   const stations = config?.stations || [];
 
-  // Calculate time range based on operating hours (includes 2hr buffer for display)
+  // Get shifts for the selected day
+  const dayShifts = useMemo(
+    () => getShiftsForDay(shifts, selectedDay),
+    [shifts, selectedDay],
+  );
+
+  // Calculate time range based on operating hours, expanding for shifts outside store hours
   const { earliest, latest } = useMemo(() => {
     if (!config) {
-      return { earliest: "06:00", latest: "23:00" };
+      return { earliest: "09:00", latest: "21:00" };
     }
-    return getOperatingHoursRange(config.operatingHours);
-  }, [config]);
+    return getDisplayTimeRange(config.operatingHours, dayShifts);
+  }, [config, dayShifts]);
 
   // Get actual store hours for the selected day (no buffer) for coverage warnings
   const storeHours = useMemo(() => {
@@ -372,12 +381,6 @@ export function DayStationView({
     [earliest, latest],
   );
 
-  // Get shifts for the selected day, grouped by station
-  const dayShifts = useMemo(
-    () => getShiftsForDay(shifts, selectedDay),
-    [shifts, selectedDay],
-  );
-
   const shiftsByStation = useMemo(
     () => getShiftsByStation(dayShifts, stations),
     [dayShifts, stations],
@@ -389,7 +392,7 @@ export function DayStationView({
 
   if (stations.length === 0) {
     return (
-      <div className="rounded border border-slate-200 dark:border-white/10 bg-muted/50 p-8 text-center">
+      <div className="rounded border border-stone-300 dark:border-white/10 bg-muted/50 p-8 text-center">
         <p className="text-muted-foreground">No stations configured.</p>
         <p className="text-sm text-muted-foreground mt-1">
           Configure stations in Settings to use this view.
@@ -410,14 +413,14 @@ export function DayStationView({
       }}
     >
       <div className="min-w-[700px]">
-        {/* Header Row - Station Labels */}
+        {/* Header Row - Station Labels - Industrial style */}
         <div
-          className="grid gap-1 border-b border-slate-200 dark:border-white/10 pb-2 mb-2"
+          className="grid gap-1 border-b border-stone-300 dark:border-white/10 pb-2 mb-2"
           style={{
             gridTemplateColumns: `80px repeat(${stations.length}, 1fr)`,
           }}
         >
-          <div className="font-mono text-xs p-2 text-slate-500 dark:text-slate-400">
+          <div className="font-mono uppercase tracking-widest text-[10px] p-2 text-stone-500 dark:text-stone-400">
             Time
           </div>
           {stations.map((station) => {
@@ -431,12 +434,12 @@ export function DayStationView({
             return (
               <div
                 key={station}
-                className="font-sans font-semibold text-sm text-center p-2 flex items-center justify-center gap-2 text-slate-700 dark:text-slate-300"
+                className="font-sans font-semibold uppercase tracking-widest text-[10px] text-center p-2 flex items-center justify-center gap-2 text-stone-500 dark:text-stone-400"
               >
                 <span>{station}</span>
                 {hasCoverageGaps && (
                   <span title="Coverage gaps detected during store hours">
-                    <AlertCircle className="h-4 w-4 text-amber-500" />
+                    <AlertCircle className="h-4 w-4 text-amber-600" />
                   </span>
                 )}
               </div>
@@ -456,7 +459,7 @@ export function DayStationView({
             {timeSlots.map((time, index) => (
               <div
                 key={time}
-                className="absolute left-0 right-0 font-mono text-xs text-slate-500 dark:text-slate-400 pr-2 text-right"
+                className="absolute left-0 right-0 font-mono text-xs text-stone-500 dark:text-stone-400 pr-2 text-right"
                 style={{ top: index * slotHeight, height: slotHeight }}
               >
                 <span className="-translate-y-1/2 inline-block">
@@ -473,7 +476,7 @@ export function DayStationView({
             return (
               <div
                 key={station}
-                className="relative border-l border-slate-200/50 dark:border-white/5"
+                className="relative border-l border-stone-300/50 dark:border-white/5"
                 style={{ height: totalHeight }}
               >
                 {/* Time Grid Lines - Subtle (Industrial) */}
@@ -481,17 +484,17 @@ export function DayStationView({
                   <div
                     key={time}
                     className={cn(
-                      "absolute left-0 right-0 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors group",
-                      // Subtle grid lines - barely visible
-                      "border-t border-slate-200/30 dark:border-white/5",
+                      "absolute left-0 right-0 cursor-pointer hover:bg-stone-100/50 dark:hover:bg-stone-800/30 transition-colors group",
+                      // Subtle grid lines - stone palette
+                      "border-t border-stone-400/20",
                       // Hour lines slightly more visible
-                      index % 2 === 0 && "border-slate-200/50 dark:border-white/10",
+                      index % 2 === 0 && "border-stone-400/30",
                     )}
                     style={{ top: index * slotHeight, height: slotHeight }}
                     onClick={() => onCreateShift(selectedDay, time, station)}
                   >
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus className="h-4 w-4 text-slate-400" />
+                      <Plus className="h-4 w-4 text-stone-400" />
                     </div>
                   </div>
                 ))}

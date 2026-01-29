@@ -9,13 +9,13 @@ interface StaffRowProps {
 
 export function StaffRow({ staff }: StaffRowProps) {
   return (
-    <div className="flex items-center gap-2 py-2 px-2 min-h-[80px] border-r border-slate-200/50 dark:border-white/5">
+    <div className="flex items-center gap-2 py-1 px-2 min-h-[44px] border-r border-stone-300/50 dark:border-white/5">
       <div className="flex flex-col">
-        <span className="font-sans font-medium text-sm text-slate-900 dark:text-slate-100">
+        <span className="font-sans font-medium text-sm text-stone-900 dark:text-stone-100">
           {staff.name}
         </span>
         {staff.roles.length > 0 && (
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-stone-500 dark:text-stone-400">
             {staff.roles[0]}
           </span>
         )}

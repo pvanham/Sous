@@ -258,6 +258,50 @@ export const ShiftService = {
   },
 
   /**
+   * Delete all shifts for a specific staff member.
+   * Used when a staff member is permanently deleted to cascade the deletion.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param staffId - Staff member ID
+   * @returns Number of deleted documents
+   */
+  async deleteByStaffId(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<number> {
+    const result = await Shift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: new Types.ObjectId(staffId),
+    });
+    return result.deletedCount;
+  },
+
+  /**
+   * Count shifts that reference specific stations.
+   * Used for informational purposes when removing stations from kitchen config.
+   * Historical shifts are NOT modified - this is just to inform the user.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to count
+   * @returns Number of shifts referencing any of the specified stations
+   */
+  async countByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    return await Shift.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      station: { $in: stations },
+    });
+  },
+
+  /**
    * Copy shifts from one schedule to another with adjusted dates.
    * Handles overlap detection - skips shifts that would conflict with existing ones.
    * @param orgId - Organization ID (ownership check)

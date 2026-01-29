@@ -353,6 +353,92 @@ export function formatTimeString(timeString: string): string {
 }
 
 /**
+ * Get the display time range for the schedule grid.
+ * Defaults to actual store hours and only expands when shifts fall outside.
+ * This eliminates empty space at the top/bottom of the grid when no shifts exist there.
+ *
+ * @param operatingHours - Weekly operating hours from KitchenConfig
+ * @param shifts - Array of shifts to consider for range expansion
+ * @returns Object with earliest and latest times for grid display
+ */
+export function getDisplayTimeRange(
+  operatingHours: {
+    monday: { isOpen: boolean; open?: string; close?: string };
+    tuesday: { isOpen: boolean; open?: string; close?: string };
+    wednesday: { isOpen: boolean; open?: string; close?: string };
+    thursday: { isOpen: boolean; open?: string; close?: string };
+    friday: { isOpen: boolean; open?: string; close?: string };
+    saturday: { isOpen: boolean; open?: string; close?: string };
+    sunday: { isOpen: boolean; open?: string; close?: string };
+  },
+  shifts: Array<{ start: Date | string; end: Date | string }>,
+): { earliest: string; latest: string } {
+  const days = [
+    operatingHours.monday,
+    operatingHours.tuesday,
+    operatingHours.wednesday,
+    operatingHours.thursday,
+    operatingHours.friday,
+    operatingHours.saturday,
+    operatingHours.sunday,
+  ];
+
+  // Get store hours range (without buffer)
+  let earliestMinutes = 24 * 60;
+  let latestMinutes = 0;
+
+  for (const day of days) {
+    if (day.isOpen && day.open && day.close) {
+      const [openHour, openMin] = day.open.split(":").map(Number);
+      const [closeHour, closeMin] = day.close.split(":").map(Number);
+
+      const openMinutes = openHour * 60 + openMin;
+      const closeMinutes = closeHour * 60 + closeMin;
+
+      if (openMinutes < earliestMinutes) {
+        earliestMinutes = openMinutes;
+      }
+      if (closeMinutes > latestMinutes) {
+        latestMinutes = closeMinutes;
+      }
+    }
+  }
+
+  // Default to 9am - 9pm if no hours are set
+  if (earliestMinutes === 24 * 60) earliestMinutes = 9 * 60;
+  if (latestMinutes === 0) latestMinutes = 21 * 60;
+
+  // Expand range if shifts fall outside store hours
+  for (const shift of shifts) {
+    const startDate = new Date(shift.start);
+    const endDate = new Date(shift.end);
+
+    const shiftStartMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+    const shiftEndMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+
+    // If shift starts before store hours, expand earliest (with 30 min buffer)
+    if (shiftStartMinutes < earliestMinutes) {
+      earliestMinutes = Math.max(0, shiftStartMinutes - 30);
+    }
+
+    // If shift ends after store hours, expand latest (with 30 min buffer)
+    if (shiftEndMinutes > latestMinutes) {
+      latestMinutes = Math.min(24 * 60, shiftEndMinutes + 30);
+    }
+  }
+
+  const earliestHours = Math.floor(earliestMinutes / 60);
+  const earliestMins = earliestMinutes % 60;
+  const latestHours = Math.floor(latestMinutes / 60);
+  const latestMins = latestMinutes % 60;
+
+  return {
+    earliest: `${String(earliestHours).padStart(2, "0")}:${String(earliestMins).padStart(2, "0")}`,
+    latest: `${String(latestHours).padStart(2, "0")}:${String(latestMins).padStart(2, "0")}`,
+  };
+}
+
+/**
  * Calculate the vertical position percentage for a time within a range.
  * @param time - Time in "HH:mm" format
  * @param rangeStart - Range start time in "HH:mm" format

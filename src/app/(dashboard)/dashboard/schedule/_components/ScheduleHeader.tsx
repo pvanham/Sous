@@ -4,15 +4,11 @@ import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatWeekLabel } from "@/lib/utils/date";
-import type { ScheduleStatus } from "@/types/schedule";
-
-import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 
 interface ScheduleHeaderProps {
   weekStart: Date;
   onPrevWeek: () => void;
   onNextWeek: () => void;
-  scheduleStatus: ScheduleStatus;
   isLoading: boolean;
 }
 
@@ -20,11 +16,10 @@ export function ScheduleHeader({
   weekStart,
   onPrevWeek,
   onNextWeek,
-  scheduleStatus,
   isLoading,
 }: ScheduleHeaderProps) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-center">
       <div className="flex items-center gap-4">
         <Button
           onClick={onPrevWeek}
@@ -36,7 +31,7 @@ export function ScheduleHeader({
           Prev Week
         </Button>
 
-        <h2 className="text-lg font-sans font-semibold min-w-[220px] text-center text-slate-900 dark:text-slate-100">
+        <h2 className="text-lg font-sans font-semibold min-w-[220px] text-center text-stone-900 dark:text-stone-100">
           {isLoading ? (
             <span className="flex items-center justify-center gap-2">
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -57,8 +52,6 @@ export function ScheduleHeader({
           <ChevronRight className="h-4 w-4 ml-1" />
         </Button>
       </div>
-
-      <ScheduleStatusBadge status={scheduleStatus} />
     </div>
   );
 }

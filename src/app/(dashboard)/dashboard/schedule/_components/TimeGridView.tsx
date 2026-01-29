@@ -8,7 +8,7 @@ import {
   formatDayLabel,
   formatTimeString,
   generateTimeSlots,
-  getOperatingHoursRange,
+  getDisplayTimeRange,
   extractTimeString,
   getTimePositionPercent,
   getDurationHeightPercent,
@@ -103,12 +103,21 @@ function ShiftBlock({
     const yPercent = (mouseY / blockHeight) * 100;
 
     // Calculate snapped time at this position (30-min intervals)
-    const snappedTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    const snappedTime = getTimeFromPositionPercent(
+      yPercent,
+      startTime,
+      endTime,
+      30,
+    );
     hoverTimeRef.current = snappedTime;
 
     // Convert snapped time back to Y position for button placement
     // This makes the button snap to 30-min grid lines instead of following cursor exactly
-    const snappedYPercent = getTimePositionPercent(snappedTime, startTime, endTime);
+    const snappedYPercent = getTimePositionPercent(
+      snappedTime,
+      startTime,
+      endTime,
+    );
     const snappedY = (snappedYPercent / 100) * blockHeight;
 
     // Clamp button position to stay within bounds
@@ -138,7 +147,12 @@ function ShiftBlock({
     const yPercent = (clickY / blockHeight) * 100;
 
     // Calculate time at click position
-    const clickTime = getTimeFromPositionPercent(yPercent, startTime, endTime, 30);
+    const clickTime = getTimeFromPositionPercent(
+      yPercent,
+      startTime,
+      endTime,
+      30,
+    );
     onDoubleClickCreate(day, clickTime);
   };
 
@@ -162,18 +176,18 @@ function ShiftBlock({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Shift block - Glass pill style */}
+      {/* Shift block - Glass pill style with stone palette */}
       <div
         className={cn(
           "absolute inset-0 rounded cursor-pointer transition-all",
-          // Glass background
-          "bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm",
-          // Borders
-          "border-y border-r border-slate-200 dark:border-white/10",
+          // Glass background - stone-based
+          "bg-stone-100/50 dark:bg-stone-900/50 backdrop-blur-sm",
+          // Borders - stone palette
+          "border-y border-r border-stone-300 dark:border-white/10",
           // Station-specific colors (includes left border)
           stationClasses,
-          // Hover state
-          "hover:bg-white/80 dark:hover:bg-slate-900/80 hover:ring-2 hover:ring-primary"
+          // Hover state - brighten border only
+          "hover:border-stone-400 dark:hover:border-white/20 hover:ring-1 hover:ring-primary",
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -184,7 +198,9 @@ function ShiftBlock({
       >
         {/* Staff name and station - visible when shift is tall enough */}
         <div className="absolute inset-0 p-1 overflow-hidden">
-          <div className="font-sans text-[10px] font-medium truncate">{staffName}</div>
+          <div className="font-sans text-[10px] font-medium truncate">
+            {staffName}
+          </div>
           <div className="font-mono text-[9px] text-muted-foreground truncate">
             {formatTimeString(startTime)}
           </div>
@@ -195,8 +211,8 @@ function ShiftBlock({
       <button
         ref={buttonRef}
         className={cn(
-          "absolute right-0.5 p-0.5 rounded-full bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-white/10 z-20 cursor-pointer transition-opacity",
-          isHovering ? "opacity-100" : "opacity-0"
+          "absolute right-0.5 p-0.5 rounded-full bg-card hover:bg-stone-100 dark:hover:bg-stone-700 border border-stone-300 dark:border-white/10 z-20 cursor-pointer transition-opacity",
+          isHovering ? "opacity-100" : "opacity-0",
         )}
         style={{ top: "8px", transform: "translateY(-50%)" }}
         onClick={handleButtonClick}
@@ -215,6 +231,7 @@ function ShiftBlock({
  * X-axis: Days of the week (Mon-Sun)
  *
  * Shifts are rendered as positioned blocks spanning their duration.
+ * Uses Warm Industrial styling with stone palette.
  */
 export function TimeGridView({
   shifts,
@@ -270,18 +287,18 @@ export function TimeGridView({
     onCreateShift(day, startTime);
   };
 
-  // Calculate time range based on operating hours
+  // Calculate time range based on operating hours, expanding for shifts outside store hours
   const { earliest, latest } = useMemo(() => {
     if (!config) {
-      return { earliest: "06:00", latest: "23:00" };
+      return { earliest: "09:00", latest: "21:00" };
     }
-    return getOperatingHoursRange(config.operatingHours);
-  }, [config]);
+    return getDisplayTimeRange(config.operatingHours, shifts);
+  }, [config, shifts]);
 
   // Generate time slots for Y-axis labels (every 30 minutes)
   const timeSlots = useMemo(
     () => generateTimeSlots(earliest, latest, 30),
-    [earliest, latest]
+    [earliest, latest],
   );
 
   // Height per slot (30 minutes = 40px)
@@ -300,15 +317,15 @@ export function TimeGridView({
       }}
     >
       <div className="min-w-[900px]">
-        {/* Header Row - Day Labels */}
-        <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-1 border-b border-slate-200 dark:border-white/10 pb-2 mb-2">
-          <div className="font-mono text-xs p-2 text-slate-500 dark:text-slate-400">
+        {/* Header Row - Day Labels - Industrial style */}
+        <div className="grid grid-cols-[80px_repeat(7,1fr)] gap-1 border-b border-stone-300 dark:border-white/10 pb-2 mb-2">
+          <div className="font-mono uppercase tracking-widest text-[10px] p-2 text-stone-500 dark:text-stone-400">
             Time
           </div>
           {weekDays.map((day) => (
             <div
               key={day.toISOString()}
-              className="font-sans font-semibold text-sm text-center p-2 text-slate-700 dark:text-slate-300"
+              className="font-sans font-semibold uppercase tracking-widest text-[10px] text-center p-2 text-stone-500 dark:text-stone-400"
             >
               {formatDayLabel(day)}
             </div>
@@ -322,7 +339,7 @@ export function TimeGridView({
             {timeSlots.map((time, index) => (
               <div
                 key={time}
-                className="absolute left-0 right-0 font-mono text-xs text-slate-500 dark:text-slate-400 pr-2 text-right"
+                className="absolute left-0 right-0 font-mono text-xs text-stone-500 dark:text-stone-400 pr-2 text-right"
                 style={{ top: index * slotHeight, height: slotHeight }}
               >
                 <span className="-translate-y-1/2 inline-block">
@@ -339,7 +356,7 @@ export function TimeGridView({
             return (
               <div
                 key={day.toISOString()}
-                className="relative border-l border-slate-200/50 dark:border-white/5"
+                className="relative border-l border-stone-300/50 dark:border-white/5"
                 style={{ height: totalHeight }}
               >
                 {/* Time Grid Lines - Subtle (Industrial) */}
@@ -347,17 +364,17 @@ export function TimeGridView({
                   <div
                     key={time}
                     className={cn(
-                      "absolute left-0 right-0 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/30 transition-colors group",
-                      // Subtle grid lines - barely visible
-                      "border-t border-slate-200/30 dark:border-white/5",
+                      "absolute left-0 right-0 cursor-pointer hover:bg-stone-100/50 dark:hover:bg-stone-800/30 transition-colors group",
+                      // Subtle grid lines - stone palette
+                      "border-t border-stone-400/20",
                       // Hour lines slightly more visible
-                      index % 2 === 0 && "border-slate-200/50 dark:border-white/10"
+                      index % 2 === 0 && "border-stone-400/30",
                     )}
                     style={{ top: index * slotHeight, height: slotHeight }}
                     onClick={() => onCreateShift(day, time)}
                   >
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus className="h-4 w-4 text-slate-400" />
+                      <Plus className="h-4 w-4 text-stone-400" />
                     </div>
                   </div>
                 ))}
@@ -365,7 +382,7 @@ export function TimeGridView({
                 {/* Shifts with lane assignment for overlapping */}
                 {(() => {
                   const laneAssignments = assignLanes(dayShifts);
-                  
+
                   return laneAssignments.map(({ shift, lane, totalLanes }) => {
                     const startTime = extractTimeString(new Date(shift.start));
                     const endTime = extractTimeString(new Date(shift.end));
@@ -374,7 +391,7 @@ export function TimeGridView({
                     const topPercent = getTimePositionPercent(
                       startTime,
                       earliest,
-                      latest
+                      latest,
                     );
                     const durationMinutes =
                       (new Date(shift.end).getTime() -
@@ -383,7 +400,7 @@ export function TimeGridView({
                     const heightPercent = getDurationHeightPercent(
                       durationMinutes,
                       earliest,
-                      latest
+                      latest,
                     );
 
                     // Calculate horizontal position based on lane

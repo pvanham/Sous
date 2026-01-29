@@ -17,22 +17,24 @@ export function ShiftCard({ shift, onClick }: ShiftCardProps) {
   return (
     <div
       className={cn(
-        // Base layout
-        "rounded p-3 min-h-[80px]",
-        // Glass effect - transparent background
-        "bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm",
-        // Border - subtle on edges, solid accent on left (from station colors)
-        "border-y border-r border-slate-200 dark:border-white/10",
-        // Station-specific colors (glass background + left border accent)
+        // Base layout - compact height
+        "rounded p-2 min-h-[44px] flex flex-col justify-center",
+        // Glass effect - stone-based warm industrial
+        "bg-stone-100/50 dark:bg-stone-900/40 backdrop-blur-sm",
+        // Border - subtle outline around the card
+        "border border-stone-300/50 dark:border-white/10",
+        // Station-specific colors (includes 4px left border accent)
         getStationClasses(shift.station),
-        // Interactive states
-        onClick && "cursor-pointer hover:bg-white/80 dark:hover:bg-slate-900/80",
+        // Interactive states - brighten border only, NO lift
+        onClick &&
+          "cursor-pointer hover:border-stone-400 dark:hover:border-white/20",
         // Smooth transition
-        "transition-colors duration-150"
+        "transition-colors duration-150",
       )}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
+      title={`${shift.station}${shift.notes ? ` - ${shift.notes}` : ""}`}
       onKeyDown={
         onClick
           ? (e) => {
@@ -44,22 +46,14 @@ export function ShiftCard({ shift, onClick }: ShiftCardProps) {
           : undefined
       }
     >
-      {/* Station name - UI text */}
-      <div className="font-sans font-medium text-sm">{shift.station}</div>
-
-      {/* Time range - Monospace for precision */}
-      <div className="font-mono text-xs text-muted-foreground mt-1">
-        {formatTimeRange(start, end)}
+      {/* Time range and duration inline - Monospace for precision */}
+      <div className="font-mono text-[12px] text-stone-700 dark:text-stone-300">
+        {formatTimeRange(start, end)} ({formatShiftDuration(start, end)})
       </div>
 
-      {/* Duration - Monospace for data */}
-      <div className="font-mono text-xs text-muted-foreground">
-        {formatShiftDuration(start, end)}
-      </div>
-
-      {/* Notes - Small text, truncated */}
+      {/* Notes - Small text, truncated, only shown if present */}
       {shift.notes && (
-        <div className="text-muted-foreground mt-1 truncate text-[10px]">
+        <div className="text-muted-foreground truncate text-[10px] font-sans">
           {shift.notes}
         </div>
       )}

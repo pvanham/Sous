@@ -326,4 +326,244 @@ export const StaffService = {
     });
     return result.deletedCount;
   },
+
+  // ============================================================
+  // Impact Analysis Methods (for station/role removal)
+  // ============================================================
+
+  /**
+   * Find staff who have skills for the specified stations.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to check
+   * @returns Array of StaffDTO who have skills for any of the specified stations
+   */
+  async findStaffByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<StaffDTO[]> {
+    if (stations.length === 0) return [];
+
+    const docs = await Staff.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      "skills.station": { $in: stations },
+    })
+      .sort({ name: 1 })
+      .lean();
+
+    return docs.map(toStaffDTO);
+  },
+
+  /**
+   * Count staff who have skills for the specified stations.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to check
+   * @returns Count of staff with skills for any of the specified stations
+   */
+  async countByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    return await Staff.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      "skills.station": { $in: stations },
+    });
+  },
+
+  /**
+   * Find staff who have any of the specified roles.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param roles - Array of role names to check
+   * @returns Array of StaffDTO who have any of the specified roles
+   */
+  async findStaffByRoles(
+    orgId: string,
+    locationId: string,
+    roles: string[]
+  ): Promise<StaffDTO[]> {
+    if (roles.length === 0) return [];
+
+    const docs = await Staff.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      roles: { $in: roles },
+    })
+      .sort({ name: 1 })
+      .lean();
+
+    return docs.map(toStaffDTO);
+  },
+
+  /**
+   * Find staff who ONLY have the specified roles (would be left with no roles if removed).
+   * This is CRITICAL for role removal - these staff members need a replacement role.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param roles - Array of role names being removed
+   * @returns Array of StaffDTO who would have no roles left after removal
+   */
+  async findStaffWithOnlyRoles(
+    orgId: string,
+    locationId: string,
+    roles: string[]
+  ): Promise<StaffDTO[]> {
+    if (roles.length === 0) return [];
+
+    // Find staff where ALL their roles are in the removal list
+    // i.e., staff whose roles array is a subset of the roles being removed
+    const docs = await Staff.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      roles: { $in: roles }, // Has at least one of the roles being removed
+      $expr: {
+        // All of their roles are in the removal list
+        $eq: [
+          { $size: { $setDifference: ["$roles", roles] } },
+          0,
+        ],
+      },
+    })
+      .sort({ name: 1 })
+      .lean();
+
+    return docs.map(toStaffDTO);
+  },
+
+  /**
+   * Count staff who have any of the specified roles.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param roles - Array of role names to check
+   * @returns Count of staff with any of the specified roles
+   */
+  async countByRoles(
+    orgId: string,
+    locationId: string,
+    roles: string[]
+  ): Promise<number> {
+    if (roles.length === 0) return 0;
+
+    return await Staff.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      roles: { $in: roles },
+    });
+  },
+
+  // ============================================================
+  // Cleanup/Replacement Methods (for station/role removal)
+  // ============================================================
+
+  /**
+   * Remove skills for specified stations from all staff at a location.
+   * Used when a station is removed from kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to remove from skills
+   * @returns Number of staff documents modified
+   */
+  async removeSkillsByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    const result = await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        "skills.station": { $in: stations },
+      },
+      {
+        $pull: { skills: { station: { $in: stations } } },
+      }
+    );
+
+    return result.modifiedCount;
+  },
+
+  /**
+   * Replace a role with another for all staff who have that role.
+   * Used when a role is removed and staff need to be reassigned.
+   * This handles the case where staff would be left with no roles.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param oldRole - Role name to replace
+   * @param newRole - Role name to assign instead
+   * @returns Number of staff documents modified
+   */
+  async replaceRole(
+    orgId: string,
+    locationId: string,
+    oldRole: string,
+    newRole: string
+  ): Promise<number> {
+    // First, add the new role to all staff who have the old role (if they don't already have it)
+    // Use $and to properly combine role conditions (duplicate object keys would overwrite each other)
+    await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        $and: [
+          { roles: oldRole },
+          { roles: { $ne: newRole } }, // Don't add if they already have the new role
+        ],
+      },
+      {
+        $addToSet: { roles: newRole },
+      }
+    );
+
+    // Then remove the old role from all staff
+    const result = await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        roles: oldRole,
+      },
+      {
+        $pull: { roles: oldRole },
+      }
+    );
+
+    return result.modifiedCount;
+  },
+
+  /**
+   * Remove a role from staff who have other roles (safe removal).
+   * Only removes the role if staff have at least one other role.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param role - Role name to remove
+   * @returns Number of staff documents modified
+   */
+  async removeRoleFromStaff(
+    orgId: string,
+    locationId: string,
+    role: string
+  ): Promise<number> {
+    // Only remove from staff who have more than one role
+    const result = await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        roles: role,
+        $expr: { $gt: [{ $size: "$roles" }, 1] }, // Must have more than 1 role
+      },
+      {
+        $pull: { roles: role },
+      }
+    );
+
+    return result.modifiedCount;
+  },
 };

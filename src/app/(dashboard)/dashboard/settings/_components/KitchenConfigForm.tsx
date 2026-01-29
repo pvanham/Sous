@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
@@ -26,14 +27,37 @@ import {
   DAYS_OF_WEEK,
   type DayOfWeek,
 } from "@/lib/validations/kitchen-config.schema";
-import { saveKitchenConfig } from "@/server/actions/kitchen-config.actions";
-import type { KitchenConfigDTO } from "@/types/kitchen-config";
+import {
+  saveKitchenConfig,
+  previewKitchenConfigChanges,
+} from "@/server/actions/kitchen-config.actions";
+import type {
+  KitchenConfigDTO,
+  ConfigChangeImpact,
+  SaveKitchenConfigOptions,
+} from "@/types/kitchen-config";
+import { ConfigChangeWarningDialog } from "./ConfigChangeWarningDialog";
 
 interface KitchenConfigFormProps {
   initialConfig: KitchenConfigDTO | null;
 }
 
 export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
+  // State for warning dialog
+  const [warningDialogOpen, setWarningDialogOpen] = useState(false);
+  const [pendingData, setPendingData] = useState<KitchenConfigInput | null>(null);
+  const [impactData, setImpactData] = useState<ConfigChangeImpact | null>(null);
+
+  // Track original stations and roles to detect removals
+  const originalStations = useMemo(
+    () => new Set(initialConfig?.stations || []),
+    [initialConfig]
+  );
+  const originalRoles = useMemo(
+    () => new Set(initialConfig?.roles || []),
+    [initialConfig]
+  );
+
   // Convert DTO to form values, or use defaults
   const defaultValues: KitchenConfigInput = initialConfig
     ? {
@@ -61,10 +85,32 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
     name: "roles" as never,
   });
 
-  // Mutation for saving config
-  const mutation = useMutation({
+  // Reset form to original/default values
+  const resetFormToOriginal = () => {
+    form.reset(defaultValues);
+  };
+
+  // Mutation for previewing changes
+  const previewMutation = useMutation({
     mutationFn: async (data: KitchenConfigInput) => {
-      const result = await saveKitchenConfig(data);
+      const result = await previewKitchenConfigChanges(data);
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result.data;
+    },
+  });
+
+  // Mutation for saving config
+  const saveMutation = useMutation({
+    mutationFn: async ({
+      data,
+      options,
+    }: {
+      data: KitchenConfigInput;
+      options?: SaveKitchenConfigOptions;
+    }) => {
+      const result = await saveKitchenConfig(data, options);
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -72,15 +118,107 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
     },
     onSuccess: () => {
       toast.success("Kitchen configuration saved successfully!");
+      // Clear pending data first so the dialog close handler knows it was a success (not cancel)
+      setPendingData(null);
+      setImpactData(null);
+      setWarningDialogOpen(false);
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to save configuration");
+      // Reset form on save failure to avoid leaving it in a partial state
+      setWarningDialogOpen(false);
+      setPendingData(null);
+      setImpactData(null);
+      resetFormToOriginal();
     },
   });
 
-  const onSubmit = (data: KitchenConfigInput) => {
-    mutation.mutate(data);
+  // Calculate removals from current form state
+  const calculateRemovals = (data: KitchenConfigInput) => {
+    const newStations = new Set(data.stations.filter((s) => s.trim() !== ""));
+    const newRoles = new Set(data.roles.filter((r) => r.trim() !== ""));
+
+    const removedStations = [...originalStations].filter(
+      (s) => !newStations.has(s)
+    );
+    const removedRoles = [...originalRoles].filter((r) => !newRoles.has(r));
+
+    return { removedStations, removedRoles };
   };
+
+  const onSubmit = async (data: KitchenConfigInput) => {
+    // Check for removals
+    const { removedStations, removedRoles } = calculateRemovals(data);
+    const totalRemovals = removedStations.length + removedRoles.length;
+
+    // Enforce one-at-a-time deletion
+    if (totalRemovals > 1) {
+      toast.error(
+        "Please remove only one station or role at a time. This helps ensure data integrity."
+      );
+      // Reset form to avoid leaving it in a partial state
+      resetFormToOriginal();
+      return;
+    }
+
+    // If no removals, save directly
+    if (totalRemovals === 0) {
+      saveMutation.mutate({ data });
+      return;
+    }
+
+    // Preview impact of the removal
+    try {
+      const impact = await previewMutation.mutateAsync(data);
+
+      // Check if there's any actual impact on staff
+      const hasStationImpact =
+        impact.removedStations.length > 0 &&
+        impact.stationImpact.affectedStaffCount > 0;
+      const hasRoleImpact =
+        impact.removedRoles.length > 0 &&
+        impact.roleImpact.affectedStaffCount > 0;
+
+      if (!hasStationImpact && !hasRoleImpact) {
+        // No staff affected, save directly
+        saveMutation.mutate({ data });
+        return;
+      }
+
+      // Show warning dialog
+      setPendingData(data);
+      setImpactData(impact);
+      setWarningDialogOpen(true);
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to preview changes"
+      );
+      // Reset form on preview failure
+      resetFormToOriginal();
+    }
+  };
+
+  // Handle confirmation from warning dialog
+  const handleWarningConfirm = (options?: SaveKitchenConfigOptions) => {
+    if (pendingData) {
+      saveMutation.mutate({ data: pendingData, options });
+    }
+  };
+
+  // Handle warning dialog open state changes (including cancel)
+  const handleWarningDialogOpenChange = (open: boolean) => {
+    setWarningDialogOpen(open);
+    if (!open && pendingData) {
+      // Dialog was closed (cancelled) while there's still pending data
+      // This means user cancelled, not that save succeeded
+      // Reset form to original values and clear pending state
+      setPendingData(null);
+      setImpactData(null);
+      resetFormToOriginal();
+    }
+  };
+
+  const isPending = previewMutation.isPending || saveMutation.isPending;
 
   // Helper to capitalize day names
   const capitalizeDay = (day: string) =>
@@ -286,10 +424,19 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
         </Card>
 
         {/* Submit Button */}
-        <Button type="submit" disabled={mutation.isPending} className="w-full">
-          {mutation.isPending ? "Saving..." : "Save Configuration"}
+        <Button type="submit" disabled={isPending} className="w-full">
+          {isPending ? "Saving..." : "Save Configuration"}
         </Button>
       </form>
+
+      {/* Warning Dialog for Station/Role Removal */}
+      <ConfigChangeWarningDialog
+        open={warningDialogOpen}
+        onOpenChange={handleWarningDialogOpenChange}
+        impact={impactData}
+        onConfirm={handleWarningConfirm}
+        isPending={saveMutation.isPending}
+      />
     </Form>
   );
 }

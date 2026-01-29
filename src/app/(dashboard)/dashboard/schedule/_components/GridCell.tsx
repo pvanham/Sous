@@ -12,12 +12,13 @@ export function GridCell({ staffId, date, onClick }: GridCellProps) {
   return (
     <div
       className={cn(
-        // Base styling - subtle grid
-        "min-h-[80px] rounded bg-background",
-        // Subtle border - barely visible (Industrial grid)
-        "border border-slate-200/50 dark:border-white/5",
+        // Base styling - subtle grid (compact height)
+        "min-h-[44px] rounded bg-background",
+        // Subtle border - stone palette (Industrial grid)
+        "border border-stone-300/50 dark:border-white/5",
         // Interactive states
-        onClick && "cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-colors"
+        onClick &&
+          "cursor-pointer hover:bg-stone-100/50 dark:hover:bg-stone-800/50 transition-colors",
       )}
       onClick={onClick}
       role={onClick ? "button" : undefined}

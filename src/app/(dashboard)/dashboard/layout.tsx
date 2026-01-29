@@ -15,14 +15,14 @@ export default function DashboardLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Header - Border-first approach */}
-      <header className="border-b border-slate-200 dark:border-white/10">
+      {/* Header - Border-first approach (no shadows) */}
+      <header className="border-b border-stone-300 dark:border-white/10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-6">
             {/* Logo */}
             <Link
               href="/dashboard"
-              className="text-lg font-sans font-semibold text-slate-900 dark:text-slate-100 tracking-tight"
+              className="text-lg font-sans font-semibold text-stone-900 dark:text-stone-100 tracking-tight"
             >
               Sous
             </Link>
@@ -33,7 +33,7 @@ export default function DashboardLayout({
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="flex items-center gap-1.5 text-sm font-sans text-slate-600 dark:text-slate-400 transition-colors hover:text-slate-900 dark:hover:text-slate-100"
+                  className="flex items-center gap-1.5 text-sm font-sans text-stone-600 dark:text-stone-400 transition-colors hover:text-stone-900 dark:hover:text-stone-100"
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
