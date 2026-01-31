@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -35,7 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { staffSchema, type StaffInput } from "@/lib/validations/staff.schema";
+import { staffSchema, type StaffInput, type StaffFormValues } from "@/lib/validations/staff.schema";
 import { createStaff, updateStaff } from "@/server/actions/staff.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import type { StaffDTO } from "@/types/staff";
@@ -55,20 +55,26 @@ export function StaffFormDialog({
   const queryClient = useQueryClient();
 
   // Fetch kitchen config for roles/stations
-  const { data: configResult, isLoading: isLoadingConfig } = useQuery({
+  // Uses same pattern as ShiftFormDialog for consistency
+  const { data: configResponse, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["kitchenConfig"],
-    queryFn: async () => {
-      const result = await getKitchenConfig();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
-    },
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    queryFn: () => getKitchenConfig(),
+    enabled: open,
   });
 
-  const availableRoles = configResult?.roles || [];
-  const availableStations = configResult?.stations || [];
+  // Extract config data from response
+  const configResult = configResponse?.success ? configResponse.data : null;
+  const availableRoles = configResult?.roles ?? [];
+  const availableStations = configResult?.stations ?? [];
 
-  const form = useForm<StaffInput>({
+  // Refetch kitchen config when dialog opens to ensure fresh data
+  useEffect(() => {
+    if (open) {
+      queryClient.invalidateQueries({ queryKey: ["kitchenConfig"] });
+    }
+  }, [open, queryClient]);
+
+  const form = useForm<StaffFormValues>({
     resolver: zodResolver(staffSchema),
     defaultValues: {
       name: "",
@@ -112,8 +118,9 @@ export function StaffFormDialog({
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: StaffInput) => {
-      const result = await createStaff(data);
+    mutationFn: async (data: StaffFormValues) => {
+      // Cast to StaffInput for server action compatibility
+      const result = await createStaff(data as StaffInput);
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
@@ -129,8 +136,9 @@ export function StaffFormDialog({
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: StaffInput) => {
-      const result = await updateStaff(staff!.id, data);
+    mutationFn: async (data: StaffFormValues) => {
+      // Cast to StaffInput for server action compatibility
+      const result = await updateStaff(staff!.id, data as StaffInput);
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
@@ -146,7 +154,7 @@ export function StaffFormDialog({
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  const onSubmit = (data: StaffInput) => {
+  const onSubmit = (data: StaffFormValues) => {
     if (isEditMode) {
       updateMutation.mutate(data);
     } else {

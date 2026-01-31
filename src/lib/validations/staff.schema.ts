@@ -23,17 +23,23 @@ const phoneSchema = z
     { message: "Phone number must contain 10 digits (or 11 with country code)" }
   );
 
+// Proficiency type
+export type Proficiency = 1 | 2 | 3 | 4 | 5;
+
 // Skill schema for individual skill entries
+// Using simple number validation for react-hook-form compatibility
 export const skillSchema = z.object({
   station: z.string().min(1, "Station name is required"),
   proficiency: z
     .number()
     .int()
     .min(1, "Proficiency must be at least 1")
-    .max(5, "Proficiency cannot exceed 5") as z.ZodType<1 | 2 | 3 | 4 | 5>,
+    .max(5, "Proficiency cannot exceed 5"),
 });
 
 // Main staff schema - used for creating/updating staff
+// Note: skills and isActive are required to ensure input/output types match
+// for react-hook-form compatibility. Use defaultStaffValues for form defaults.
 export const staffSchema = z.object({
   name: z
     .string()
@@ -44,8 +50,8 @@ export const staffSchema = z.object({
   roles: z
     .array(z.string().min(1, "Role name cannot be empty"))
     .min(1, "At least one role is required"),
-  skills: z.array(skillSchema).default([]),
-  isActive: z.boolean().default(true),
+  skills: z.array(skillSchema),
+  isActive: z.boolean(),
 });
 
 // Partial staff schema for updates
@@ -80,6 +86,17 @@ export type StaffUpdateInput = z.infer<typeof staffUpdateSchema>;
 export type CsvRowInput = z.infer<typeof csvRowSchema>;
 export type ImportStaffInput = z.infer<typeof importStaffSchema>;
 export type SkillInput = z.infer<typeof skillSchema>;
+
+// Explicit form values type for react-hook-form compatibility
+// This ensures consistent types between the form and zodResolver
+export interface StaffFormValues {
+  name: string;
+  email: string;
+  phone: string;
+  roles: string[];
+  skills: Array<{ station: string; proficiency: number }>;
+  isActive: boolean;
+}
 
 // Helper function to parse CSV row into StaffInput format
 export function parseCsvRowToStaff(row: CsvRowInput): Omit<StaffInput, "isActive"> {
