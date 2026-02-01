@@ -14,6 +14,12 @@ export interface IStaff {
   roles: string[];
   skills: StaffSkill[];
   isActive: boolean;
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek: number;
+  minHoursPerWeek: number;
+  preferredStations: string[];
+  certifications: string[];
+  hourlyRate: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +35,12 @@ export interface StaffDTO {
   roles: string[];
   skills: StaffSkill[];
   isActive: boolean;
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek: number;
+  minHoursPerWeek: number;
+  preferredStations: string[];
+  certifications: string[];
+  hourlyRate: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -77,6 +89,12 @@ export function toStaffDTO(doc: IStaff & { _id: unknown }): StaffDTO {
     roles: doc.roles,
     skills: doc.skills,
     isActive: doc.isActive,
+    // Phase 3: Staff constraints for AI scheduling
+    maxHoursPerWeek: doc.maxHoursPerWeek,
+    minHoursPerWeek: doc.minHoursPerWeek,
+    preferredStations: doc.preferredStations,
+    certifications: doc.certifications,
+    hourlyRate: doc.hourlyRate,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

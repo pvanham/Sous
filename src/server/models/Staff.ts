@@ -69,12 +69,46 @@ const StaffSchema = new Schema<IStaffDocument>(
       type: Boolean,
       default: true,
     },
+    // Phase 3: Staff constraints for AI scheduling
+    maxHoursPerWeek: {
+      type: Number,
+      default: 40,
+      min: 0,
+      max: 168, // 24 * 7
+    },
+    minHoursPerWeek: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    preferredStations: {
+      type: [String],
+      default: [],
+    },
+    certifications: {
+      type: [String],
+      default: [],
+    },
+    hourlyRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,
     collection: "staff", // Explicit collection name (prevents Mongoose auto-pluralization to "staffs")
   }
 );
+
+// Pre-save validation: maxHoursPerWeek must be >= minHoursPerWeek
+StaffSchema.pre("save", function () {
+  if (this.maxHoursPerWeek < this.minHoursPerWeek) {
+    throw new Error(
+      "Maximum hours per week must be greater than or equal to minimum hours per week"
+    );
+  }
+});
 
 // Composite unique index: one email per location
 StaffSchema.index({ orgId: 1, locationId: 1, email: 1 }, { unique: true });

@@ -97,18 +97,15 @@ LaborRequirementSchema.index(
 );
 
 // Pre-save validation: endTime must be after startTime
-LaborRequirementSchema.pre("save", function (next) {
+LaborRequirementSchema.pre("save", function () {
   if (this.endTime <= this.startTime) {
-    const error = new Error("End time must be after start time");
-    return next(error);
+    throw new Error("End time must be after start time");
   }
   if (this.preferredStaff < this.minStaff) {
-    const error = new Error(
+    throw new Error(
       "Preferred staff must be greater than or equal to minimum staff"
     );
-    return next(error);
   }
-  next();
 });
 
 // Singleton pattern for Next.js HMR compatibility

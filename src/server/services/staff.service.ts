@@ -133,6 +133,12 @@ export const StaffService = {
     locationId: string,
     data: Omit<StaffInput, "isActive"> & { isActive?: boolean }
   ): Promise<StaffDTO> {
+    // Cast skills to match Mongoose schema expectations
+    const skills = (data.skills || []).map((s) => ({
+      station: s.station,
+      proficiency: s.proficiency as 1 | 2 | 3 | 4 | 5,
+    }));
+
     const doc = await Staff.create({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
@@ -140,8 +146,14 @@ export const StaffService = {
       email: data.email.toLowerCase(),
       phone: data.phone,
       roles: data.roles,
-      skills: data.skills || [],
+      skills,
       isActive: data.isActive ?? true,
+      // Phase 3: Staff constraints for AI scheduling
+      maxHoursPerWeek: data.maxHoursPerWeek ?? 40,
+      minHoursPerWeek: data.minHoursPerWeek ?? 0,
+      preferredStations: data.preferredStations ?? [],
+      certifications: data.certifications ?? [],
+      hourlyRate: data.hourlyRate ?? 0,
     });
 
     return toStaffDTO(doc.toObject());
@@ -169,6 +181,16 @@ export const StaffService = {
     if (data.roles !== undefined) updateData.roles = data.roles;
     if (data.skills !== undefined) updateData.skills = data.skills;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    // Phase 3: Staff constraints for AI scheduling
+    if (data.maxHoursPerWeek !== undefined)
+      updateData.maxHoursPerWeek = data.maxHoursPerWeek;
+    if (data.minHoursPerWeek !== undefined)
+      updateData.minHoursPerWeek = data.minHoursPerWeek;
+    if (data.preferredStations !== undefined)
+      updateData.preferredStations = data.preferredStations;
+    if (data.certifications !== undefined)
+      updateData.certifications = data.certifications;
+    if (data.hourlyRate !== undefined) updateData.hourlyRate = data.hourlyRate;
 
     const doc = await Staff.findOneAndUpdate(
       {
@@ -215,6 +237,12 @@ export const StaffService = {
     );
 
     const bulkOps = staffData.map((staff) => {
+      // Cast skills to match Mongoose schema expectations
+      const skills = (staff.skills || []).map((s) => ({
+        station: s.station,
+        proficiency: s.proficiency as 1 | 2 | 3 | 4 | 5,
+      }));
+
       const filter = {
         orgId: orgObjectId,
         locationId: locationObjectId,
@@ -225,8 +253,14 @@ export const StaffService = {
           name: staff.name,
           phone: staff.phone,
           roles: staff.roles,
-          skills: staff.skills || [],
+          skills,
           isActive: true,
+          // Phase 3: Staff constraints for AI scheduling
+          maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
+          minHoursPerWeek: staff.minHoursPerWeek ?? 0,
+          preferredStations: staff.preferredStations ?? [],
+          certifications: staff.certifications ?? [],
+          hourlyRate: staff.hourlyRate ?? 0,
         },
         $setOnInsert: {
           orgId: orgObjectId,

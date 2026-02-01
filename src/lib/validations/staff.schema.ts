@@ -40,19 +40,53 @@ export const skillSchema = z.object({
 // Main staff schema - used for creating/updating staff
 // Note: skills and isActive are required to ensure input/output types match
 // for react-hook-form compatibility. Use defaultStaffValues for form defaults.
-export const staffSchema = z.object({
-  name: z
-    .string()
-    .min(2, "Name must be at least 2 characters")
-    .max(100, "Name must be less than 100 characters"),
-  email: z.string().email("Invalid email address").toLowerCase(),
-  phone: phoneSchema,
-  roles: z
-    .array(z.string().min(1, "Role name cannot be empty"))
-    .min(1, "At least one role is required"),
-  skills: z.array(skillSchema),
-  isActive: z.boolean(),
-});
+export const staffSchema = z
+  .object({
+    name: z
+      .string()
+      .min(2, "Name must be at least 2 characters")
+      .max(100, "Name must be less than 100 characters"),
+    email: z.string().email("Invalid email address").toLowerCase(),
+    phone: phoneSchema,
+    roles: z
+      .array(z.string().min(1, "Role name cannot be empty"))
+      .min(1, "At least one role is required"),
+    skills: z.array(skillSchema),
+    isActive: z.boolean(),
+    // Phase 3: Staff constraints for AI scheduling
+    maxHoursPerWeek: z
+      .number()
+      .int()
+      .min(0, "Maximum hours cannot be negative")
+      .max(168, "Maximum hours cannot exceed 168 (24*7)")
+      .optional()
+      .default(40),
+    minHoursPerWeek: z
+      .number()
+      .int()
+      .min(0, "Minimum hours cannot be negative")
+      .optional()
+      .default(0),
+    preferredStations: z.array(z.string()).optional().default([]),
+    certifications: z.array(z.string()).optional().default([]),
+    hourlyRate: z
+      .number()
+      .min(0, "Hourly rate cannot be negative")
+      .optional()
+      .default(0),
+  })
+  .refine(
+    (data) => {
+      const max = data.maxHoursPerWeek ?? 40;
+      const min = data.minHoursPerWeek ?? 0;
+      return max >= min;
+    },
+    {
+      message:
+        "Maximum hours per week must be greater than or equal to minimum hours",
+      path: ["maxHoursPerWeek"],
+    }
+  );
 
 // Partial staff schema for updates
 export const staffUpdateSchema = staffSchema.partial();
@@ -96,6 +130,12 @@ export interface StaffFormValues {
   roles: string[];
   skills: Array<{ station: string; proficiency: number }>;
   isActive: boolean;
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek?: number;
+  minHoursPerWeek?: number;
+  preferredStations?: string[];
+  certifications?: string[];
+  hourlyRate?: number;
 }
 
 // Helper function to parse CSV row into StaffInput format
@@ -127,6 +167,12 @@ export function parseCsvRowToStaff(row: CsvRowInput): Omit<StaffInput, "isActive
     phone: row.phone,
     roles,
     skills,
+    // Phase 3: Use defaults for CSV imports
+    maxHoursPerWeek: 40,
+    minHoursPerWeek: 0,
+    preferredStations: [],
+    certifications: [],
+    hourlyRate: 0,
   };
 }
 
@@ -138,4 +184,10 @@ export const defaultStaffValues: StaffInput = {
   roles: [],
   skills: [],
   isActive: true,
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek: 40,
+  minHoursPerWeek: 0,
+  preferredStations: [],
+  certifications: [],
+  hourlyRate: 0,
 };
