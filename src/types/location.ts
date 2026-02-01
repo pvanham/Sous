@@ -23,10 +23,11 @@ export interface CreateLocationInput {
 }
 
 // Input type for updating a location
+// Note: twilioPhoneNumber can be null to clear the phone number
 export interface UpdateLocationInput {
   name?: string;
   timezone?: string;
-  twilioPhoneNumber?: string;
+  twilioPhoneNumber?: string | null;
 }
 
 // Helper function to convert Mongoose document to DTO

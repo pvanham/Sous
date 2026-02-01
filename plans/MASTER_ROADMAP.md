@@ -68,11 +68,13 @@
 - **Migration Script:** `scripts/migrate-to-multi-location.ts` for existing data
 
 **MVP Behavior:**
+
 - First-time users get auto-created organization + location
 - Single-location UX remains unchanged
 - Foundation ready for multi-location switcher in Phase 5+
 
 **Key Files:**
+
 ```
 src/lib/auth/get-location-context.ts     # Resolve org/location from Clerk userId
 src/server/models/Organization.ts        # Tenant container
@@ -300,7 +302,7 @@ Staff {
 
 ### Sprint 3.4a: Time-Off Requests Model
 
-**Scope:** Data layer for specific date-range time-off requests (vacation, appointments). This is different from weekly availability patterns—it's for specific dates when staff are unavailable.
+**Scope:** Data layer for specific date-range time-off requests (vacation, appointments). This is different from weekly availability patterns — it's for specific dates when staff are unavailable.
 
 **Files to Create:**
 
@@ -523,13 +525,13 @@ AIUsageService = {
 export async function generateJSON<T>(
   systemPrompt: string,
   userPrompt: string,
-  options?: { userId?: string; action?: string },
+  options?: { userId?: string; action?: string }
 ): Promise<{ data: T; usage: TokenUsage }>;
 
 export async function generateCompletion(
   systemPrompt: string,
   userPrompt: string,
-  options?: { temperature?: number; maxTokens?: number },
+  options?: { temperature?: number; maxTokens?: number }
 ): Promise<{ content: string; usage: TokenUsage }>;
 ```
 
@@ -683,7 +685,7 @@ async function generateWithRetry(context, maxRetries = 3) {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     const validation = await ScheduleValidatorService.validate(
       schedule,
-      context,
+      context
     );
 
     if (validation.valid) return schedule;
@@ -697,7 +699,7 @@ async function generateWithRetry(context, maxRetries = 3) {
       schedule,
       validation.errors,
       context,
-      attempt,
+      attempt
     );
   }
 }
@@ -732,7 +734,7 @@ export async function generateSchedule(scheduleId: string) {
   // 2. Build context (includes candidate filtering via CandidateService)
   const context = await SchedulingAgentService.buildSchedulingContext(
     userId,
-    weekStart,
+    weekStart
   );
 
   // 3. Generate with validation + retry loop
@@ -787,12 +789,14 @@ If generation fails after all retries, **never** show just an error message. Ins
 1. **Show Partial Results**: "We filled X of Y required shifts. These slots couldn't be filled due to availability conflicts:"
    - List unfilled slots with reasons (e.g., "Friday 5pm-10pm Grill: No available qualified staff")
 2. **Offer Recovery Options**:
+
    - "View Partial Schedule" → Show what was successfully generated
    - "Adjust Labor Requirements" → Link to labor requirements page
    - "Review Staff Availability" → Link to availability management
    - "Try Again" → Retry generation button
 
 3. **Provide Context**: Explain why it failed:
+
    - "3 shifts couldn't be filled because no staff are available during those times"
    - "2 shifts need Grill skills but all qualified staff are already scheduled"
    - "Consider adjusting required staffing levels or staff availability"
@@ -1093,7 +1097,7 @@ interface RoutingDecision {
 
 ```typescript
 function routeByConfidence(
-  confidence: number,
+  confidence: number
 ): "auto_handle" | "draft_and_wait" | "escalate" {
   if (confidence >= 90) return "auto_handle";
   if (confidence >= 70) return "draft_and_wait";
