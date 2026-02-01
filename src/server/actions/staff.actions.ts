@@ -20,6 +20,40 @@ import type {
 } from "@/types/staff";
 
 /**
+ * Get a single staff member by ID.
+ * @param staffId - Staff document ID
+ * @returns ActionResponse containing StaffDTO or null if not found
+ */
+export async function getStaffById(
+  staffId: string
+): Promise<ActionResponse<StaffDTO | null>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    if (!staffId || typeof staffId !== "string") {
+      return { success: false, error: "Invalid staff ID" };
+    }
+
+    // 2. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
+
+    // 3. Service call
+    const staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+
+    // 4. Return response
+    return { success: true, data: staff };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to get staff member";
+    return { success: false, error: message };
+  }
+}
+
+/**
  * List all staff for the current user's location (includes both active and inactive).
  * @returns ActionResponse containing array of StaffDTO
  */

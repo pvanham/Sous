@@ -127,3 +127,61 @@ deleteStaffAvailability(), deleteAllStaffAvailability()
 Additional Fix
 Fixed pre-save hooks in LaborRequirement.ts to use Mongoose 9 pattern (throwing errors instead of callback)
 All files follow the 3-layer architecture pattern and are ready for Sprint 3.4 (Staff Availability UI) and Sprint 3.5 (CandidateService).
+
+Sprint 3.4 implementation is complete. Here's a summary of what was implemented:
+Summary of Sprint 3.4: Staff Availability UI
+Files Created
+
+1. Availability Page (Server Component)
+   src/app/(dashboard)/dashboard/staff/[id]/availability/page.tsx
+   - Server component that fetches staff, availability, and kitchen config in parallel
+   - Handles 404 if staff not found via notFound()
+   - Renders back navigation and passes data to AvailabilityGrid
+
+2. AvailabilityGrid Component (Client Component)
+   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilityGrid.tsx
+   - Weekly grid with 7 columns (Sun-Sat) and 3 rows (Morning/Afternoon/Evening)
+   - Time periods: 6a-12p, 12p-6p, 6p-12a mapped to availableFrom/To format
+   - Local state tracking for slot preferences with unsaved changes detection
+   - Click-to-toggle cycles: unavailable → available → preferred → unavailable
+   - Save button calls bulkUpdateAvailability action
+   - Discard button resets to initial state
+   - TanStack Query for mutations with toast notifications
+   - Legend showing color coding for preference states
+
+3. AvailabilitySlot Component
+   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilitySlot.tsx
+   - Individual cell component for the grid
+   - Visual states: green (preferred), blue (available), gray (unavailable)
+   - Icons: ★ preferred, ✓ available, ✗ unavailable
+   - Hover effects with scale and shadow
+   - Focus ring for keyboard navigation
+
+4. StaffConstraintsForm Component
+   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/StaffConstraintsForm.tsx
+   - Form for updating Staff model fields: maxHoursPerWeek, minHoursPerWeek, hourlyRate, preferredStations
+   - Uses react-hook-form with Zod validation
+   - Multi-select for preferred stations via badges with remove buttons
+   - Calls updateStaff action on save
+   - Dirty state tracking for save button enable/disable
+
+Files Updated
+
+1. src/server/actions/staff.actions.ts
+   - Added getStaffById() action to fetch a single staff member by ID
+   - Follows existing action patterns with auth checks and location context
+
+2. src/app/(dashboard)/dashboard/staff/_components/StaffTable.tsx
+   - Added Calendar icon import from lucide-react
+   - Added Link import from next/link
+   - Added availability button in actions column linking to /dashboard/staff/[id]/availability
+
+Architecture Compliance
+All code follows the 3-layer architecture from ARCHITECTURE.md:
+- UI Layer: Components only call Server Actions (getStaffById, getStaffAvailability, bulkUpdateAvailability, updateStaff)
+- Actions Layer: Uses existing Sprint 3.3 actions + new getStaffById action
+- Service Layer: No changes needed (Sprint 3.3 complete)
+- Multi-tenancy via getLocationContext() in all actions
+- TanStack Query v5 for mutations with proper query key patterns
+- shadcn/ui components (Card, Button, Input, Form, Select, Badge)
+- Zod validation for constraints form

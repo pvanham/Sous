@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
@@ -20,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Calendar,
 } from "lucide-react";
 
 import {
@@ -316,6 +318,18 @@ export function StaffTable({ initialData }: StaffTableProps) {
               title="Edit"
             >
               <Pencil className="h-4 w-4" />
+            </Button>
+
+            {/* Availability Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              asChild
+              title="Set Availability"
+            >
+              <Link href={`/dashboard/staff/${staffMember.id}/availability`}>
+                <Calendar className="h-4 w-4" />
+              </Link>
             </Button>
 
             {/* Toggle Active Button */}

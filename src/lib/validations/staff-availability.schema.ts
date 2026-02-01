@@ -18,49 +18,54 @@ const timeStringSchema = z
 const preferenceSchema = z.enum(["preferred", "available", "unavailable"]);
 
 /**
- * Single staff availability entry schema.
- * Represents availability for one day of the week.
+ * Base staff availability object schema (without refinements).
+ * Used for .omit() which doesn't work on refined schemas.
  */
-export const staffAvailabilitySchema = z
-  .object({
-    staffId: z.string().min(1, "Staff ID is required"),
-    dayOfWeek: z
-      .number()
-      .int()
-      .min(0, "Day of week must be 0-6")
-      .max(6, "Day of week must be 0-6"),
-    availableFrom: timeStringSchema,
-    availableTo: timeStringSchema,
-    preference: preferenceSchema,
-    notes: z.string().max(500, "Notes must be 500 characters or less").optional(),
-  })
-  .refine(
-    (data) => {
-      // If unavailable, times can be null - valid
-      if (data.preference === "unavailable") {
-        return true;
-      }
-
-      // If available or preferred, both times should be present
-      if (!data.availableFrom || !data.availableTo) {
-        return false;
-      }
-
-      // End time must be after start time
-      return data.availableTo > data.availableFrom;
-    },
-    {
-      message:
-        "Available times are required and end time must be after start time",
-      path: ["availableTo"],
-    }
-  );
+const staffAvailabilityBaseSchema = z.object({
+  staffId: z.string().min(1, "Staff ID is required"),
+  dayOfWeek: z
+    .number()
+    .int()
+    .min(0, "Day of week must be 0-6")
+    .max(6, "Day of week must be 0-6"),
+  availableFrom: timeStringSchema,
+  availableTo: timeStringSchema,
+  preference: preferenceSchema,
+  notes: z.string().max(500, "Notes must be 500 characters or less").optional(),
+});
 
 /**
- * Update schema - same as create but without staffId requirement
- * Used when updating existing availability entries.
+ * Single staff availability entry schema with cross-field validation.
+ * Represents availability for one day of the week.
  */
-export const staffAvailabilityUpdateSchema = staffAvailabilitySchema.omit({
+export const staffAvailabilitySchema = staffAvailabilityBaseSchema.refine(
+  (data) => {
+    // If unavailable, times can be null - valid
+    if (data.preference === "unavailable") {
+      return true;
+    }
+
+    // If available or preferred, both times should be present
+    if (!data.availableFrom || !data.availableTo) {
+      return false;
+    }
+
+    // End time must be after start time
+    return data.availableTo > data.availableFrom;
+  },
+  {
+    message:
+      "Available times are required and end time must be after start time",
+    path: ["availableTo"],
+  }
+);
+
+/**
+ * Update schema - same as create but without staffId requirement.
+ * Used when updating existing availability entries.
+ * Uses base schema without refinements since .omit() doesn't work on refined schemas.
+ */
+export const staffAvailabilityUpdateSchema = staffAvailabilityBaseSchema.omit({
   staffId: true,
 });
 
