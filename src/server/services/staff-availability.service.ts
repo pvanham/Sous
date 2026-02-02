@@ -217,6 +217,7 @@ export const StaffAvailabilityService = {
   /**
    * Bulk upsert weekly availability for a staff member.
    * Replaces all existing availability entries with the new set.
+   * First deletes all existing entries, then inserts the new ones.
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param staffId - Staff document ID
@@ -229,49 +230,46 @@ export const StaffAvailabilityService = {
     staffId: string,
     availabilities: DayAvailabilityInput[]
   ): Promise<StaffAvailabilityDTO[]> {
-    if (availabilities.length === 0) {
-      return [];
-    }
-
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
     const staffObjectId = new Types.ObjectId(staffId);
 
-    const bulkOps = availabilities.map((avail) => {
-      const filter = {
+    // Delete all existing availability entries for this staff member
+    await StaffAvailability.deleteMany({
+      orgId: orgObjectId,
+      locationId: locationObjectId,
+      staffId: staffObjectId,
+    });
+
+    // If no new entries to add, return empty array
+    if (availabilities.length === 0) {
+      return [];
+    }
+
+    // Filter out "unavailable" entries - they're implicit (no entry = unavailable)
+    const availableEntries = availabilities.filter(
+      (avail) => avail.preference !== "unavailable"
+    );
+
+    if (availableEntries.length === 0) {
+      return [];
+    }
+
+    // Insert new entries
+    const docs = await StaffAvailability.insertMany(
+      availableEntries.map((avail) => ({
         orgId: orgObjectId,
         locationId: locationObjectId,
         staffId: staffObjectId,
         dayOfWeek: avail.dayOfWeek,
-      };
-      const update = {
-        $set: {
-          availableFrom: avail.availableFrom,
-          availableTo: avail.availableTo,
-          preference: avail.preference,
-          notes: avail.notes ?? "",
-        },
-        $setOnInsert: {
-          orgId: orgObjectId,
-          locationId: locationObjectId,
-          staffId: staffObjectId,
-          dayOfWeek: avail.dayOfWeek,
-        },
-      };
+        availableFrom: avail.availableFrom,
+        availableTo: avail.availableTo,
+        preference: avail.preference,
+        notes: avail.notes ?? "",
+      }))
+    );
 
-      return {
-        updateOne: {
-          filter,
-          update,
-          upsert: true,
-        },
-      };
-    });
-
-    await StaffAvailability.bulkWrite(bulkOps);
-
-    // Fetch and return the updated availability entries
-    return this.getByStaffId(orgId, locationId, staffId);
+    return docs.map((doc) => toStaffAvailabilityDTO(doc.toObject()));
   },
 
   /**

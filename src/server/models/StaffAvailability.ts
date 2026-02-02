@@ -85,9 +85,10 @@ const StaffAvailabilitySchema = new Schema<IStaffAvailabilityDocument>(
   }
 );
 
-// Compound unique index: one entry per staff member per day
+// Compound unique index: one entry per staff member per day per time period
+// Includes availableFrom to support multiple time periods per day (morning/afternoon/evening)
 StaffAvailabilitySchema.index(
-  { orgId: 1, locationId: 1, staffId: 1, dayOfWeek: 1 },
+  { orgId: 1, locationId: 1, staffId: 1, dayOfWeek: 1, availableFrom: 1 },
   { unique: true }
 );
 

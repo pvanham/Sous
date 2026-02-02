@@ -19,10 +19,11 @@ import { AvailabilitySlot } from "./AvailabilitySlot";
 import { StaffConstraintsForm } from "./StaffConstraintsForm";
 
 // Time periods for the grid
+// Note: Use "23:59" for end of day since HH:MM format only allows 00-23 hours
 const TIME_PERIODS = [
   { id: "morning", label: "Morning", subLabel: "(6a-12p)", from: "06:00", to: "12:00" },
   { id: "afternoon", label: "Afternoon", subLabel: "(12p-6p)", from: "12:00", to: "18:00" },
-  { id: "evening", label: "Evening", subLabel: "(6p-12a)", from: "18:00", to: "24:00" },
+  { id: "evening", label: "Evening", subLabel: "(6p-12a)", from: "18:00", to: "23:59" },
 ] as const;
 
 // Days of the week (0 = Sunday)
@@ -178,6 +179,7 @@ export function AvailabilityGrid({
   const saveMutation = useMutation({
     mutationFn: async () => {
       // Build availabilities array from slot state
+      // Only include "preferred" and "available" entries - "unavailable" is implicit
       const availabilities: Array<{
         dayOfWeek: number;
         availableFrom: string | null;
@@ -186,7 +188,7 @@ export function AvailabilityGrid({
         notes?: string;
       }> = [];
 
-      // Add all 7 days x 3 periods
+      // Only save non-unavailable entries
       for (const day of DAYS) {
         for (const period of TIME_PERIODS) {
           const key: SlotKey = `${day.id}-${period.id}`;
@@ -199,14 +201,6 @@ export function AvailabilityGrid({
               availableTo: slotState.availableTo,
               preference: slotState.preference,
               notes: slotState.notes || undefined,
-            });
-          } else {
-            // Mark as unavailable
-            availabilities.push({
-              dayOfWeek: day.id,
-              availableFrom: period.from,
-              availableTo: period.to,
-              preference: "unavailable",
             });
           }
         }

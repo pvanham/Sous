@@ -58,24 +58,24 @@ export function StaffConstraintsForm({
   const queryClient = useQueryClient();
   const [selectedStation, setSelectedStation] = useState<string>("");
 
-  // Initialize form with staff's current values
+  // Initialize form with staff's current values (with fallbacks for Phase 3 fields)
   const form = useForm<ConstraintsFormValues>({
     resolver: zodResolver(constraintsSchema),
     defaultValues: {
-      maxHoursPerWeek: staff.maxHoursPerWeek,
-      minHoursPerWeek: staff.minHoursPerWeek,
-      hourlyRate: staff.hourlyRate,
-      preferredStations: staff.preferredStations,
+      maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
+      minHoursPerWeek: staff.minHoursPerWeek ?? 0,
+      hourlyRate: staff.hourlyRate ?? 0,
+      preferredStations: staff.preferredStations ?? [],
     },
   });
 
   // Reset form when staff changes
   useEffect(() => {
     form.reset({
-      maxHoursPerWeek: staff.maxHoursPerWeek,
-      minHoursPerWeek: staff.minHoursPerWeek,
-      hourlyRate: staff.hourlyRate,
-      preferredStations: staff.preferredStations,
+      maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
+      minHoursPerWeek: staff.minHoursPerWeek ?? 0,
+      hourlyRate: staff.hourlyRate ?? 0,
+      preferredStations: staff.preferredStations ?? [],
     });
   }, [staff, form]);
 
@@ -166,8 +166,10 @@ export function StaffConstraintsForm({
                         type="number"
                         min={0}
                         max={168}
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        value={field.value ?? 0}
+                        onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                        onBlur={field.onBlur}
+                        name={field.name}
                       />
                     </FormControl>
                     <FormDescription>
@@ -189,8 +191,10 @@ export function StaffConstraintsForm({
                         type="number"
                         min={0}
                         max={168}
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        value={field.value ?? 40}
+                        onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                        onBlur={field.onBlur}
+                        name={field.name}
                       />
                     </FormControl>
                     <FormDescription>
@@ -212,8 +216,10 @@ export function StaffConstraintsForm({
                         type="number"
                         min={0}
                         step="0.01"
-                        {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        value={field.value ?? 0}
+                        onChange={(e) => field.onChange(Number(e.target.value) || 0)}
+                        onBlur={field.onBlur}
+                        name={field.name}
                       />
                     </FormControl>
                     <FormDescription>
