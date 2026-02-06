@@ -307,7 +307,7 @@ export function RequirementFormDialog({
                     <FormControl>
                       <Input
                         type="number"
-                        min={1}
+                        min={0}
                         {...field}
                         onChange={(e) => field.onChange(Number(e.target.value))}
                       />
@@ -325,7 +325,7 @@ export function RequirementFormDialog({
                     <FormControl>
                       <Input
                         type="number"
-                        min={1}
+                        min={0}
                         {...field}
                         onChange={(e) => field.onChange(Number(e.target.value))}
                       />

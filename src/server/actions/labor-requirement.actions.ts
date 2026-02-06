@@ -5,6 +5,7 @@ import {
   laborRequirementSchema,
   laborRequirementUpdateSchema,
   dayOfWeekSchema,
+  bulkCreateSchema,
 } from "@/lib/validations/labor-requirement.schema";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
@@ -379,6 +380,85 @@ export async function deleteLaborRequirement(
       error instanceof Error
         ? error.message
         : "Failed to delete labor requirement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Bulk create labor requirements for multiple station/day combinations.
+ * Creates the same requirement settings across all selected cells.
+ * @param input - Contains cells (station/day combos) and requirement settings
+ * @returns ActionResponse with count of created requirements and any errors
+ */
+export async function bulkCreateLaborRequirements(
+  input: unknown
+): Promise<
+  ActionResponse<{
+    created: number;
+    errors: Array<{ station: string; dayOfWeek: number; error: string }>;
+  }>
+> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. Zod validation
+    const parseResult = bulkCreateSchema.safeParse(input);
+    if (!parseResult.success) {
+      const errorMessage = parseResult.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+      return { success: false, error: errorMessage };
+    }
+    const { cells, requirement } = parseResult.data;
+
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
+
+    // 4. Validate all stations against KitchenConfig
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
+    if (!config) {
+      return {
+        success: false,
+        error:
+          "Kitchen configuration not found. Please configure your kitchen first.",
+      };
+    }
+
+    const validStations = new Set(config.stations);
+    const invalidStations = cells
+      .map((c) => c.station)
+      .filter((s) => !validStations.has(s));
+
+    if (invalidStations.length > 0) {
+      const uniqueInvalid = [...new Set(invalidStations)];
+      return {
+        success: false,
+        error: `Invalid station(s): ${uniqueInvalid.join(", ")}. Valid stations are: ${config.stations.join(", ")}`,
+      };
+    }
+
+    // 5. Service call
+    const result = await LaborRequirementService.bulkCreate(
+      ctx.orgId,
+      ctx.locationId,
+      cells,
+      requirement
+    );
+
+    // 6. Return response
+    return { success: true, data: result };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to bulk create labor requirements";
     return { success: false, error: message };
   }
 }

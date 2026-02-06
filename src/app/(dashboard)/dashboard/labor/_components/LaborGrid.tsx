@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 
@@ -13,6 +13,8 @@ import type { KitchenConfigDTO } from "@/types/kitchen-config";
 
 import { RequirementCell } from "./RequirementCell";
 import { RequirementFormDialog } from "./RequirementFormDialog";
+import { BulkEditToolbar } from "./BulkEditToolbar";
+import { BulkRequirementFormDialog } from "./BulkRequirementFormDialog";
 
 // Query keys for TanStack Query
 export const laborRequirementKeys = {
@@ -36,6 +38,11 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
   const [selectedRequirement, setSelectedRequirement] = useState<LaborRequirementDTO | null>(null);
   const [defaultStation, setDefaultStation] = useState<string>("");
   const [defaultDayOfWeek, setDefaultDayOfWeek] = useState<number>(1);
+
+  // Bulk edit state
+  const [bulkEditMode, setBulkEditMode] = useState(false);
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
 
   // Fetch requirements with initial data
   const { data: requirements = [], isLoading: isLoadingRequirements } = useQuery({
@@ -91,8 +98,9 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     return totals;
   }, [requirements]);
 
-  // Handle cell click to open dialog
+  // Handle cell click to open dialog (only in normal mode)
   const handleCellClick = (station: string, dayOfWeek: number, requirement?: LaborRequirementDTO) => {
+    if (bulkEditMode) return; // Ignore in bulk edit mode
     setDefaultStation(station);
     setDefaultDayOfWeek(dayOfWeek);
     setSelectedRequirement(requirement ?? null);
@@ -105,6 +113,66 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     setSelectedRequirement(null);
   };
 
+  // Bulk edit handlers
+  const toggleCellSelection = useCallback((station: string, dayOfWeek: number) => {
+    const key = `${station}|${dayOfWeek}`;
+    setSelectedCells((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAllCells = useCallback(() => {
+    const allKeys = new Set<string>();
+    for (const station of stations) {
+      for (const day of DAY_ORDER) {
+        allKeys.add(`${station}|${day}`);
+      }
+    }
+    setSelectedCells(allKeys);
+  }, [stations]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedCells(new Set());
+  }, []);
+
+  const toggleBulkEditMode = useCallback(() => {
+    setBulkEditMode((prev) => {
+      if (prev) {
+        // Exiting bulk mode - clear selection
+        setSelectedCells(new Set());
+      }
+      return !prev;
+    });
+  }, []);
+
+  const handleBulkApply = useCallback(() => {
+    if (selectedCells.size > 0) {
+      setBulkDialogOpen(true);
+    }
+  }, [selectedCells.size]);
+
+  const handleBulkDialogClose = useCallback(() => {
+    setBulkDialogOpen(false);
+    // Clear selection after successful bulk operation
+    setSelectedCells(new Set());
+    setBulkEditMode(false);
+  }, []);
+
+  // Convert selected cells to array format for bulk dialog
+  const selectedCellsArray = useMemo(() => {
+    return Array.from(selectedCells).map((key) => {
+      const [station, dayStr] = key.split("|");
+      return { station, dayOfWeek: Number(dayStr) };
+    });
+  }, [selectedCells]);
+
+  const totalCells = stations.length * DAY_ORDER.length;
   const isLoading = isLoadingRequirements || isLoadingConfig;
 
   if (isLoading && requirements.length === 0) {
@@ -117,6 +185,17 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
 
   return (
     <>
+      {/* Bulk Edit Toolbar */}
+      <BulkEditToolbar
+        enabled={bulkEditMode}
+        onToggle={toggleBulkEditMode}
+        selectedCount={selectedCells.size}
+        totalCells={totalCells}
+        onSelectAll={selectAllCells}
+        onClearSelection={clearSelection}
+        onApply={handleBulkApply}
+      />
+
       <div className="overflow-x-auto">
         <div className="min-w-[800px]">
           {/* Grid Header */}
@@ -147,6 +226,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
               {/* Day Cells */}
               {DAY_ORDER.map((day) => {
                 const cellRequirements = requirementsByCell.get(`${station}-${day}`) ?? [];
+                const cellKey = `${station}|${day}`;
                 return (
                   <RequirementCell
                     key={`${station}-${day}`}
@@ -154,6 +234,9 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
                     dayOfWeek={day}
                     requirements={cellRequirements}
                     onCellClick={handleCellClick}
+                    bulkEditMode={bulkEditMode}
+                    isSelected={selectedCells.has(cellKey)}
+                    onToggleSelect={() => toggleCellSelection(station, day)}
                   />
                 );
               })}
@@ -185,6 +268,13 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
         defaultStation={defaultStation}
         defaultDayOfWeek={defaultDayOfWeek}
         stations={stations}
+      />
+
+      {/* Bulk Form Dialog */}
+      <BulkRequirementFormDialog
+        open={bulkDialogOpen}
+        onOpenChange={handleBulkDialogClose}
+        selectedCells={selectedCellsArray}
       />
     </>
   );

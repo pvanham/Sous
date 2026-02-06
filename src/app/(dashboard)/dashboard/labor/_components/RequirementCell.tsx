@@ -2,6 +2,7 @@
 
 import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { LaborRequirementDTO, LaborPriority } from "@/types/labor-requirement";
 
 interface RequirementCellProps {
@@ -9,6 +10,12 @@ interface RequirementCellProps {
   dayOfWeek: number;
   requirements: LaborRequirementDTO[];
   onCellClick: (station: string, dayOfWeek: number, requirement?: LaborRequirementDTO) => void;
+  /** Whether bulk edit mode is active */
+  bulkEditMode?: boolean;
+  /** Whether this cell is selected in bulk edit mode */
+  isSelected?: boolean;
+  /** Toggle selection for this cell */
+  onToggleSelect?: () => void;
 }
 
 /**
@@ -52,11 +59,51 @@ export function RequirementCell({
   dayOfWeek,
   requirements,
   onCellClick,
+  bulkEditMode = false,
+  isSelected = false,
+  onToggleSelect,
 }: RequirementCellProps) {
   const hasRequirements = requirements.length > 0;
 
+  // In bulk edit mode, clicking the cell toggles selection
+  const handleCellClick = () => {
+    if (bulkEditMode && onToggleSelect) {
+      onToggleSelect();
+    }
+  };
+
+  // Wrapper for bulk edit mode selection
+  const cellWrapper = (children: React.ReactNode) => (
+    <div
+      className={cn(
+        "relative min-h-[60px]",
+        bulkEditMode && "cursor-pointer",
+        bulkEditMode && isSelected && "ring-2 ring-primary ring-inset bg-primary/5"
+      )}
+      onClick={bulkEditMode ? handleCellClick : undefined}
+    >
+      {bulkEditMode && (
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={onToggleSelect}
+          className="absolute top-1 right-1 z-10"
+          onClick={(e) => e.stopPropagation()}
+        />
+      )}
+      {children}
+    </div>
+  );
+
   // Empty cell - show add button
   if (!hasRequirements) {
+    if (bulkEditMode) {
+      return cellWrapper(
+        <div className="min-h-[60px] px-2 py-2 flex items-center justify-center">
+          <span className="text-xs text-muted-foreground">Empty</span>
+        </div>
+      );
+    }
+
     return (
       <button
         type="button"
@@ -70,39 +117,61 @@ export function RequirementCell({
   }
 
   // Cell with requirements - show them as clickable items
-  return (
-    <div className="min-h-[60px] px-1 py-1 flex flex-col gap-1">
-      {requirements.map((req) => (
-        <button
-          key={req.id}
-          type="button"
-          onClick={() => onCellClick(station, dayOfWeek, req)}
-          className={cn(
-            "text-left px-2 py-1.5 rounded-sm text-xs hover:bg-muted transition-colors",
-            "bg-background",
-            getPriorityBorderClasses(req.priority)
-          )}
-        >
-          <div className="font-medium">
-            {req.minStaff === req.preferredStaff
-              ? `${req.minStaff} staff`
-              : `${req.minStaff}-${req.preferredStaff} staff`}
-          </div>
-          <div className="text-muted-foreground">
-            {formatTimeRange(req.startTime, req.endTime)}
-          </div>
-        </button>
-      ))}
+  const content = (
+    <div className={cn("min-h-[60px] px-1 py-1 flex flex-col gap-1", bulkEditMode && "pt-6")}>
+      {requirements.map((req) => {
+        const isZeroStaff = req.minStaff === 0 && req.preferredStaff === 0;
+        
+        return (
+          <button
+            key={req.id}
+            type="button"
+            onClick={(e) => {
+              if (bulkEditMode) {
+                e.stopPropagation();
+                return;
+              }
+              onCellClick(station, dayOfWeek, req);
+            }}
+            disabled={bulkEditMode}
+            className={cn(
+              "text-left px-2 py-1.5 rounded-sm text-xs transition-colors",
+              !bulkEditMode && "hover:bg-muted",
+              isZeroStaff ? "bg-muted/50 opacity-60" : "bg-background",
+              getPriorityBorderClasses(req.priority)
+            )}
+          >
+            <div className="font-medium">
+              {isZeroStaff
+                ? "Closed"
+                : req.minStaff === req.preferredStaff
+                  ? `${req.minStaff} staff`
+                  : `${req.minStaff}-${req.preferredStaff} staff`}
+            </div>
+            <div className="text-muted-foreground">
+              {formatTimeRange(req.startTime, req.endTime)}
+            </div>
+          </button>
+        );
+      })}
       
-      {/* Add more button at bottom */}
-      <button
-        type="button"
-        onClick={() => onCellClick(station, dayOfWeek)}
-        className="px-2 py-1 flex items-center justify-center hover:bg-muted/50 transition-colors rounded-sm group text-xs text-muted-foreground"
-        aria-label={`Add another requirement for ${station}`}
-      >
-        <Plus className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-      </button>
+      {/* Add more button at bottom - only in normal mode */}
+      {!bulkEditMode && (
+        <button
+          type="button"
+          onClick={() => onCellClick(station, dayOfWeek)}
+          className="px-2 py-1 flex items-center justify-center hover:bg-muted/50 transition-colors rounded-sm group text-xs text-muted-foreground"
+          aria-label={`Add another requirement for ${station}`}
+        >
+          <Plus className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
+      )}
     </div>
   );
+
+  if (bulkEditMode) {
+    return cellWrapper(content);
+  }
+
+  return content;
 }

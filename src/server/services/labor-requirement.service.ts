@@ -1,7 +1,8 @@
 import { Types } from "mongoose";
 import LaborRequirement from "@/server/models/LaborRequirement";
 import type { LaborRequirementInput, LaborRequirementUpdateInput } from "@/lib/validations/labor-requirement.schema";
-import { LaborRequirementDTO, toLaborRequirementDTO } from "@/types/labor-requirement";
+import { LaborRequirementDTO, toLaborRequirementDTO, LaborPriority } from "@/types/labor-requirement";
+import { findOverlappingRequirement } from "@/lib/utils/time-overlap";
 
 /**
  * LaborRequirementService - Service layer for Labor Requirement operations.
@@ -73,12 +74,31 @@ export const LaborRequirementService = {
    * @param locationId - Location ID
    * @param data - Validated labor requirement input
    * @returns Created LaborRequirementDTO
+   * @throws Error if the time range overlaps with an existing requirement
    */
   async create(
     orgId: string,
     locationId: string,
     data: LaborRequirementInput
   ): Promise<LaborRequirementDTO> {
+    // Check for overlapping requirements on same station/day
+    const existing = await this.getByStationAndDay(
+      orgId,
+      locationId,
+      data.station,
+      data.dayOfWeek
+    );
+    const overlap = findOverlappingRequirement(
+      data.startTime,
+      data.endTime,
+      existing
+    );
+    if (overlap) {
+      throw new Error(
+        `Time ${data.startTime}-${data.endTime} overlaps with existing requirement (${overlap.startTime}-${overlap.endTime})`
+      );
+    }
+
     const doc = await LaborRequirement.create({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
@@ -101,6 +121,7 @@ export const LaborRequirementService = {
    * @param id - Labor requirement document ID
    * @param data - Partial labor requirement data to update
    * @returns Updated LaborRequirementDTO or null if not found
+   * @throws Error if the updated time range overlaps with an existing requirement
    */
   async update(
     orgId: string,
@@ -108,6 +129,44 @@ export const LaborRequirementService = {
     id: string,
     data: LaborRequirementUpdateInput
   ): Promise<LaborRequirementDTO | null> {
+    // If updating time range, station, or day, check for overlaps
+    if (
+      data.startTime !== undefined ||
+      data.endTime !== undefined ||
+      data.station !== undefined ||
+      data.dayOfWeek !== undefined
+    ) {
+      // Get the current requirement to merge with updates
+      const current = await this.getById(orgId, locationId, id);
+      if (!current) return null;
+
+      const newStart = data.startTime ?? current.startTime;
+      const newEnd = data.endTime ?? current.endTime;
+      const newStation = data.station ?? current.station;
+      const newDay = data.dayOfWeek ?? current.dayOfWeek;
+
+      // Get existing requirements for the target station/day
+      const existing = await this.getByStationAndDay(
+        orgId,
+        locationId,
+        newStation,
+        newDay
+      );
+
+      // Check for overlaps, excluding the current requirement
+      const overlap = findOverlappingRequirement(
+        newStart,
+        newEnd,
+        existing,
+        id
+      );
+      if (overlap) {
+        throw new Error(
+          `Time ${newStart}-${newEnd} overlaps with existing requirement (${overlap.startTime}-${overlap.endTime})`
+        );
+      }
+    }
+
     const updateData: Record<string, unknown> = {};
 
     if (data.dayOfWeek !== undefined) updateData.dayOfWeek = data.dayOfWeek;
@@ -253,6 +312,32 @@ export const LaborRequirementService = {
   },
 
   /**
+   * Get labor requirements for a specific station and day.
+   * Used for overlap validation when creating/updating requirements.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param station - Station name
+   * @param dayOfWeek - Day of week (0-6, 0=Sunday)
+   * @returns Array of LaborRequirementDTO for the specified station and day
+   */
+  async getByStationAndDay(
+    orgId: string,
+    locationId: string,
+    station: string,
+    dayOfWeek: number
+  ): Promise<LaborRequirementDTO[]> {
+    const docs = await LaborRequirement.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      station,
+      dayOfWeek,
+    })
+      .sort({ startTime: 1 })
+      .lean();
+    return docs.map(toLaborRequirementDTO);
+  },
+
+  /**
    * Count labor requirements for a location.
    * @param orgId - Organization ID
    * @param locationId - Location ID
@@ -263,5 +348,55 @@ export const LaborRequirementService = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
     });
+  },
+
+  /**
+   * Create labor requirements for multiple cells (station/day combinations).
+   * Each cell gets a new requirement with the specified settings.
+   * Overlap validation is performed for each cell.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param cells - Array of station/day combinations
+   * @param requirement - The requirement settings to apply to all cells
+   * @returns Count of created requirements and array of errors for failed cells
+   */
+  async bulkCreate(
+    orgId: string,
+    locationId: string,
+    cells: Array<{ station: string; dayOfWeek: number }>,
+    requirement: {
+      startTime: string;
+      endTime: string;
+      minStaff: number;
+      preferredStaff: number;
+      priority: LaborPriority;
+    }
+  ): Promise<{
+    created: number;
+    errors: Array<{ station: string; dayOfWeek: number; error: string }>;
+  }> {
+    const results = {
+      created: 0,
+      errors: [] as Array<{ station: string; dayOfWeek: number; error: string }>,
+    };
+
+    for (const cell of cells) {
+      try {
+        await this.create(orgId, locationId, {
+          station: cell.station,
+          dayOfWeek: cell.dayOfWeek,
+          ...requirement,
+        });
+        results.created++;
+      } catch (error) {
+        results.errors.push({
+          station: cell.station,
+          dayOfWeek: cell.dayOfWeek,
+          error: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    return results;
   },
 };

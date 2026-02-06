@@ -36,11 +36,11 @@ export const laborRequirementSchema = z
     minStaff: z
       .number()
       .int("Minimum staff must be an integer")
-      .min(1, "Minimum staff must be at least 1"),
+      .min(0, "Minimum staff must be at least 0"),
     preferredStaff: z
       .number()
       .int("Preferred staff must be an integer")
-      .min(1, "Preferred staff must be at least 1"),
+      .min(0, "Preferred staff must be at least 0"),
     priority: prioritySchema,
   })
   .refine(
@@ -81,12 +81,12 @@ export const laborRequirementUpdateSchema = z
     minStaff: z
       .number()
       .int("Minimum staff must be an integer")
-      .min(1, "Minimum staff must be at least 1")
+      .min(0, "Minimum staff must be at least 0")
       .optional(),
     preferredStaff: z
       .number()
       .int("Preferred staff must be an integer")
-      .min(1, "Preferred staff must be at least 1")
+      .min(0, "Preferred staff must be at least 0")
       .optional(),
     priority: prioritySchema.optional(),
   })
@@ -157,3 +157,55 @@ export const DAY_NAMES = [
 export function getDayName(dayOfWeek: number): string {
   return DAY_NAMES[dayOfWeek] ?? "Unknown";
 }
+
+// ============================================================
+// Bulk Operations Schemas
+// ============================================================
+
+/**
+ * Schema for a single cell in bulk operations.
+ * Represents a station + day combination.
+ */
+export const bulkCellSchema = z.object({
+  station: z.string().min(1, "Station is required"),
+  dayOfWeek: dayOfWeekSchema,
+});
+
+/**
+ * Schema for bulk create operation.
+ * Creates a requirement with the same settings across multiple station/day cells.
+ */
+export const bulkCreateSchema = z
+  .object({
+    cells: z.array(bulkCellSchema).min(1, "Select at least one cell"),
+    requirement: z.object({
+      startTime: timeStringSchema,
+      endTime: timeStringSchema,
+      minStaff: z
+        .number()
+        .int("Minimum staff must be an integer")
+        .min(0, "Minimum staff must be at least 0"),
+      preferredStaff: z
+        .number()
+        .int("Preferred staff must be an integer")
+        .min(0, "Preferred staff must be at least 0"),
+      priority: prioritySchema,
+    }),
+  })
+  .refine(
+    (data) => data.requirement.endTime > data.requirement.startTime,
+    {
+      message: "End time must be after start time",
+      path: ["requirement", "endTime"],
+    }
+  )
+  .refine(
+    (data) => data.requirement.preferredStaff >= data.requirement.minStaff,
+    {
+      message: "Preferred staff must be >= minimum staff",
+      path: ["requirement", "preferredStaff"],
+    }
+  );
+
+export type BulkCellInput = z.infer<typeof bulkCellSchema>;
+export type BulkCreateInput = z.infer<typeof bulkCreateSchema>;

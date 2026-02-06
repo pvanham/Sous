@@ -56,7 +56,7 @@ const LaborRequirementSchema = new Schema<ILaborRequirementDocument>(
     minStaff: {
       type: Number,
       required: true,
-      min: 1,
+      min: 0,
       validate: {
         validator: Number.isInteger,
         message: "Minimum staff must be an integer",
@@ -65,7 +65,7 @@ const LaborRequirementSchema = new Schema<ILaborRequirementDocument>(
     preferredStaff: {
       type: Number,
       required: true,
-      min: 1,
+      min: 0,
       validate: {
         validator: Number.isInteger,
         message: "Preferred staff must be an integer",
