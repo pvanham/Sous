@@ -26,6 +26,7 @@ export interface IKitchenConfig {
   stations: string[];
   roles: string[];
   operatingHours: IWeeklyOperatingHours;
+  minTimeOffAdvanceDays: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -88,6 +89,11 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
       friday: { type: OperatingHoursSchema, required: true },
       saturday: { type: OperatingHoursSchema, required: true },
       sunday: { type: OperatingHoursSchema, required: true },
+    },
+    minTimeOffAdvanceDays: {
+      type: Number,
+      default: 7,
+      min: 0,
     },
   },
   {

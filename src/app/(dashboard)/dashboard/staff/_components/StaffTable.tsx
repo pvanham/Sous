@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Loader2,
   Calendar,
+  CalendarOff,
 } from "lucide-react";
 
 import {
@@ -329,6 +330,18 @@ export function StaffTable({ initialData }: StaffTableProps) {
             >
               <Link href={`/dashboard/staff/${staffMember.id}/availability`}>
                 <Calendar className="h-4 w-4" />
+              </Link>
+            </Button>
+
+            {/* Time Off Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              asChild
+              title="Time Off Requests"
+            >
+              <Link href={`/dashboard/time-off?staffId=${staffMember.id}`}>
+                <CalendarOff className="h-4 w-4" />
               </Link>
             </Button>
 

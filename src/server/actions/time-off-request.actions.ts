@@ -1,6 +1,7 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
+import { addDays, startOfDay } from "date-fns";
 import {
   createTimeOffRequestSchema,
   updateTimeOffStatusSchema,
@@ -9,6 +10,7 @@ import {
   approvedTimeOffQuerySchema,
 } from "@/lib/validations/time-off-request.schema";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { TimeOffRequestDTO } from "@/types/time-off-request";
@@ -65,6 +67,22 @@ export async function createTimeOffRequest(
 
   try {
     const ctx = await getLocationContext(userId);
+
+    // Dynamic validation: check minTimeOffAdvanceDays from KitchenConfig
+    const config = await KitchenConfigService.getByLocation(
+      ctx.orgId,
+      ctx.locationId
+    );
+    const minAdvanceDays = config?.minTimeOffAdvanceDays ?? 7;
+    const minAllowedDate = startOfDay(addDays(new Date(), minAdvanceDays));
+
+    if (parsed.data.startDate < minAllowedDate) {
+      return {
+        success: false,
+        error: `Time-off requests must be submitted at least ${minAdvanceDays} days in advance`,
+      };
+    }
+
     const result = await TimeOffRequestService.create(
       ctx.orgId,
       ctx.locationId,

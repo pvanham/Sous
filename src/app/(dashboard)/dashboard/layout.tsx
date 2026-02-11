@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Home, Calendar, Users, ClipboardList, Settings } from "lucide-react";
+import { Home, Calendar, Users, ClipboardList, CalendarOff, Settings } from "lucide-react";
 
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 
@@ -8,6 +8,7 @@ const navItems = [
   { href: "/dashboard/schedule", label: "Schedule", icon: Calendar },
   { href: "/dashboard/staff", label: "Staff", icon: Users },
   { href: "/dashboard/labor", label: "Labor", icon: ClipboardList },
+  { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
 

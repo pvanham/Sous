@@ -14,11 +14,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import {
   kitchenConfigSchema,
@@ -66,6 +74,7 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
           initialConfig.stations.length > 0 ? initialConfig.stations : [""],
         roles: initialConfig.roles.length > 0 ? initialConfig.roles : [""],
         operatingHours: initialConfig.operatingHours,
+        minTimeOffAdvanceDays: initialConfig.minTimeOffAdvanceDays ?? 7,
       }
     : defaultKitchenConfigValues;
 
@@ -349,6 +358,44 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 {form.formState.errors.roles.root.message}
               </p>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Time-Off Policy */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Time-Off Policy</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FormField
+              control={form.control}
+              name="minTimeOffAdvanceDays"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Minimum Time-Off Notice</FormLabel>
+                  <Select
+                    value={String(field.value)}
+                    onValueChange={(v) => field.onChange(Number(v))}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select minimum notice" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="7">1 week (7 days)</SelectItem>
+                      <SelectItem value="14">2 weeks (14 days)</SelectItem>
+                      <SelectItem value="21">3 weeks (21 days)</SelectItem>
+                      <SelectItem value="28">4 weeks (28 days)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormDescription>
+                    How far in advance staff must submit time-off requests.
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
           </CardContent>
         </Card>
 

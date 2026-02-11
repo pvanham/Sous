@@ -260,3 +260,32 @@ src/server/actions/time-off-request.actions.ts -- Server actions
 All 7 actions follow: auth() -> Zod safeParse() -> getLocationContext(userId) -> Service call -> ActionResponse<T>
 updateTimeOffRequestStatus() passes Clerk userId as reviewedBy for audit trail
 deleteTimeOffRequest() communicates that only pending requests can be deleted
+
+Sprint 3.4b: Time-Off Requests UI & Approval -- Complete
+4 new files created, 2 existing files updated, all strictly following the 3-layer architecture per ARCHITECTURE.md and .cursorrules (UI Layer calls Server Actions only, no DB imports):
+New Files:
+src/app/(dashboard)/dashboard/time-off/page.tsx -- Server component
+Fetches listTimeOffRequests() and listStaff() in parallel via Promise.all
+Passes initial data to the client TimeOffRequestTable component
+src/app/(dashboard)/dashboard/time-off/\_components/TimeOffRequestTable.tsx -- Main client component
+Exported timeOffRequestKeys query key factory for child components
+TanStack Query useQuery with initialData from server
+Status filter tabs (All / Pending / Approved / Denied) using shadcn Tabs
+@tanstack/react-table with columns: Staff Name (resolved via Map), Start/End Date (formatted with date-fns), Reason, Status (color-coded Badge), Reviewed info, Actions
+URL-based ?staffId= filtering (from StaffTable link)
+Delete mutation with AlertDialog confirmation
+Opens TimeOffRequestReviewDialog and CreateTimeOffRequestDialog
+src/app/(dashboard)/dashboard/time-off/\_components/TimeOffRequestReviewDialog.tsx -- Review dialog
+Displays request details (staff name, dates, reason, submitted date)
+Approve/Deny buttons with separate useMutation calls to updateTimeOffRequestStatus
+Optional manager notes input
+Toast notifications and query invalidation on success
+src/app/(dashboard)/dashboard/time-off/\_components/CreateTimeOffRequestDialog.tsx -- Create dialog
+react-hook-form + zodResolver(createTimeOffRequestSchema) for Zod v4 validation
+Staff member Select dropdown (active staff only)
+Native date inputs (<Input type="date">) for start/end dates
+Optional reason field
+useMutation calling createTimeOffRequest action
+Updated Files:
+src/app/(dashboard)/dashboard/layout.tsx -- Added "Time Off" nav item with CalendarOff icon, placed before Settings
+src/app/(dashboard)/dashboard/staff/\_components/StaffTable.tsx -- Added CalendarOff "Time Off" action button per row, linking to /dashboard/time-off?staffId={id}

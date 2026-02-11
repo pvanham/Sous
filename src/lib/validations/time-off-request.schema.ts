@@ -1,9 +1,12 @@
 import { z } from "zod";
+import { startOfDay } from "date-fns";
 
 /**
  * Create time-off request schema.
  * Used when a manager submits a time-off request for a staff member.
- * Validates that endDate >= startDate.
+ * Validates that startDate is not in the past and endDate >= startDate.
+ * Note: The configurable minTimeOffAdvanceDays check is in the action layer
+ * since Zod schemas cannot access DB-stored settings at parse time.
  */
 export const createTimeOffRequestSchema = z
   .object({
@@ -15,6 +18,16 @@ export const createTimeOffRequestSchema = z
       .max(500, "Reason must be 500 characters or less")
       .optional(),
   })
+  .refine(
+    (data) => {
+      const today = startOfDay(new Date());
+      return data.startDate >= today;
+    },
+    {
+      message: "Start date cannot be in the past",
+      path: ["startDate"],
+    }
+  )
   .refine(
     (data) => {
       return data.endDate >= data.startDate;

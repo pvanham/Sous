@@ -55,6 +55,7 @@ export const kitchenConfigSchema = z.object({
     .array(z.string().min(1, "Role name cannot be empty"))
     .min(1, "At least one role is required"),
   operatingHours: weeklyOperatingHoursSchema,
+  minTimeOffAdvanceDays: z.number().int().min(0).default(7),
 });
 
 // Type inferred from the schema - used for form input
@@ -84,4 +85,5 @@ export const defaultKitchenConfigValues: KitchenConfigInput = {
     saturday: { isOpen: true, open: "09:00", close: "22:00" },
     sunday: { isOpen: false, open: "09:00", close: "22:00" },
   },
+  minTimeOffAdvanceDays: 7,
 };

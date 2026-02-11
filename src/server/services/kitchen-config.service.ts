@@ -54,6 +54,7 @@ export const KitchenConfigService = {
         stations: data.stations.filter((s) => s.trim() !== ""),
         roles: data.roles.filter((r) => r.trim() !== ""),
         operatingHours: data.operatingHours,
+        minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
       },
       {
         new: true, // Return the updated document
