@@ -58,6 +58,10 @@ export interface ConfigChangeImpact {
     }>;
     /** Number of historical shifts referencing removed stations (informational only) */
     historicalShiftCount: number;
+    /** Number of labor requirements that will be deleted for removed stations */
+    laborRequirementCount: number;
+    /** Number of staff with removed stations in their preferredStations */
+    preferredStationStaffCount: number;
   };
 
   /** Impact of role removal (CRITICAL - roles are required) */

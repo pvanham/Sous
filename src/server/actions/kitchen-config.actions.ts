@@ -3,6 +3,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { kitchenConfigSchema } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { StaffService } from "@/server/services/staff.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
@@ -91,6 +92,8 @@ export async function previewKitchenConfigChanges(
             affectedStaffCount: 0,
             affectedStaff: [],
             historicalShiftCount: 0,
+            laborRequirementCount: 0,
+            preferredStationStaffCount: 0,
           },
           roleImpact: {
             affectedStaffCount: 0,
@@ -117,20 +120,34 @@ export async function previewKitchenConfigChanges(
       affectedStaffCount: 0,
       affectedStaff: [],
       historicalShiftCount: 0,
+      laborRequirementCount: 0,
+      preferredStationStaffCount: 0,
     };
 
     if (removedStations.length > 0) {
-      const affectedStaff = await StaffService.findStaffByStations(
-        ctx.orgId,
-        ctx.locationId,
-        removedStations
-      );
-
-      const historicalShiftCount = await ShiftService.countByStations(
-        ctx.orgId,
-        ctx.locationId,
-        removedStations
-      );
+      const [affectedStaff, historicalShiftCount, laborRequirementCount, preferredStationStaffCount] =
+        await Promise.all([
+          StaffService.findStaffByStations(
+            ctx.orgId,
+            ctx.locationId,
+            removedStations
+          ),
+          ShiftService.countByStations(
+            ctx.orgId,
+            ctx.locationId,
+            removedStations
+          ),
+          LaborRequirementService.countByStations(
+            ctx.orgId,
+            ctx.locationId,
+            removedStations
+          ),
+          StaffService.countByPreferredStations(
+            ctx.orgId,
+            ctx.locationId,
+            removedStations
+          ),
+        ]);
 
       stationImpact = {
         affectedStaffCount: affectedStaff.length,
@@ -142,6 +159,8 @@ export async function previewKitchenConfigChanges(
           ),
         })),
         historicalShiftCount,
+        laborRequirementCount,
+        preferredStationStaffCount,
       };
     }
 
@@ -266,9 +285,19 @@ export async function saveKitchenConfig(
         (r) => !newRolesSet.has(r)
       );
 
-      // 6. Handle station removal - always clean up skills
+      // 6. Handle station removal - clean up skills, labor requirements, preferredStations
       if (removedStations.length > 0) {
         await StaffService.removeSkillsByStations(
+          ctx.orgId,
+          ctx.locationId,
+          removedStations
+        );
+        await LaborRequirementService.deleteByStations(
+          ctx.orgId,
+          ctx.locationId,
+          removedStations
+        );
+        await StaffService.removePreferredStations(
           ctx.orgId,
           ctx.locationId,
           removedStations

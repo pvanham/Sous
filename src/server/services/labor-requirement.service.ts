@@ -351,6 +351,51 @@ export const LaborRequirementService = {
   },
 
   /**
+   * Count labor requirements that reference any of the given station names.
+   * Used for impact analysis when removing stations from kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to count
+   * @returns Number of labor requirements for the specified stations
+   */
+  async countByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    return await LaborRequirement.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      station: { $in: stations },
+    });
+  },
+
+  /**
+   * Delete all labor requirements that reference any of the given station names.
+   * Used when a station is removed from kitchen config (cascading cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to delete requirements for
+   * @returns Number of deleted documents
+   */
+  async deleteByStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    const result = await LaborRequirement.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      station: { $in: stations },
+    });
+    return result.deletedCount;
+  },
+
+  /**
    * Create labor requirements for multiple cells (station/day combinations).
    * Each cell gets a new requirement with the specified settings.
    * Overlap validation is performed for each cell.

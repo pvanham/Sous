@@ -526,6 +526,57 @@ export const StaffService = {
   },
 
   /**
+   * Count staff who have any of the specified stations in their preferredStations array.
+   * Used for impact analysis when removing stations from kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to check
+   * @returns Count of staff with any of the specified stations in preferredStations
+   */
+  async countByPreferredStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    return await Staff.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      preferredStations: { $in: stations },
+    });
+  },
+
+  /**
+   * Remove specified stations from preferredStations for all staff at a location.
+   * Used when a station is removed from kitchen config (cascading cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to remove from preferredStations
+   * @returns Number of staff documents modified
+   */
+  async removePreferredStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    const result = await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        preferredStations: { $in: stations },
+      },
+      {
+        $pull: { preferredStations: { $in: stations } },
+      }
+    );
+
+    return result.modifiedCount;
+  },
+
+  /**
    * Replace a role with another for all staff who have that role.
    * Used when a role is removed and staff need to be reassigned.
    * This handles the case where staff would be left with no roles.

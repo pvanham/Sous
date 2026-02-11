@@ -171,16 +171,18 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
     try {
       const impact = await previewMutation.mutateAsync(data);
 
-      // Check if there's any actual impact on staff
+      // Check if there's any actual impact (staff skills, labor requirements, preferred stations, or roles)
       const hasStationImpact =
         impact.removedStations.length > 0 &&
-        impact.stationImpact.affectedStaffCount > 0;
+        (impact.stationImpact.affectedStaffCount > 0 ||
+          impact.stationImpact.laborRequirementCount > 0 ||
+          impact.stationImpact.preferredStationStaffCount > 0);
       const hasRoleImpact =
         impact.removedRoles.length > 0 &&
         impact.roleImpact.affectedStaffCount > 0;
 
       if (!hasStationImpact && !hasRoleImpact) {
-        // No staff affected, save directly
+        // No impact, save directly
         saveMutation.mutate({ data });
         return;
       }
