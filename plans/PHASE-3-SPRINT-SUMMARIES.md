@@ -139,7 +139,7 @@ Files Created
    - Renders back navigation and passes data to AvailabilityGrid
 
 2. AvailabilityGrid Component (Client Component)
-   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilityGrid.tsx
+   src/app/(dashboard)/dashboard/staff/[id]/availability/\_components/AvailabilityGrid.tsx
    - Weekly grid with 7 columns (Sun-Sat) and 3 rows (Morning/Afternoon/Evening)
    - Time periods: 6a-12p, 12p-6p, 6p-12a mapped to availableFrom/To format
    - Local state tracking for slot preferences with unsaved changes detection
@@ -150,7 +150,7 @@ Files Created
    - Legend showing color coding for preference states
 
 3. AvailabilitySlot Component
-   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilitySlot.tsx
+   src/app/(dashboard)/dashboard/staff/[id]/availability/\_components/AvailabilitySlot.tsx
    - Individual cell component for the grid
    - Visual states: green (preferred), blue (available), gray (unavailable)
    - Icons: ★ preferred, ✓ available, ✗ unavailable
@@ -158,7 +158,7 @@ Files Created
    - Focus ring for keyboard navigation
 
 4. StaffConstraintsForm Component
-   src/app/(dashboard)/dashboard/staff/[id]/availability/_components/StaffConstraintsForm.tsx
+   src/app/(dashboard)/dashboard/staff/[id]/availability/\_components/StaffConstraintsForm.tsx
    - Form for updating Staff model fields: maxHoursPerWeek, minHoursPerWeek, hourlyRate, preferredStations
    - Uses react-hook-form with Zod validation
    - Multi-select for preferred stations via badges with remove buttons
@@ -171,17 +171,92 @@ Files Updated
    - Added getStaffById() action to fetch a single staff member by ID
    - Follows existing action patterns with auth checks and location context
 
-2. src/app/(dashboard)/dashboard/staff/_components/StaffTable.tsx
+2. src/app/(dashboard)/dashboard/staff/\_components/StaffTable.tsx
    - Added Calendar icon import from lucide-react
    - Added Link import from next/link
    - Added availability button in actions column linking to /dashboard/staff/[id]/availability
 
-Architecture Compliance
-All code follows the 3-layer architecture from ARCHITECTURE.md:
-- UI Layer: Components only call Server Actions (getStaffById, getStaffAvailability, bulkUpdateAvailability, updateStaff)
-- Actions Layer: Uses existing Sprint 3.3 actions + new getStaffById action
-- Service Layer: No changes needed (Sprint 3.3 complete)
-- Multi-tenancy via getLocationContext() in all actions
-- TanStack Query v5 for mutations with proper query key patterns
-- shadcn/ui components (Card, Button, Input, Form, Select, Badge)
-- Zod validation for constraints form
+Additonal Sprint 3.4 Changes
+
+Labor Requirements Improvemnets
+
+Phase 1: Allow Zero Staff + Overlap Validation
+Modified Files:
+src/server/models/LaborRequirement.ts - Changed min: 1 to min: 0 for minStaff and preferredStaff
+src/lib/validations/labor-requirement.schema.ts - Updated both schemas to allow 0 for staff fields, added bulk operation schemas (bulkCellSchema, bulkCreateSchema)
+src/lib/utils/time-overlap.ts (NEW) - Created utility functions timeRangesOverlap() and findOverlappingRequirement() for overlap detection
+src/server/services/labor-requirement.service.ts - Added:
+Import for findOverlappingRequirement
+Import for LaborPriority type
+getByStationAndDay() helper method
+Overlap validation in create() method
+Overlap validation in update() method
+bulkCreate() method for bulk operations
+src/server/actions/labor-requirement.actions.ts - Added bulkCreateLaborRequirements() action following the .cursorrules pattern
+Phase 2: UI Updates for Zero Staff
+src/app/(dashboard)/dashboard/labor/\_components/RequirementFormDialog.tsx - Changed min={1} to min={0} on staff inputs
+src/app/(dashboard)/dashboard/labor/\_components/RequirementCell.tsx - Added:
+Muted styling for zero-staff requirements
+"Closed" text display
+Bulk edit mode props (bulkEditMode, isSelected, onToggleSelect)
+Checkbox rendering in bulk edit mode
+Selection ring visual feedback
+Phase 3: Bulk Edit Feature
+src/app/(dashboard)/dashboard/labor/\_components/BulkEditToolbar.tsx (NEW) - Toolbar component with:
+Toggle button for bulk edit mode
+Select All / Clear Selection buttons
+Apply to Selected button
+Selected count display
+src/app/(dashboard)/dashboard/labor/\_components/BulkRequirementFormDialog.tsx (NEW) - Bulk form dialog with:
+TanStack Query mutation
+Form for time range, staff counts, priority
+Selected cells summary
+Toast notifications
+src/app/(dashboard)/dashboard/labor/\_components/LaborGrid.tsx - Added:
+Bulk edit mode state
+Cell selection state (Set-based for efficient lookups)
+Selection handlers (toggle, select all, clear)
+Integration with BulkEditToolbar and BulkRequirementFormDialog
+
+Labor Grid Improvements
+Feature 1: Bulk deletion + toolbar
+Service (labor-requirement.service.ts): Added bulkDelete(orgId, locationId, cells) that runs deleteMany per cell and returns { deleted: number }.
+Schema (labor-requirement.schema.ts): Added bulkDeleteSchema and BulkDeleteInput using bulkCellSchema.
+Action (labor-requirement.actions.ts): Added bulkDeleteLaborRequirements with auth, validation, getLocationContext(), and service call.
+BulkEditToolbar: Added onDelete prop; Select All and Clear use variant="outline"; added separator and “Delete Selected” (destructive); label “Apply to Selected” → “Add to Selected”.
+BulkDeleteConfirmDialog (new): Confirm dialog with “Delete Requirements” title and description; uses useMutation for bulkDeleteLaborRequirements, toasts on success/error, invalidates laborRequirementKeys.list() on success.
+LaborGrid: deleteDialogOpen state, handleBulkDelete / handleDeleteDialogClose / handleDeleteSuccess, onDelete passed to toolbar, and BulkDeleteConfirmDialog rendered with selectedCellsArray and onSuccess to clear selection and exit bulk mode.
+Feature 2: Stretchy labels
+RequirementCell: Container has h-full; each requirement button has flex-1 min-h-0 so labels share vertical space; “add more” button is unchanged at the bottom.
+Feature 3: Weekly total + tooltip
+LaborGrid: weeklyTotal from totalHoursByDay; “Total Hours” wrapped in shadcn Tooltip with Info icon and explanation (preferred staff × duration = person-hours); new “Weekly Total” row showing weeklyTotal.toFixed(1)} person-hours (or “-” when 0) in a col-span-7 cell.
+Other
+Added shadcn tooltip component (src/components/ui/tooltip.tsx) for the Total Hours tooltip.
+
+Sprint 3.4a: Time-Off Requests Model -- Complete
+5 files created, strictly following the 3-layer architecture per ARCHITECTURE.md and .cursorrules:
+src/types/time-off-request.ts -- Types and DTO converter
+TimeOffRequestStatus type (pending | approved | denied)
+ITimeOffRequest interface for Mongoose documents
+TimeOffRequestDTO for clean UI consumption
+toTimeOffRequestDTO() converter function
+src/lib/validations/time-off-request.schema.ts -- Zod validation schemas (Zod v4 compatible)
+createTimeOffRequestSchema with .refine() for endDate >= startDate
+updateTimeOffStatusSchema restricted to approved/denied only
+timeOffByStaffSchema, timeOffByDateRangeSchema, approvedTimeOffQuerySchema for queries
+All inferred types exported
+src/server/models/TimeOffRequest.ts -- Mongoose model
+Schema with orgId + locationId multi-tenancy scoping (not userId)
+3 compound indexes for staff+status, date range, and duplicate prevention
+Pre-save validation for date range consistency
+Singleton export for Next.js HMR compatibility
+src/server/services/time-off-request.service.ts -- Service layer (ONLY place model is imported)
+list(), getById(), getByStaffId(), getByDateRange(), create(), updateStatus(), delete()
+getApprovedTimeOff() -- Key method for Sprint 3.5 CandidateService, uses overlap logic
+hasApprovedTimeOff() -- Boolean convenience for single-date checks
+Delete restricted to pending requests only (audit trail preservation)
+Cleanup methods for testing
+src/server/actions/time-off-request.actions.ts -- Server actions
+All 7 actions follow: auth() -> Zod safeParse() -> getLocationContext(userId) -> Service call -> ActionResponse<T>
+updateTimeOffRequestStatus() passes Clerk userId as reviewedBy for audit trail
+deleteTimeOffRequest() communicates that only pending requests can be deleted
