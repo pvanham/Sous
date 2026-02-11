@@ -399,4 +399,32 @@ export const LaborRequirementService = {
 
     return results;
   },
+
+  /**
+   * Delete labor requirements for multiple cells (station/day combinations).
+   * Deletes ALL requirements in each selected cell.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param cells - Array of station/day combinations
+   * @returns Total number of deleted requirements
+   */
+  async bulkDelete(
+    orgId: string,
+    locationId: string,
+    cells: Array<{ station: string; dayOfWeek: number }>
+  ): Promise<{ deleted: number }> {
+    let totalDeleted = 0;
+
+    for (const cell of cells) {
+      const result = await LaborRequirement.deleteMany({
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        station: cell.station,
+        dayOfWeek: cell.dayOfWeek,
+      });
+      totalDeleted += result.deletedCount;
+    }
+
+    return { deleted: totalDeleted };
+  },
 };

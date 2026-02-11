@@ -6,6 +6,7 @@ import {
   laborRequirementUpdateSchema,
   dayOfWeekSchema,
   bulkCreateSchema,
+  bulkDeleteSchema,
 } from "@/lib/validations/labor-requirement.schema";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
@@ -459,6 +460,53 @@ export async function bulkCreateLaborRequirements(
       error instanceof Error
         ? error.message
         : "Failed to bulk create labor requirements";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Bulk delete labor requirements for multiple station/day combinations.
+ * Deletes all requirements in each selected cell.
+ * @param input - Contains cells (station/day combos) to delete from
+ * @returns ActionResponse with count of deleted requirements
+ */
+export async function bulkDeleteLaborRequirements(
+  input: unknown
+): Promise<ActionResponse<{ deleted: number }>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. Zod validation
+    const parseResult = bulkDeleteSchema.safeParse(input);
+    if (!parseResult.success) {
+      const errorMessage = parseResult.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+      return { success: false, error: errorMessage };
+    }
+    const { cells } = parseResult.data;
+
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
+
+    // 4. Service call
+    const result = await LaborRequirementService.bulkDelete(
+      ctx.orgId,
+      ctx.locationId,
+      cells
+    );
+
+    // 5. Return response
+    return { success: true, data: result };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to bulk delete labor requirements";
     return { success: false, error: message };
   }
 }

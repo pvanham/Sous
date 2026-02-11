@@ -118,7 +118,7 @@ export function RequirementCell({
 
   // Cell with requirements - show them as clickable items
   const content = (
-    <div className={cn("min-h-[60px] px-1 py-1 flex flex-col gap-1", bulkEditMode && "pt-6")}>
+    <div className={cn("min-h-[60px] h-full px-1 py-1 flex flex-col gap-1", bulkEditMode && "pt-6")}>
       {requirements.map((req) => {
         const isZeroStaff = req.minStaff === 0 && req.preferredStaff === 0;
         
@@ -135,7 +135,7 @@ export function RequirementCell({
             }}
             disabled={bulkEditMode}
             className={cn(
-              "text-left px-2 py-1.5 rounded-sm text-xs transition-colors",
+              "flex-1 min-h-0 text-left px-2 py-1.5 rounded-sm text-xs transition-colors",
               !bulkEditMode && "hover:bg-muted",
               isZeroStaff ? "bg-muted/50 opacity-60" : "bg-background",
               getPriorityBorderClasses(req.priority)

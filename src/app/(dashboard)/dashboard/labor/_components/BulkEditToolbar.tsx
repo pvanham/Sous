@@ -18,6 +18,8 @@ interface BulkEditToolbarProps {
   onClearSelection: () => void;
   /** Apply bulk operation to selected cells */
   onApply: () => void;
+  /** Delete all requirements in selected cells */
+  onDelete: () => void;
 }
 
 export function BulkEditToolbar({
@@ -28,6 +30,7 @@ export function BulkEditToolbar({
   onSelectAll,
   onClearSelection,
   onApply,
+  onDelete,
 }: BulkEditToolbarProps) {
   return (
     <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg mb-4">
@@ -49,16 +52,25 @@ export function BulkEditToolbar({
           <div className="text-sm text-muted-foreground">
             {selectedCount} of {totalCells} cells selected
           </div>
-          <Button variant="ghost" size="sm" onClick={onSelectAll}>
+          <Button variant="outline" size="sm" onClick={onSelectAll}>
             <CheckSquare className="h-4 w-4 mr-2" />
             Select All
           </Button>
-          <Button variant="ghost" size="sm" onClick={onClearSelection}>
+          <Button variant="outline" size="sm" onClick={onClearSelection}>
             <Square className="h-4 w-4 mr-2" />
-            Clear
+            Clear Selection
           </Button>
+          <div className="border-l h-6 mx-2" />
           <Button size="sm" onClick={onApply} disabled={selectedCount === 0}>
-            Apply to Selected ({selectedCount})
+            Add to Selected ({selectedCount})
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={onDelete}
+            disabled={selectedCount === 0}
+          >
+            Delete Selected
           </Button>
         </>
       )}

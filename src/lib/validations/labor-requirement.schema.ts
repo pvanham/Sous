@@ -209,3 +209,13 @@ export const bulkCreateSchema = z
 
 export type BulkCellInput = z.infer<typeof bulkCellSchema>;
 export type BulkCreateInput = z.infer<typeof bulkCreateSchema>;
+
+/**
+ * Schema for bulk delete operation.
+ * Deletes all requirements in the selected cells.
+ */
+export const bulkDeleteSchema = z.object({
+  cells: z.array(bulkCellSchema).min(1, "Select at least one cell"),
+});
+
+export type BulkDeleteInput = z.infer<typeof bulkDeleteSchema>;

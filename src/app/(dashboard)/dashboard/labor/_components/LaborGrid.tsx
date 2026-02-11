@@ -2,12 +2,18 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 
 import { listLaborRequirements } from "@/server/actions/labor-requirement.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { DAY_NAMES } from "@/lib/validations/labor-requirement.schema";
 import { getStationClasses } from "@/lib/utils/station-colors";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { LaborRequirementDTO } from "@/types/labor-requirement";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
 
@@ -15,6 +21,7 @@ import { RequirementCell } from "./RequirementCell";
 import { RequirementFormDialog } from "./RequirementFormDialog";
 import { BulkEditToolbar } from "./BulkEditToolbar";
 import { BulkRequirementFormDialog } from "./BulkRequirementFormDialog";
+import { BulkDeleteConfirmDialog } from "./BulkDeleteConfirmDialog";
 
 // Query keys for TanStack Query
 export const laborRequirementKeys = {
@@ -43,6 +50,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
   const [bulkEditMode, setBulkEditMode] = useState(false);
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   // Fetch requirements with initial data
   const { data: requirements = [], isLoading: isLoadingRequirements } = useQuery({
@@ -97,6 +105,10 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     
     return totals;
   }, [requirements]);
+
+  const weeklyTotal = useMemo(() => {
+    return Object.values(totalHoursByDay).reduce((sum, hours) => sum + hours, 0);
+  }, [totalHoursByDay]);
 
   // Handle cell click to open dialog (only in normal mode)
   const handleCellClick = (station: string, dayOfWeek: number, requirement?: LaborRequirementDTO) => {
@@ -157,6 +169,21 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     }
   }, [selectedCells.size]);
 
+  const handleBulkDelete = useCallback(() => {
+    if (selectedCells.size > 0) {
+      setDeleteDialogOpen(true);
+    }
+  }, [selectedCells.size]);
+
+  const handleDeleteDialogClose = useCallback(() => {
+    setDeleteDialogOpen(false);
+  }, []);
+
+  const handleDeleteSuccess = useCallback(() => {
+    setSelectedCells(new Set());
+    setBulkEditMode(false);
+  }, []);
+
   const handleBulkDialogClose = useCallback(() => {
     setBulkDialogOpen(false);
     // Clear selection after successful bulk operation
@@ -194,6 +221,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
         onSelectAll={selectAllCells}
         onClearSelection={clearSelection}
         onApply={handleBulkApply}
+        onDelete={handleBulkDelete}
       />
 
       <div className="overflow-x-auto">
@@ -245,9 +273,24 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
 
           {/* Summary Row */}
           <div className="grid grid-cols-8 gap-1 bg-muted/50 mt-1">
-            <div className="px-3 py-2 font-medium text-sm text-muted-foreground">
-              Total Hours
-            </div>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="px-3 py-2 font-medium text-sm text-muted-foreground cursor-help flex items-center gap-1">
+                    Total Hours
+                    <Info className="h-3 w-3" />
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-xs">
+                  <p>
+                    Hours are calculated using <strong>preferred staff</strong>{" "}
+                    counts. Each requirement&apos;s duration (hours) is
+                    multiplied by the preferred staff count to get total
+                    person-hours.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {DAY_ORDER.map((day) => (
               <div
                 key={day}
@@ -256,6 +299,15 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
                 {totalHoursByDay[day] > 0 ? `${totalHoursByDay[day].toFixed(1)}h` : "-"}
               </div>
             ))}
+          </div>
+          {/* Weekly Total Row */}
+          <div className="grid grid-cols-8 gap-1 bg-muted/70 border-t">
+            <div className="px-3 py-2 font-medium text-sm">
+              Weekly Total
+            </div>
+            <div className="col-span-7 px-3 py-2 text-center text-sm font-bold">
+              {weeklyTotal > 0 ? `${weeklyTotal.toFixed(1)} person-hours` : "-"}
+            </div>
           </div>
         </div>
       </div>
@@ -275,6 +327,14 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
         open={bulkDialogOpen}
         onOpenChange={handleBulkDialogClose}
         selectedCells={selectedCellsArray}
+      />
+
+      {/* Bulk Delete Confirmation */}
+      <BulkDeleteConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={handleDeleteDialogClose}
+        selectedCells={selectedCellsArray}
+        onSuccess={handleDeleteSuccess}
       />
     </>
   );
