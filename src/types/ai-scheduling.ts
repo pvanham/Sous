@@ -8,10 +8,12 @@ import type { TokenUsage } from "@/types/ai-usage";
 
 // ============================================================
 // AI Scheduling Types -- Sprint 3.7: Selector Layer
+//                     + Sprint 3.8: Validator Layer
 // ============================================================
-// Pure output types used by the SchedulingAgentService.
-// No Mongoose model or toDTO() converter needed -- these are
-// built in-memory by the service and prompt builder layers.
+// Pure output types used by the SchedulingAgentService and
+// ScheduleValidatorService. No Mongoose model or toDTO()
+// converter needed -- these are built in-memory by the service
+// and prompt builder layers.
 // ============================================================
 
 // ────────────────────────────────────────────────────────────
@@ -210,4 +212,75 @@ export interface GeneratedSchedule {
   summary: string;
   /** Generation process metadata */
   metadata: GenerationMetadata;
+  /** Validation warnings aggregated across all days (Sprint 3.8) */
+  warnings: ValidationWarning[];
+}
+
+// ────────────────────────────────────────────────────────────
+// Validation Types (Sprint 3.8: Validator Layer)
+// ────────────────────────────────────────────────────────────
+
+/** All possible hard constraint violation types */
+export type ValidationErrorType =
+  | "double_booking"
+  | "unavailable_staff"
+  | "max_hours_exceeded"
+  | "skill_mismatch"
+  | "invalid_staff_id"
+  | "overlap";
+
+/**
+ * A hard constraint violation found during schedule validation.
+ * Each error includes a correction hint that can be fed back to
+ * the AI in the self-correction loop.
+ */
+export interface ValidationError {
+  /** Type of constraint violation */
+  type: ValidationErrorType;
+  /** Staff member involved in the violation */
+  staffId: string;
+  /** Staff member display name (for human-readable messages) */
+  staffName: string;
+  /** Index of the shift assignment in the day's assignments array */
+  shiftIndex: number;
+  /** Human-readable description of the violation */
+  message: string;
+  /** Actionable hint for the AI to fix the issue */
+  correctionHint: string;
+}
+
+/** All possible soft warning types */
+export type ValidationWarningType =
+  | "overtime_risk"
+  | "non_preferred_station"
+  | "clopening_risk";
+
+/**
+ * A soft issue found during schedule validation.
+ * Warnings do NOT block the schedule but are surfaced to the user.
+ */
+export interface ValidationWarning {
+  /** Type of soft issue */
+  type: ValidationWarningType;
+  /** Staff member involved */
+  staffId: string;
+  /** Staff member display name */
+  staffName: string;
+  /** Index of the shift assignment in the day's assignments array */
+  shiftIndex: number;
+  /** Human-readable description of the warning */
+  message: string;
+}
+
+/**
+ * Result of validating a GeneratedDaySchedule against constraints.
+ * Returned by `ScheduleValidatorService.validate()`.
+ */
+export interface ValidationResult {
+  /** True if no hard constraint violations were found */
+  valid: boolean;
+  /** Hard constraint violations (block schedule acceptance) */
+  errors: ValidationError[];
+  /** Soft issues (surfaced to user but don't block) */
+  warnings: ValidationWarning[];
 }

@@ -17,10 +17,12 @@ import { StaffService } from "@/server/services/staff.service";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
+import { ScheduleValidatorService } from "@/server/services/schedule-validator.service";
 import {
   buildSystemPrompt,
   buildDayUserPrompt,
 } from "./prompts/schedule-generation";
+import type { StaffDTO } from "@/types/staff";
 import type { ShiftDTO } from "@/types/shift";
 import type { TokenUsage } from "@/types/ai-usage";
 import type { SlotCandidates } from "@/types/candidate";
@@ -33,10 +35,12 @@ import type {
   UnfilledSlot,
   GenerationMetadata,
   AIRawDayOutput,
+  ValidationWarning,
 } from "@/types/ai-scheduling";
 
 // ============================================================
 // SchedulingAgentService -- Sprint 3.7: AI Selector Layer
+//                        + Sprint 3.8: Validator Layer Integration
 // ============================================================
 // The "Soft Selector" that receives ONLY pre-filtered candidates
 // from CandidateService (Sprint 3.5) and uses GPT-4o to pick
@@ -154,8 +158,11 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
  * Validate and normalize AI output against the candidate lists.
  * Ensures staffIds actually exist in the candidate pool for each slot.
  * Strips any assignments with invalid staffIds.
+ *
+ * Exported for use by ScheduleValidatorService (Sprint 3.8) to
+ * normalize correction responses through the same pipeline.
  */
-function normalizeAIOutput(
+export function normalizeAIOutput(
   raw: AIRawDayOutput,
   slots: SlotCandidates[],
   dateStr: string,
@@ -395,22 +402,28 @@ export const SchedulingAgentService = {
   },
 
   /**
-   * Generate a schedule for ONE day using the AI Soft Selector.
+   * Generate a schedule for ONE day using the AI Soft Selector,
+   * then validate against hard constraints with retry loop.
    *
    * This is the core method that:
    * 1. Builds prompts from the day context
    * 2. Calls OpenAI's generateJSON<T>() with tracking
-   * 3. Normalizes and validates the AI output
-   * 4. Falls back to algorithmic assignment if AI is unavailable
+   * 3. Normalizes the AI output (strips invalid staffIds)
+   * 4. Validates against hard constraints (Sprint 3.8)
+   * 5. If errors, retries with correction hints (up to 3 attempts)
+   * 6. Falls back to algorithmic assignment if AI is unavailable
+   * 7. On max retries, strips invalid assignments (graceful degradation)
    *
    * @param context - Day scheduling context with pre-filtered candidates
    * @param tracking - Usage tracking options (orgId, locationId, clerkUserId)
-   * @returns GeneratedDaySchedule with shift assignments and token usage
+   * @param allStaff - All active staff DTOs (for validation lookups)
+   * @returns GeneratedDaySchedule with shift assignments, token usage, and warnings
    */
   async generateDaySchedule(
     context: DaySchedulingContext,
-    tracking: TrackingOptions
-  ): Promise<{ daySchedule: GeneratedDaySchedule; tokenUsage: TokenUsage; usedFallback: boolean }> {
+    tracking: TrackingOptions,
+    allStaff: StaffDTO[] = []
+  ): Promise<{ daySchedule: GeneratedDaySchedule; tokenUsage: TokenUsage; usedFallback: boolean; warnings: ValidationWarning[] }> {
     const dateStr = context.date.toISOString().split("T")[0];
     const dayName = context.dayName;
 
@@ -426,6 +439,7 @@ export const SchedulingAgentService = {
         },
         tokenUsage: emptyTokenUsage(),
         usedFallback: false,
+        warnings: [],
       };
     }
 
@@ -454,6 +468,7 @@ export const SchedulingAgentService = {
         },
         tokenUsage: emptyTokenUsage(),
         usedFallback: false,
+        warnings: [],
       };
     }
 
@@ -477,18 +492,90 @@ export const SchedulingAgentService = {
         }
       );
 
-      // Normalize and validate AI output against candidate lists
-      const daySchedule = normalizeAIOutput(
+      // Normalize AI output against candidate lists
+      let daySchedule = normalizeAIOutput(
         rawOutput,
         context.slots,
         dateStr,
         dayName
       );
 
+      // ── Sprint 3.8: Validation + Retry Loop ──────────────
+      let accumulatedTokenUsage = usage;
+      let validation = ScheduleValidatorService.validate(
+        daySchedule,
+        context,
+        allStaff
+      );
+
+      for (
+        let attempt = 1;
+        !validation.valid && attempt <= ScheduleValidatorService.MAX_RETRY_ATTEMPTS;
+        attempt++
+      ) {
+        console.warn(
+          `[SchedulingAgent] Validation failed for ${dateStr} with ${validation.errors.length} error(s). Retry ${attempt}/${ScheduleValidatorService.MAX_RETRY_ATTEMPTS}...`
+        );
+
+        try {
+          const { daySchedule: corrected, tokenUsage: retryUsage } =
+            await ScheduleValidatorService.retryWithCorrections(
+              daySchedule,
+              validation.errors,
+              context,
+              tracking,
+              attempt
+            );
+
+          daySchedule = corrected;
+          accumulatedTokenUsage = mergeTokenUsage(
+            accumulatedTokenUsage,
+            retryUsage
+          );
+
+          // Re-validate the corrected output
+          validation = ScheduleValidatorService.validate(
+            daySchedule,
+            context,
+            allStaff
+          );
+        } catch (retryError) {
+          // If AI becomes unavailable during retry, break out and use what we have
+          if (
+            retryError instanceof AILimitExceededError ||
+            retryError instanceof AIServiceUnavailableError
+          ) {
+            console.warn(
+              `[SchedulingAgent] AI unavailable during retry for ${dateStr}. Using best available schedule.`
+            );
+            break;
+          }
+          throw retryError;
+        }
+      }
+
+      // If still invalid after all retries, strip invalid assignments
+      if (!validation.valid) {
+        console.warn(
+          `[SchedulingAgent] Max retries exhausted for ${dateStr}. Stripping ${validation.errors.length} invalid assignment(s).`
+        );
+        daySchedule = ScheduleValidatorService.stripInvalidAssignments(
+          daySchedule,
+          validation.errors
+        );
+        // Re-validate after stripping to get clean warnings
+        validation = ScheduleValidatorService.validate(
+          daySchedule,
+          context,
+          allStaff
+        );
+      }
+
       return {
         daySchedule,
-        tokenUsage: usage,
+        tokenUsage: accumulatedTokenUsage,
         usedFallback: false,
+        warnings: validation.warnings,
       };
     } catch (error) {
       // Fallback on AI limit exceeded or service unavailable
@@ -500,10 +587,19 @@ export const SchedulingAgentService = {
           `[SchedulingAgent] AI unavailable for ${dateStr}: ${error.message}. Using algorithmic fallback.`
         );
         const daySchedule = algorithmicFallback(context);
+
+        // Validate fallback output too (should be clean, but capture warnings)
+        const validation = ScheduleValidatorService.validate(
+          daySchedule,
+          context,
+          allStaff
+        );
+
         return {
           daySchedule,
           tokenUsage: emptyTokenUsage(),
           usedFallback: true,
+          warnings: validation.warnings,
         };
       }
 
@@ -552,6 +648,7 @@ export const SchedulingAgentService = {
     let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
     let totalTokenUsage = emptyTokenUsage();
     let usedFallbackAnyDay = false;
+    const allWarnings: ValidationWarning[] = [];
 
     const dayResults: GeneratedDaySchedule[] = [];
 
@@ -622,12 +719,13 @@ export const SchedulingAgentService = {
         },
       };
 
-      // Generate the day's schedule
-      const { daySchedule, tokenUsage, usedFallback } =
-        await this.generateDaySchedule(dayContext, tracking);
+      // Generate the day's schedule (with Sprint 3.8 validation + retry)
+      const { daySchedule, tokenUsage, usedFallback, warnings } =
+        await this.generateDaySchedule(dayContext, tracking, context.staff);
 
       // Accumulate results
       dayResults.push(daySchedule);
+      allWarnings.push(...warnings);
       totalTokenUsage = mergeTokenUsage(totalTokenUsage, tokenUsage);
       if (usedFallback) usedFallbackAnyDay = true;
 
@@ -678,11 +776,17 @@ export const SchedulingAgentService = {
         "Some days used basic assignment (AI unavailable)."
       );
     }
+    if (allWarnings.length > 0) {
+      summaryParts.push(
+        `${allWarnings.length} warning(s) noted.`
+      );
+    }
 
     return {
       days: dayResults,
       summary: summaryParts.join(" "),
       metadata,
+      warnings: allWarnings,
     };
   },
 };

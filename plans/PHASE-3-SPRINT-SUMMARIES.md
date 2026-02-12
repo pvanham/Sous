@@ -359,3 +359,48 @@ Clopening detection passes previous day's closing shifts to the AI prompt
 Algorithmic fallback automatically activates when AILimitExceededError or AIServiceUnavailableError is caught, using CandidateService's pre-sorted candidates
 Token tracking passes tracking options on every generateJSON call for Sprint 3.6's usage logging and limit enforcement
 buildCorrectionPrompt() is stubbed and ready for Sprint 3.8's self-correction loop
+
+Sprint 3.8: Schedule Validator Service (Validator Layer) -- Complete
+
+Files Created (2)
+File | Purpose
+src/server/services/schedule-validator.service.ts | Deterministic validation of AI-generated schedules against hard constraints, with self-correction retry loop (retryWithCorrections) and graceful degradation (stripInvalidAssignments)
+src/lib/validations/generated-schedule.schema.ts | Zod schemas for structural validation of AI output: generatedShiftAssignmentSchema, unfilledSlotSchema, generatedDayScheduleSchema
+scripts/test-sprint-3.8.ts | End-to-end verification script (52 tests, 52 passed, 0 skipped)
+
+Files Updated (3)
+File | Change
+src/types/ai-scheduling.ts | Added ValidationError, ValidationWarning, ValidationResult, ValidationErrorType, ValidationWarningType interfaces; added warnings field to GeneratedSchedule; updated header comment
+src/server/services/ai/scheduling-agent.service.ts | Integrated validation + retry loop into generateDaySchedule(); exported normalizeAIOutput(); added allStaff parameter; updated generateWeekSchedule() to pass staff and accumulate warnings; added ScheduleValidatorService import
+package.json | Added test:sprint-3.8 script
+
+Architecture Compliance
+3-Layer Architecture: ScheduleValidatorService lives in the Service Layer. It does NOT import Mongoose models directly -- all validation operates on DTOs (GeneratedDaySchedule, StaffDTO, ShiftDTO, SlotCandidates).
+DTO-only: All inputs and outputs are plain TypeScript objects. No Mongoose documents leak.
+Multi-tenancy: Validation context includes orgId/locationId scoping via DaySchedulingContext and SchedulingContext.
+No any types: Strict TypeScript 5 throughout.
+File naming: kebab-case per .cursorrules (schedule-validator.service.ts, generated-schedule.schema.ts).
+Zod-first validation: New schema in src/lib/validations/ follows existing Zod patterns (timeStringSchema reuse, z.infer exports).
+Service Object Pattern: ScheduleValidatorService uses the same object-with-methods pattern as all other services.
+
+Validation Checks Implemented
+Hard Errors (block schedule):
+- invalid_staff_id: staffId not in any slot's candidate list
+- double_booking: same staffId assigned to overlapping shifts same day (uses timeRangesOverlap from src/lib/utils/time-overlap.ts)
+- unavailable_staff: staffId not in the SPECIFIC slot's candidate list
+- max_hours_exceeded: weekly hours (existing + all proposed) exceed maxHoursPerWeek
+- skill_mismatch: staff lacks a skill entry for the assigned station
+- overlap: assignment overlaps with an already-existing shift
+
+Soft Warnings (surfaced to user):
+- overtime_risk: staff above 80% of maxHoursPerWeek
+- non_preferred_station: assigned to a station not in preferredStations
+- clopening_risk: gap between previous day close and current day open < 10 hours
+
+Key Design Highlights
+Day-level validation: Runs per-day inside the existing sequential generation loop, so corrections happen before the next day's candidates are computed
+Self-correction loop: Up to 3 retry attempts using buildCorrectionPrompt() (Sprint 3.7 stub now active). Each ValidationError includes a correctionHint fed back to the AI.
+Graceful degradation: On max retries exhausted, stripInvalidAssignments() removes errored assignments instead of throwing -- a partial schedule is better than none
+Pure logic validator: ScheduleValidatorService.validate() makes zero DB calls. All data comes via DaySchedulingContext and StaffDTO[]. This makes it fast and unit-testable.
+Algorithmic fallback also validated: The fallback path runs through validation too, capturing warnings (should always be clean since the fallback has its own overlap checks)
+Token tracking: Retry attempts are tracked through the same generateJSON tracking pipeline as initial generation
