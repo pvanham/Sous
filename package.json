@@ -14,7 +14,8 @@
     "test:phase-3.5": "tsx scripts/test-candidate-service.ts",
     "seed:candidate-test": "tsx scripts/seed-candidate-test.ts",
     "cleanup:candidate-test": "tsx scripts/seed-candidate-test.ts --cleanup",
-    "test:sprint-3.6": "tsx scripts/test-sprint-3.6.ts"
+    "test:sprint-3.6": "tsx scripts/test-sprint-3.6.ts",
+    "test:sprint-3.7": "tsx scripts/test-sprint-3.7.ts"
   },
   "keywords": [],
   "author": "",

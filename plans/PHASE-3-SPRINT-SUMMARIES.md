@@ -336,3 +336,26 @@ All DTOs are plain objects -- no Mongoose documents leak
 modelName field used instead of model to avoid Mongoose Document property conflict
 Timezone stays on Location model (not duplicated on KitchenConfig per architectural note in plan)
 Typed error classes (AILimitExceededError, AIServiceUnavailableError) ready for Sprint 3.7's fallback handling
+
+Sprint 3.7 is fully implemented and verified. Here's a summary of what was created:
+Files Created (4)
+File Purpose
+src/types/ai-scheduling.ts Type system: SchedulingContext, DaySchedulingContext, AIRawDayOutput, GeneratedShiftAssignment, GeneratedDaySchedule, GeneratedSchedule, UnfilledSlot, GenerationMetadata
+src/server/services/ai/prompts/schedule-generation.ts Prompt templates: buildSystemPrompt(), buildDayUserPrompt(), buildCorrectionPrompt() (stub for Sprint 3.8)
+src/server/services/ai/scheduling-agent.service.ts Main service: SchedulingAgentService with buildSchedulingContext(), generateDaySchedule(), generateWeekSchedule(), and internal algorithmicFallback()
+scripts/test-sprint-3.7.ts End-to-end verification (57 tests, 56 passed, 1 skipped)
+Files Updated (1)
+File Change
+package.json Added test:sprint-3.7 script
+Architecture Compliance
+3-Layer Architecture: SchedulingAgentService lives in the Service Layer, calls other services (CandidateService, KitchenConfigService, StaffService, etc.), and never imports Mongoose models directly.
+DTO-only returns: All outputs are plain TypeScript objects -- no Mongoose documents leak.
+Multi-tenancy: All data access scoped by (orgId, locationId) per ARCHITECTURE.md.
+No any types: Strict TypeScript throughout.
+File naming: kebab-case.service.ts for services, kebab-case.ts for types.
+Key Design Highlights
+Day-by-day sequential generation with shift accumulation across days prevents double-booking
+Clopening detection passes previous day's closing shifts to the AI prompt
+Algorithmic fallback automatically activates when AILimitExceededError or AIServiceUnavailableError is caught, using CandidateService's pre-sorted candidates
+Token tracking passes tracking options on every generateJSON call for Sprint 3.6's usage logging and limit enforcement
+buildCorrectionPrompt() is stubbed and ready for Sprint 3.8's self-correction loop
