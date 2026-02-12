@@ -75,6 +75,10 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
         roles: initialConfig.roles.length > 0 ? initialConfig.roles : [""],
         operatingHours: initialConfig.operatingHours,
         minTimeOffAdvanceDays: initialConfig.minTimeOffAdvanceDays ?? 7,
+        aiSettings: initialConfig.aiSettings ?? {
+          monthlyGenerationLimit: 50,
+          subscriptionTier: "free",
+        },
       }
     : defaultKitchenConfigValues;
 

@@ -58,6 +58,10 @@ const TEST_KITCHEN_CONFIG: KitchenConfigInput = {
     sunday: { isOpen: false, open: "", close: "" },
   },
   minTimeOffAdvanceDays: 0, // Allow immediate time-off for testing
+  aiSettings: {
+    monthlyGenerationLimit: 50,
+    subscriptionTier: "free",
+  },
 };
 
 // ============================================================================

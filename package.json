@@ -13,7 +13,8 @@
     "test:phase-2.5": "tsx scripts/test-phase-2.5.ts",
     "test:phase-3.5": "tsx scripts/test-candidate-service.ts",
     "seed:candidate-test": "tsx scripts/seed-candidate-test.ts",
-    "cleanup:candidate-test": "tsx scripts/seed-candidate-test.ts --cleanup"
+    "cleanup:candidate-test": "tsx scripts/seed-candidate-test.ts --cleanup",
+    "test:sprint-3.6": "tsx scripts/test-sprint-3.6.ts"
   },
   "keywords": [],
   "author": "",

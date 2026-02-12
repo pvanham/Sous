@@ -45,17 +45,27 @@ export const KitchenConfigService = {
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
 
+    const updateData: Record<string, unknown> = {
+      orgId: orgObjectId,
+      locationId: locationObjectId,
+      name: data.name,
+      stations: data.stations.filter((s) => s.trim() !== ""),
+      roles: data.roles.filter((r) => r.trim() !== ""),
+      operatingHours: data.operatingHours,
+      minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
+    };
+
+    // Include aiSettings if provided, using defaults for missing values
+    if (data.aiSettings) {
+      updateData.aiSettings = {
+        monthlyGenerationLimit: data.aiSettings.monthlyGenerationLimit ?? 50,
+        subscriptionTier: data.aiSettings.subscriptionTier ?? "free",
+      };
+    }
+
     const doc = await KitchenConfig.findOneAndUpdate(
       { orgId: orgObjectId, locationId: locationObjectId },
-      {
-        orgId: orgObjectId,
-        locationId: locationObjectId,
-        name: data.name,
-        stations: data.stations.filter((s) => s.trim() !== ""),
-        roles: data.roles.filter((r) => r.trim() !== ""),
-        operatingHours: data.operatingHours,
-        minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
-      },
+      updateData,
       {
         new: true, // Return the updated document
         upsert: true, // Create if doesn't exist

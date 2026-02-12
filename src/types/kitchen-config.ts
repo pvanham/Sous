@@ -1,8 +1,20 @@
-import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours } from "@/server/models/KitchenConfig";
+import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours, IAISettings } from "@/server/models/KitchenConfig";
 import type { StaffSkill } from "@/types/staff";
 
 // Re-export model interfaces for convenience
-export type { IOperatingHours, IWeeklyOperatingHours };
+export type { IOperatingHours, IWeeklyOperatingHours, IAISettings };
+
+// AI Settings DTO (plain object, same shape as IAISettings but decoupled from model)
+export interface AISettingsDTO {
+  monthlyGenerationLimit: number;
+  subscriptionTier: "free" | "pro" | "enterprise";
+}
+
+/** Default AI settings applied when the field is missing on legacy documents */
+const DEFAULT_AI_SETTINGS: AISettingsDTO = {
+  monthlyGenerationLimit: 50,
+  subscriptionTier: "free",
+};
 
 // DTO returned from service layer (without Mongoose internals)
 export interface KitchenConfigDTO {
@@ -14,6 +26,7 @@ export interface KitchenConfigDTO {
   roles: string[];
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
+  aiSettings: AISettingsDTO;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +42,12 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
     roles: doc.roles,
     operatingHours: doc.operatingHours,
     minTimeOffAdvanceDays: doc.minTimeOffAdvanceDays ?? 7,
+    aiSettings: doc.aiSettings
+      ? {
+          monthlyGenerationLimit: doc.aiSettings.monthlyGenerationLimit ?? DEFAULT_AI_SETTINGS.monthlyGenerationLimit,
+          subscriptionTier: doc.aiSettings.subscriptionTier ?? DEFAULT_AI_SETTINGS.subscriptionTier,
+        }
+      : { ...DEFAULT_AI_SETTINGS },
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

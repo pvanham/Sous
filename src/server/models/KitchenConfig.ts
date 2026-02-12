@@ -18,6 +18,12 @@ export interface IWeeklyOperatingHours {
   sunday: IOperatingHours;
 }
 
+// AI settings interface
+export interface IAISettings {
+  monthlyGenerationLimit: number;
+  subscriptionTier: "free" | "pro" | "enterprise";
+}
+
 // Main KitchenConfig interface
 export interface IKitchenConfig {
   orgId: Types.ObjectId;
@@ -27,6 +33,7 @@ export interface IKitchenConfig {
   roles: string[];
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
+  aiSettings: IAISettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -94,6 +101,28 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
       type: Number,
       default: 7,
       min: 0,
+    },
+    aiSettings: {
+      type: new Schema<IAISettings>(
+        {
+          monthlyGenerationLimit: {
+            type: Number,
+            default: 50,
+            min: 1,
+            max: 1000,
+          },
+          subscriptionTier: {
+            type: String,
+            enum: ["free", "pro", "enterprise"],
+            default: "free",
+          },
+        },
+        { _id: false }
+      ),
+      default: () => ({
+        monthlyGenerationLimit: 50,
+        subscriptionTier: "free",
+      }),
     },
   },
   {

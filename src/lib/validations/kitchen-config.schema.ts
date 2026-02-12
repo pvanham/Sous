@@ -42,6 +42,19 @@ export const weeklyOperatingHoursSchema = z.object({
   sunday: operatingHoursSchema,
 });
 
+// AI settings schema for generation limits and subscription tier
+export const aiSettingsSchema = z.object({
+  monthlyGenerationLimit: z
+    .number()
+    .int()
+    .min(1, "Monthly generation limit must be at least 1")
+    .max(1000, "Monthly generation limit must be at most 1000"),
+  subscriptionTier: z
+    .enum(["free", "pro", "enterprise"]),
+});
+
+export type AISettingsInput = z.infer<typeof aiSettingsSchema>;
+
 // Main kitchen config schema - shared between frontend form and backend validation
 export const kitchenConfigSchema = z.object({
   name: z
@@ -55,7 +68,8 @@ export const kitchenConfigSchema = z.object({
     .array(z.string().min(1, "Role name cannot be empty"))
     .min(1, "At least one role is required"),
   operatingHours: weeklyOperatingHoursSchema,
-  minTimeOffAdvanceDays: z.number().int().min(0).default(7),
+  minTimeOffAdvanceDays: z.number().int().min(0),
+  aiSettings: aiSettingsSchema,
 });
 
 // Type inferred from the schema - used for form input
@@ -86,4 +100,8 @@ export const defaultKitchenConfigValues: KitchenConfigInput = {
     sunday: { isOpen: false, open: "09:00", close: "22:00" },
   },
   minTimeOffAdvanceDays: 7,
+  aiSettings: {
+    monthlyGenerationLimit: 50,
+    subscriptionTier: "free",
+  },
 };

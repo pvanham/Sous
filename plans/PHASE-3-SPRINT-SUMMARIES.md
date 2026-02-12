@@ -311,3 +311,28 @@ getCandidatesForDay(orgId, locationId, date, laborRequirements, existingShifts) 
 wouldCauseOvertime(staffId, proposedShift, existingShifts, maxHours) -- synchronous utility to check if a proposed shift would exceed max hours
 Sorting: Candidates are sorted by preference (preferred first), then proficiency for the target station (highest first), then non-overtime before overtime, then alphabetical as tiebreaker
 Architecture compliance: Does NOT import any Mongoose models directly. Calls StaffService, StaffAvailabilityService, and TimeOffRequestService for data, then applies pure functions. Uses (orgId, locationId) scoping. Returns plain DTOs.
+
+Sprint 3.6 Complete -- OpenAI Client & AI Cost Tracking
+Files Created (5)
+File Purpose
+src/lib/ai/openai-client.ts OpenAI client wrapper with generateCompletion(), generateJSON<T>(), retry logic, token usage tracking, limit enforcement, and typed error classes (AILimitExceededError, AIServiceUnavailableError)
+src/server/models/AIUsageLog.ts Mongoose model with orgId/locationId multi-tenancy, token counts, cost estimation, duration, success/error tracking, and compound indexes
+src/types/ai-usage.ts AIUsageLogDTO, TokenUsage, UsageSummary, GenerationCheckResult, AIUsageLogInput types, and toAIUsageLogDTO() converter
+src/server/services/ai-usage.service.ts Service layer with logUsage(), getMonthlyUsage() (MongoDB aggregation), canGenerate() (limit enforcement), getUsageHistory(), and deleteAllByLocation()
+scripts/test-sprint-3.6.ts End-to-end verification script (61 tests, 56 pass, 5 skipped without API key)
+Files Updated (6)
+File Change
+src/server/models/KitchenConfig.ts Added IAISettings interface and aiSettings embedded subdocument with defaults
+src/types/kitchen-config.ts Added AISettingsDTO, updated KitchenConfigDTO and toKitchenConfigDTO() with fallback defaults for legacy docs
+src/lib/validations/kitchen-config.schema.ts Added aiSettingsSchema (Zod) and integrated as optional with defaults in kitchenConfigSchema
+src/server/services/kitchen-config.service.ts Updated upsert() to persist aiSettings when provided
+src/app/(dashboard)/dashboard/settings/\_components/KitchenConfigForm.tsx Added aiSettings to form default values
+scripts/seed-candidate-test.ts Added aiSettings to test kitchen config
+package.json Added openai, ai deps and test:sprint-3.6 script
+Architecture Notes
+Strict 3-layer architecture maintained: AIUsageLog model only imported in ai-usage.service.ts
+AIUsageService.canGenerate() reads limits via KitchenConfigService.getByLocation() (no cross-layer model imports)
+All DTOs are plain objects -- no Mongoose documents leak
+modelName field used instead of model to avoid Mongoose Document property conflict
+Timezone stays on Location model (not duplicated on KitchenConfig per architectural note in plan)
+Typed error classes (AILimitExceededError, AIServiceUnavailableError) ready for Sprint 3.7's fallback handling
