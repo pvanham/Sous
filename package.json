@@ -10,7 +10,10 @@
     "lint": "next lint",
     "test:phase-1": "tsx scripts/test-phase-1.ts",
     "test:phase-2": "tsx scripts/test-phase-2.ts",
-    "test:phase-2.5": "tsx scripts/test-phase-2.5.ts"
+    "test:phase-2.5": "tsx scripts/test-phase-2.5.ts",
+    "test:phase-3.5": "tsx scripts/test-candidate-service.ts",
+    "seed:candidate-test": "tsx scripts/seed-candidate-test.ts",
+    "cleanup:candidate-test": "tsx scripts/seed-candidate-test.ts --cleanup"
   },
   "keywords": [],
   "author": "",

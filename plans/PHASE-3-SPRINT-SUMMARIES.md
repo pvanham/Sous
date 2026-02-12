@@ -289,3 +289,25 @@ useMutation calling createTimeOffRequest action
 Updated Files:
 src/app/(dashboard)/dashboard/layout.tsx -- Added "Time Off" nav item with CalendarOff icon, placed before Settings
 src/app/(dashboard)/dashboard/staff/\_components/StaffTable.tsx -- Added CalendarOff "Time Off" action button per row, linking to /dashboard/time-off?staffId={id}
+
+Sprint 3.5: Candidate Filter Service (Hard Filter Layer) -- Complete
+Files Created (2 files, strictly following the 3-layer architecture per ARCHITECTURE.md and .cursorrules):
+src/types/candidate.ts -- Types and DTOs
+CandidateDTO interface -- represents a valid candidate for a slot, with staffId, staffName, skills, preference (preferred/available), currentWeekHours, maxHoursPerWeek, overtimeWarning, preferredStations, and optional notes
+SlotDefinition interface -- extracted slot shape from LaborRequirementDTO (station, times, staffing targets, priority)
+SlotCandidates interface -- groups candidates per slot with hasSufficientCandidates boolean
+Pure output types only -- no Mongoose model or toDTO() converter needed
+src/server/services/candidate.service.ts -- Service Implementation
+6 internal pure filter functions:
+filterByAvailability() -- cross-references staff against StaffAvailabilityDTO[], returns preference map
+filterByTimeOff() -- removes staff with approved time-off on the target date
+filterBySkills() -- keeps only staff with a skill matching the required station
+filterByExistingShifts() -- removes staff with overlapping shifts (Date-based overlap detection)
+calculateWeekHours() -- sums hours from existing shifts per staff member for the week
+getSlotDurationHours() -- converts HH:MM time strings to duration in hours
+3 public methods on CandidateService:
+getCandidatesForSlot(orgId, locationId, date, startTime, endTime, station, existingShifts) -- full filter pipeline for a single slot. Fetches staff + availability in parallel, then applies all 4 hard filters, calculates week hours and overtime flags, returns sorted CandidateDTO[]
+getCandidatesForDay(orgId, locationId, date, laborRequirements, existingShifts) -- batched data fetching (staff, availability, time-off, week hours) done ONCE, then per-slot pure filtering to avoid N+1 query patterns. Returns SlotCandidates[]
+wouldCauseOvertime(staffId, proposedShift, existingShifts, maxHours) -- synchronous utility to check if a proposed shift would exceed max hours
+Sorting: Candidates are sorted by preference (preferred first), then proficiency for the target station (highest first), then non-overtime before overtime, then alphabetical as tiebreaker
+Architecture compliance: Does NOT import any Mongoose models directly. Calls StaffService, StaffAvailabilityService, and TimeOffRequestService for data, then applies pure functions. Uses (orgId, locationId) scoping. Returns plain DTOs.
