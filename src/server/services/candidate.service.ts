@@ -295,7 +295,7 @@ export const CandidateService = {
       weekEnd
     );
 
-    const candidates: CandidateDTO[] = afterShifts.map((s) => {
+    const allCandidates: CandidateDTO[] = afterShifts.map((s) => {
       const currentWeekHours = weekHoursMap.get(s.id) ?? 0;
       const overtimeWarning =
         currentWeekHours + slotDuration > s.maxHoursPerWeek;
@@ -316,6 +316,11 @@ export const CandidateService = {
       };
     });
 
+    // Hard-filter: exclude candidates who would exceed max hours.
+    // The validator rejects these 100% of the time as "max_hours_exceeded",
+    // so including them only wastes prompt tokens and causes unfixable errors.
+    const candidates = allCandidates.filter((c) => !c.overtimeWarning);
+
     // Sort: preferred first, then by proficiency for the target station (highest first)
     candidates.sort((a, b) => {
       // 1. Preference: "preferred" before "available"
@@ -332,12 +337,7 @@ export const CandidateService = {
         return bProficiency - aProficiency;
       }
 
-      // 3. Non-overtime candidates before overtime candidates
-      if (a.overtimeWarning !== b.overtimeWarning) {
-        return a.overtimeWarning ? 1 : -1;
-      }
-
-      // 4. Alphabetical by name as tiebreaker
+      // 3. Alphabetical by name as tiebreaker
       return a.staffName.localeCompare(b.staffName);
     });
 
@@ -445,7 +445,7 @@ export const CandidateService = {
       );
 
       // Build CandidateDTOs
-      const candidates: CandidateDTO[] = afterShifts.map((s) => {
+      const allCandidates: CandidateDTO[] = afterShifts.map((s) => {
         const currentWeekHours = weekHoursMap.get(s.id) ?? 0;
         const overtimeWarning =
           currentWeekHours + slotDuration > s.maxHoursPerWeek;
@@ -466,7 +466,12 @@ export const CandidateService = {
         };
       });
 
-      // Sort: preferred first, then proficiency for station, then non-overtime first
+      // Hard-filter: exclude candidates who would exceed max hours.
+      // The validator rejects these 100% of the time as "max_hours_exceeded",
+      // so including them only wastes prompt tokens and causes unfixable errors.
+      const candidates = allCandidates.filter((c) => !c.overtimeWarning);
+
+      // Sort: preferred first, then proficiency for station
       candidates.sort((a, b) => {
         if (a.preference !== b.preference) {
           return a.preference === "preferred" ? -1 : 1;
@@ -477,9 +482,6 @@ export const CandidateService = {
           b.skills.find((sk) => sk.station === req.station)?.proficiency ?? 0;
         if (bProficiency !== aProficiency) {
           return bProficiency - aProficiency;
-        }
-        if (a.overtimeWarning !== b.overtimeWarning) {
-          return a.overtimeWarning ? 1 : -1;
         }
         return a.staffName.localeCompare(b.staffName);
       });

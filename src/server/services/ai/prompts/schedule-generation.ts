@@ -43,24 +43,24 @@ Your job is to SELECT the best candidate from each slot's candidate list.
 
 IMPORTANT RULES:
 1. You MUST only assign staff members who appear in a slot's candidate list. Never invent or reference staff outside the provided candidates.
-2. You MUST use the exact staffId values from the candidate list. Do not modify or fabricate IDs.
+2. You MUST use the exact staffId alias values (e.g., "S1", "S2") from the candidate list. Do not modify or fabricate IDs.
 3. A staff member should NOT be assigned to overlapping time slots on the same day. If the same person appears as a candidate for multiple slots, pick them for the slot where they are the best fit and choose someone else for the other slots.
 4. Assign up to the "preferredStaff" count for each slot. If fewer candidates are available than needed, assign everyone available and report the shortfall in "unfilledSlots".
 
 SELECTION CRITERIA (in priority order):
-1. Staff preferences — Favor candidates whose "preference" is "preferred" over "available". Favor candidates working at their preferredStations.
-2. Fair hour distribution — Prefer candidates with fewer currentWeekHours to spread work evenly. Avoid assigning candidates flagged with overtimeWarning unless no alternatives exist.
-3. Skill match — Higher proficiency for the target station is better.
+1. Hour distribution — STRONGLY prefer candidates with the most remaining weekly hours. This is the most important factor for building a viable full-week schedule. Spread hours evenly across the team. A candidate with 30h remaining is much better than one with 5h remaining, even if the latter is more skilled.
+2. Staff preferences — Favor candidates whose "preference" is "preferred" over "available". Favor candidates working at their preferredStations.
+3. Skill match — Higher proficiency for the target station is better, but do NOT sacrifice hour fairness for marginally higher proficiency.
 4. Clopening avoidance — If previous day closing shifts are provided, avoid assigning someone who closed late the previous night to an early morning slot (less than ${CLOPENING_THRESHOLD_HOURS} hours between shifts).
 5. Team balance — Mix experience levels when possible.
 
-For each assignment, provide a brief "reasoning" (1-2 sentences) explaining why you chose that candidate.
+For each assignment, provide a brief "reasoning" (1-2 sentences) that mentions the candidate's remaining hours to explain why you chose them.
 
 OUTPUT FORMAT — respond with a single JSON object matching this exact structure:
 {
   "assignments": [
     {
-      "staffId": "<exact ID from candidate list>",
+      "staffId": "<exact alias from candidate list, e.g. S1>",
       "staffName": "<name from candidate list>",
       "station": "<station name>",
       "startTime": "<HH:MM>",
@@ -90,9 +90,19 @@ Only include slots in "unfilledSlots" if the number of assignments for that slot
 
 /**
  * Format a candidate for inclusion in the prompt.
- * Provides all soft signals the AI needs to make a selection.
+ * Uses short alias IDs (e.g., "S1") instead of raw MongoDB ObjectIds to
+ * reduce token count and prevent LLM ID-hallucination errors.
+ *
+ * @param candidate - The candidate to format
+ * @param station - Target station for proficiency lookup
+ * @param idToAlias - Map of real staffId -> short alias (e.g., "S1")
  */
-function formatCandidate(candidate: CandidateDTO, station: string): string {
+function formatCandidate(
+  candidate: CandidateDTO,
+  station: string,
+  idToAlias: Map<string, string>
+): string {
+  const alias = idToAlias.get(candidate.staffId) ?? candidate.staffId;
   const proficiency =
     candidate.skills.find((s) => s.station === station)?.proficiency ?? 0;
   const isPreferredStation = candidate.preferredStations.includes(station);
@@ -100,31 +110,28 @@ function formatCandidate(candidate: CandidateDTO, station: string): string {
     candidate.maxHoursPerWeek - candidate.currentWeekHours;
 
   const flags: string[] = [];
-  if (candidate.preference === "preferred") flags.push("PREFERRED_TIME");
-  if (isPreferredStation) flags.push("PREFERRED_STATION");
-  if (candidate.overtimeWarning) flags.push("OVERTIME_WARNING");
+  if (candidate.preference === "preferred") flags.push("PREF_TIME");
+  if (isPreferredStation) flags.push("PREF_STN");
 
-  return [
-    `    - ID: ${candidate.staffId}`,
-    `      Name: ${candidate.staffName}`,
-    `      Proficiency: ${proficiency}/5`,
-    `      Preference: ${candidate.preference}`,
-    `      Hours this week: ${candidate.currentWeekHours.toFixed(1)} / ${candidate.maxHoursPerWeek} (${hoursRemaining.toFixed(1)} remaining)`,
-    isPreferredStation ? `      Preferred station: Yes` : "",
-    flags.length > 0 ? `      Flags: [${flags.join(", ")}]` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const flagStr = flags.length > 0 ? ` [${flags.join(",")}]` : "";
+
+  // Compact single-line format: ~60% fewer tokens than multi-line
+  return `    - ${alias} "${candidate.staffName}" prof:${proficiency}/5 pref:${candidate.preference} hrs:${candidate.currentWeekHours.toFixed(1)}/${candidate.maxHoursPerWeek}(${hoursRemaining.toFixed(1)}rem)${flagStr}`;
 }
 
 /**
  * Format a closing shift for the clopening warning section.
+ * Uses alias if available.
  */
-function formatClosingShift(shift: ShiftDTO): string {
+function formatClosingShift(
+  shift: ShiftDTO,
+  idToAlias: Map<string, string>
+): string {
+  const alias = idToAlias.get(shift.staffId) ?? shift.staffId;
   const endTime = new Date(shift.end);
   const hours = String(endTime.getHours()).padStart(2, "0");
   const minutes = String(endTime.getMinutes()).padStart(2, "0");
-  return `  - Staff ID: ${shift.staffId}, ended at ${hours}:${minutes}, station: ${shift.station}`;
+  return `  - Staff ID: ${alias}, ended at ${hours}:${minutes}, station: ${shift.station}`;
 }
 
 /**
@@ -132,10 +139,17 @@ function formatClosingShift(shift: ShiftDTO): string {
  * Serializes the DaySchedulingContext into a structured format
  * that the AI can parse and reason about.
  *
+ * Uses short alias IDs (e.g., "S1") instead of raw MongoDB ObjectIds
+ * to reduce token count and prevent LLM ID-hallucination errors.
+ *
  * @param context - The day's scheduling context with pre-filtered candidates
+ * @param idToAlias - Map of real staffId -> short alias (e.g., "S1")
  * @returns Formatted user prompt string
  */
-export function buildDayUserPrompt(context: DaySchedulingContext): string {
+export function buildDayUserPrompt(
+  context: DaySchedulingContext,
+  idToAlias: Map<string, string>
+): string {
   const {
     date,
     dayName,
@@ -167,7 +181,7 @@ export function buildDayUserPrompt(context: DaySchedulingContext): string {
   if (previousDayClosingShifts.length > 0) {
     lines.push("PREVIOUS DAY CLOSING SHIFTS (check for clopening risk):");
     for (const shift of previousDayClosingShifts) {
-      lines.push(formatClosingShift(shift));
+      lines.push(formatClosingShift(shift, idToAlias));
     }
     lines.push(
       `  Note: Avoid assigning these staff to shifts starting less than ${CLOPENING_THRESHOLD_HOURS} hours after their close.`
@@ -182,24 +196,22 @@ export function buildDayUserPrompt(context: DaySchedulingContext): string {
   for (let i = 0; i < slots.length; i++) {
     const { slot, candidates, hasSufficientCandidates } = slots[i];
 
-    lines.push(`--- Slot ${i + 1}: ${slot.station} ---`);
-    lines.push(`  Time: ${slot.startTime} - ${slot.endTime}`);
+    // Compact slot header: single line
     lines.push(
-      `  Staff needed: ${slot.preferredStaff} preferred (${slot.minStaff} minimum)`
+      `[Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff} min:${slot.minStaff} pri:${slot.priority}`
     );
-    lines.push(`  Priority: ${slot.priority}`);
 
     if (candidates.length === 0) {
       lines.push("  Candidates: NONE — add to unfilledSlots");
     } else {
       if (!hasSufficientCandidates) {
         lines.push(
-          `  WARNING: Only ${candidates.length} candidates available (need ${slot.minStaff} minimum)`
+          `  WARNING: Only ${candidates.length} candidates (need ${slot.minStaff} min)`
         );
       }
       lines.push(`  Candidates (${candidates.length}):`);
       for (const candidate of candidates) {
-        lines.push(formatCandidate(candidate, slot.station));
+        lines.push(formatCandidate(candidate, slot.station, idToAlias));
       }
     }
     lines.push("");
@@ -214,12 +226,13 @@ export function buildDayUserPrompt(context: DaySchedulingContext): string {
   if (dayShifts.length > 0) {
     lines.push("ALREADY ASSIGNED SHIFTS FOR THIS DAY:");
     for (const shift of dayShifts) {
+      const alias = idToAlias.get(shift.staffId) ?? shift.staffId;
       const start = new Date(shift.start);
       const end = new Date(shift.end);
       const startStr = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
       const endStr = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
       lines.push(
-        `  - Staff ${shift.staffId}: ${shift.station} ${startStr}-${endStr}`
+        `  - Staff ${alias}: ${shift.station} ${startStr}-${endStr}`
       );
     }
     lines.push(
@@ -241,30 +254,54 @@ export function buildDayUserPrompt(context: DaySchedulingContext): string {
 
 /**
  * Build a correction prompt for the self-correction loop.
- * Takes the previous AI output and a list of validation errors,
- * and asks the AI to fix the specific issues.
+ * Takes the previous AI output, a list of validation errors, and the
+ * ORIGINAL day context (candidate lists, operating hours) so the AI
+ * has full information to make valid corrections.
  *
- * This is a stub for Sprint 3.8 (Schedule Validator Service).
- * The self-correction flow will be:
- * 1. Generate → 2. Validate → 3. If errors, feed back via this prompt → 4. Retry
+ * Without the original context, the AI cannot know which staffIds are
+ * valid for each slot, leading to new errors on every retry.
  *
- * @param previousOutput - The AI's previous (invalid) output
+ * @param previousOutput - The AI's previous (invalid) output (with real staffIds)
  * @param errors - List of specific validation error messages
+ * @param context - Original day scheduling context (candidates, slots, hours)
+ * @param idToAlias - Map of real staffId -> short alias (for prompt consistency)
  * @returns Formatted correction prompt string
  */
 export function buildCorrectionPrompt(
   previousOutput: GeneratedDaySchedule,
-  errors: string[]
+  errors: string[],
+  context: DaySchedulingContext,
+  idToAlias: Map<string, string>
 ): string {
   const errorList = errors.map((e, i) => `  ${i + 1}. ${e}`).join("\n");
 
-  return `Your previous schedule output contained the following validation errors:
+  // Include the original day prompt so the AI knows who is available
+  const originalContext = buildDayUserPrompt(context, idToAlias);
 
+  // Convert the previous output's real staffIds back to aliases so the AI
+  // sees consistent IDs between the candidate lists and the output to fix
+  const aliasedOutput = {
+    ...previousOutput,
+    assignments: previousOutput.assignments.map((a) => ({
+      ...a,
+      staffId: idToAlias.get(a.staffId) ?? a.staffId,
+    })),
+  };
+
+  return `Your previous schedule output for this day contained validation errors that must be fixed.
+
+ORIGINAL SCHEDULING CONTEXT (valid candidates for each slot):
+${originalContext}
+
+VALIDATION ERRORS TO FIX:
 ${errorList}
 
-Here is your previous output that needs correction:
-${JSON.stringify(previousOutput, null, 2)}
+YOUR PREVIOUS (INVALID) OUTPUT:
+${JSON.stringify(aliasedOutput, null, 2)}
 
-Please fix ONLY the issues listed above. Keep all valid assignments unchanged.
-Output the corrected schedule in the same JSON format as before.`;
+INSTRUCTIONS:
+- Fix ONLY the assignments flagged above. Keep all valid assignments unchanged.
+- You MUST only use staffId aliases from the candidate lists above.
+- Do not assign the same staff member to overlapping time slots.
+- Output the corrected schedule in the same JSON format.`;
 }

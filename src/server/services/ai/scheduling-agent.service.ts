@@ -68,6 +68,26 @@ const DAY_NAMES = [
 ] as const;
 
 // ────────────────────────────────────────────────────────────
+// Logging helpers (compact, timer-aware)
+// ────────────────────────────────────────────────────────────
+
+const LOG_PREFIX = "[SchedulingAgent]";
+
+/** Format elapsed milliseconds as a human-readable string. */
+function fmtMs(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const mins = Math.floor(ms / 60_000);
+  const secs = ((ms % 60_000) / 1000).toFixed(0);
+  return `${mins}m${secs}s`;
+}
+
+/** Format token count compactly. */
+function fmtTokens(t: TokenUsage): string {
+  return `${t.totalTokens} tokens ($${(t.estimatedCostCents / 100).toFixed(3)})`;
+}
+
+// ────────────────────────────────────────────────────────────
 // Usage tracking options (passed to generateJSON)
 // ────────────────────────────────────────────────────────────
 
@@ -156,17 +176,26 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 
 /**
  * Validate and normalize AI output against the candidate lists.
- * Ensures staffIds actually exist in the candidate pool for each slot.
+ * Resolves short alias IDs (e.g., "S1") back to real MongoDB ObjectIds
+ * using the provided aliasToId map, then validates that all staffIds
+ * exist in the candidate pool for each slot.
  * Strips any assignments with invalid staffIds.
  *
  * Exported for use by ScheduleValidatorService (Sprint 3.8) to
  * normalize correction responses through the same pipeline.
+ *
+ * @param raw - Raw AI JSON output
+ * @param slots - Slot candidates for validation
+ * @param dateStr - Date string for the day
+ * @param dayName - Day name (e.g., "Monday")
+ * @param aliasToId - Map of short alias -> real staffId (for resolving AI output)
  */
 export function normalizeAIOutput(
   raw: AIRawDayOutput,
   slots: SlotCandidates[],
   dateStr: string,
-  dayName: string
+  dayName: string,
+  aliasToId: Map<string, string> = new Map()
 ): GeneratedDaySchedule {
   // Build a set of all valid staffIds across all slots
   const allValidStaffIds = new Set<string>();
@@ -183,10 +212,13 @@ export function normalizeAIOutput(
   const invalidCount = { count: 0 };
 
   for (const assignment of raw.assignments ?? []) {
-    if (allValidStaffIds.has(assignment.staffId)) {
+    // Resolve alias to real staffId if applicable
+    const resolvedId = aliasToId.get(assignment.staffId) ?? assignment.staffId;
+
+    if (allValidStaffIds.has(resolvedId)) {
       validAssignments.push({
-        staffId: assignment.staffId,
-        staffName: assignment.staffName || staffNameMap.get(assignment.staffId) || "Unknown",
+        staffId: resolvedId,
+        staffName: assignment.staffName || staffNameMap.get(resolvedId) || "Unknown",
         station: assignment.station,
         startTime: assignment.startTime,
         endTime: assignment.endTime,
@@ -195,7 +227,7 @@ export function normalizeAIOutput(
     } else {
       invalidCount.count++;
       console.warn(
-        `[SchedulingAgent] Stripped invalid staffId "${assignment.staffId}" from AI output for ${dateStr}`
+        `[SchedulingAgent] Stripped invalid staffId "${assignment.staffId}" (resolved: "${resolvedId}") from AI output for ${dateStr}`
       );
     }
   }
@@ -338,6 +370,40 @@ function algorithmicFallback(
   };
 }
 
+// ────────────────────────────────────────────────────────────
+// Alias Map Builder
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Build bidirectional alias maps from candidate slot data.
+ * Assigns short sequential aliases (S1, S2, ...) to each unique staffId.
+ * This prevents LLM hallucination of 24-char MongoDB ObjectIds and
+ * reduces token count in the prompt.
+ *
+ * @param slots - Slot candidates containing all unique staff
+ * @returns idToAlias (real ID -> alias) and aliasToId (alias -> real ID) maps
+ */
+function buildAliasMap(
+  slots: SlotCandidates[]
+): { idToAlias: Map<string, string>; aliasToId: Map<string, string> } {
+  const idToAlias = new Map<string, string>();
+  const aliasToId = new Map<string, string>();
+  let counter = 1;
+
+  for (const { candidates } of slots) {
+    for (const candidate of candidates) {
+      if (!idToAlias.has(candidate.staffId)) {
+        const alias = `S${counter}`;
+        idToAlias.set(candidate.staffId, alias);
+        aliasToId.set(alias, candidate.staffId);
+        counter++;
+      }
+    }
+  }
+
+  return { idToAlias, aliasToId };
+}
+
 // ============================================================
 // SchedulingAgentService -- Public API
 // ============================================================
@@ -474,13 +540,18 @@ export const SchedulingAgentService = {
 
     // Try AI generation, fall back to algorithmic if unavailable
     try {
-      const systemPrompt = buildSystemPrompt();
-      const userPrompt = buildDayUserPrompt(context);
+      // Build alias maps: short IDs (S1, S2, ...) prevent LLM ID-hallucination
+      const { idToAlias, aliasToId } = buildAliasMap(context.slots);
 
+      const systemPrompt = buildSystemPrompt();
+      const userPrompt = buildDayUserPrompt(context, idToAlias);
+
+      const aiStart = Date.now();
       const { data: rawOutput, usage } = await generateJSON<AIRawDayOutput>(
         systemPrompt,
         userPrompt,
         {
+          model: "gpt-4o-mini",
           temperature: 0.3,
           maxTokens: 4000,
           tracking: {
@@ -491,16 +562,30 @@ export const SchedulingAgentService = {
           },
         }
       );
+      const aiElapsed = Date.now() - aiStart;
+      console.log(
+        `${LOG_PREFIX} ${dateStr} AI call: ${fmtMs(aiElapsed)} | ${fmtTokens(usage)} | ${(rawOutput.assignments ?? []).length} assignments returned`
+      );
 
-      // Normalize AI output against candidate lists
+      // Normalize AI output: resolve aliases back to real IDs and validate
       let daySchedule = normalizeAIOutput(
         rawOutput,
         context.slots,
         dateStr,
-        dayName
+        dayName,
+        aliasToId
       );
 
-      // ── Sprint 3.8: Validation + Retry Loop ──────────────
+      // ── Sprint 3.8: Validation + Smart Retry Loop ────────
+      // Error types the AI can fix by reassigning staff:
+      const FIXABLE_ERROR_TYPES = new Set([
+        "double_booking",
+        "overlap",
+        "skill_mismatch",
+        "unavailable_staff",
+        "invalid_staff_id",
+      ]);
+
       let accumulatedTokenUsage = usage;
       let validation = ScheduleValidatorService.validate(
         daySchedule,
@@ -508,56 +593,124 @@ export const SchedulingAgentService = {
         allStaff
       );
 
-      for (
-        let attempt = 1;
-        !validation.valid && attempt <= ScheduleValidatorService.MAX_RETRY_ATTEMPTS;
-        attempt++
-      ) {
-        console.warn(
-          `[SchedulingAgent] Validation failed for ${dateStr} with ${validation.errors.length} error(s). Retry ${attempt}/${ScheduleValidatorService.MAX_RETRY_ATTEMPTS}...`
+      if (validation.valid) {
+        console.log(
+          `${LOG_PREFIX} ${dateStr} Validation passed (${validation.warnings.length} warning(s))`
+        );
+      }
+
+      // Smart retry: partition errors into fixable vs unfixable
+      if (!validation.valid) {
+        const unfixableErrors = validation.errors.filter(
+          (e) => !FIXABLE_ERROR_TYPES.has(e.type)
+        );
+        const fixableErrors = validation.errors.filter(
+          (e) => FIXABLE_ERROR_TYPES.has(e.type)
         );
 
-        try {
-          const { daySchedule: corrected, tokenUsage: retryUsage } =
-            await ScheduleValidatorService.retryWithCorrections(
-              daySchedule,
-              validation.errors,
-              context,
-              tracking,
-              attempt
-            );
-
-          daySchedule = corrected;
-          accumulatedTokenUsage = mergeTokenUsage(
-            accumulatedTokenUsage,
-            retryUsage
+        // Strip unfixable assignments immediately (e.g. max_hours_exceeded)
+        // The AI cannot fix these because weekly hours are a running total
+        if (unfixableErrors.length > 0) {
+          console.log(
+            `${LOG_PREFIX} ${dateStr} Stripping ${unfixableErrors.length} unfixable error(s) (${unfixableErrors.map((e) => e.type).join(", ")})`
           );
-
-          // Re-validate the corrected output
+          daySchedule = ScheduleValidatorService.stripInvalidAssignments(
+            daySchedule,
+            unfixableErrors
+          );
+          // Re-validate after stripping unfixable errors
           validation = ScheduleValidatorService.validate(
             daySchedule,
             context,
             allStaff
           );
-        } catch (retryError) {
-          // If AI becomes unavailable during retry, break out and use what we have
-          if (
-            retryError instanceof AILimitExceededError ||
-            retryError instanceof AIServiceUnavailableError
+        }
+
+        // Only retry if fixable errors remain
+        if (fixableErrors.length > 0 && !validation.valid) {
+          for (
+            let attempt = 1;
+            !validation.valid && attempt <= ScheduleValidatorService.MAX_RETRY_ATTEMPTS;
+            attempt++
           ) {
-            console.warn(
-              `[SchedulingAgent] AI unavailable during retry for ${dateStr}. Using best available schedule.`
+            const currentFixable = validation.errors.filter(
+              (e) => FIXABLE_ERROR_TYPES.has(e.type)
             );
-            break;
+            if (currentFixable.length === 0) {
+              // Only unfixable errors left -- strip and stop
+              console.log(
+                `${LOG_PREFIX} ${dateStr} No fixable errors remain, stripping remaining violations.`
+              );
+              daySchedule = ScheduleValidatorService.stripInvalidAssignments(
+                daySchedule,
+                validation.errors
+              );
+              validation = ScheduleValidatorService.validate(
+                daySchedule,
+                context,
+                allStaff
+              );
+              break;
+            }
+
+            console.warn(
+              `${LOG_PREFIX} ${dateStr} Validation failed: ${currentFixable.length} fixable error(s). Retry ${attempt}/${ScheduleValidatorService.MAX_RETRY_ATTEMPTS}...`
+            );
+
+            try {
+              const retryStart = Date.now();
+              const { daySchedule: corrected, tokenUsage: retryUsage } =
+                await ScheduleValidatorService.retryWithCorrections(
+                  daySchedule,
+                  currentFixable,
+                  context,
+                  tracking,
+                  attempt,
+                  idToAlias,
+                  aliasToId
+                );
+              const retryElapsed = Date.now() - retryStart;
+              console.log(
+                `${LOG_PREFIX} ${dateStr} Retry ${attempt} AI call: ${fmtMs(retryElapsed)} | ${fmtTokens(retryUsage)}`
+              );
+
+              daySchedule = corrected;
+              accumulatedTokenUsage = mergeTokenUsage(
+                accumulatedTokenUsage,
+                retryUsage
+              );
+
+              // Re-validate the corrected output
+              validation = ScheduleValidatorService.validate(
+                daySchedule,
+                context,
+                allStaff
+              );
+            } catch (retryError) {
+              // If AI becomes unavailable during retry, break out and use what we have
+              if (
+                retryError instanceof AILimitExceededError ||
+                retryError instanceof AIServiceUnavailableError
+              ) {
+                console.warn(
+                  `${LOG_PREFIX} ${dateStr} AI unavailable during retry. Using best available schedule.`
+                );
+                break;
+              }
+              throw retryError;
+            }
           }
-          throw retryError;
+        } else if (fixableErrors.length === 0) {
+          console.log(
+            `${LOG_PREFIX} ${dateStr} All errors were unfixable — skipping retry loop.`
+          );
         }
       }
 
-      // If still invalid after all retries, strip invalid assignments
+      // If still invalid after all retries, strip remaining invalid assignments
       if (!validation.valid) {
         console.warn(
-          `[SchedulingAgent] Max retries exhausted for ${dateStr}. Stripping ${validation.errors.length} invalid assignment(s).`
+          `${LOG_PREFIX} ${dateStr} Max retries exhausted. Stripping ${validation.errors.length} remaining invalid assignment(s).`
         );
         daySchedule = ScheduleValidatorService.stripInvalidAssignments(
           daySchedule,
@@ -584,7 +737,7 @@ export const SchedulingAgentService = {
         error instanceof AIServiceUnavailableError
       ) {
         console.warn(
-          `[SchedulingAgent] AI unavailable for ${dateStr}: ${error.message}. Using algorithmic fallback.`
+          `${LOG_PREFIX} ${dateStr} AI unavailable: ${error.message}. Using algorithmic fallback.`
         );
         const daySchedule = algorithmicFallback(context);
 
@@ -636,6 +789,12 @@ export const SchedulingAgentService = {
     const startTime = Date.now();
     const weekDays = getWeekDays(context.weekStart);
 
+    console.log(
+      `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
+      `  Staff: ${context.staff.length} active | Requirements: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
+      `${"═".repeat(60)}`
+    );
+
     const tracking: TrackingOptions = {
       orgId: context.orgId,
       locationId: context.locationId,
@@ -651,12 +810,15 @@ export const SchedulingAgentService = {
     const allWarnings: ValidationWarning[] = [];
 
     const dayResults: GeneratedDaySchedule[] = [];
+    let runningShiftCount = 0;
 
     // Process each day sequentially (order matters for clopening + accumulation)
     for (let i = 0; i < weekDays.length; i++) {
+      const dayStart = Date.now();
       const date = weekDays[i];
       const dayOfWeek = getDayOfWeek(date);
       const dayName = DAY_NAMES[dayOfWeek];
+      const dateStr = format(date, "yyyy-MM-dd");
 
       // Check if kitchen is open this day
       const operatingHours = getStoreHoursForDay(
@@ -671,8 +833,12 @@ export const SchedulingAgentService = {
 
       // Skip days with no operating hours or no labor requirements
       if (!operatingHours || dayRequirements.length === 0) {
+        const reason = !operatingHours ? "closed" : "no requirements";
+        console.log(
+          `${LOG_PREFIX} [${i + 1}/7] ${dayName} ${dateStr} — skipped (${reason}) [${fmtMs(Date.now() - startTime)} elapsed]`
+        );
         dayResults.push({
-          date: format(date, "yyyy-MM-dd"),
+          date: dateStr,
           dayOfWeek: dayName,
           assignments: [],
           unfilledSlots: [],
@@ -683,14 +849,28 @@ export const SchedulingAgentService = {
         continue;
       }
 
+      console.log(
+        `${LOG_PREFIX} [${i + 1}/7] ${dayName} ${dateStr} — ${dayRequirements.length} requirements, hours ${operatingHours.open}-${operatingHours.close}`
+      );
+
       // Get candidates for this day using CandidateService
       // Pass accumulatedShifts so it can see prior days' generated shifts
+      const candidateStart = Date.now();
       const slotCandidates = await CandidateService.getCandidatesForDay(
         context.orgId,
         context.locationId,
         date,
         dayRequirements,
         accumulatedShifts
+      );
+      const candidateElapsed = Date.now() - candidateStart;
+
+      const totalCandidates = slotCandidates.reduce(
+        (sum, s) => sum + s.candidates.length,
+        0
+      );
+      console.log(
+        `${LOG_PREFIX} ${dateStr} Candidates: ${totalCandidates} across ${slotCandidates.length} slot(s) (${fmtMs(candidateElapsed)})`
       );
 
       // Get previous day's closing shifts for clopening avoidance
@@ -728,6 +908,7 @@ export const SchedulingAgentService = {
       allWarnings.push(...warnings);
       totalTokenUsage = mergeTokenUsage(totalTokenUsage, tokenUsage);
       if (usedFallback) usedFallbackAnyDay = true;
+      runningShiftCount += daySchedule.assignments.length;
 
       // Convert assignments to synthetic ShiftDTOs and accumulate
       // This lets CandidateService see these shifts for subsequent days
@@ -741,6 +922,11 @@ export const SchedulingAgentService = {
         )
       );
       accumulatedShifts = [...accumulatedShifts, ...syntheticShifts];
+
+      const dayElapsed = Date.now() - dayStart;
+      console.log(
+        `${LOG_PREFIX} ${dateStr} Done: ${daySchedule.assignments.length} shifts, ${daySchedule.unfilledSlots.length} unfilled, ${warnings.length} warnings (${fmtMs(dayElapsed)}) [${fmtMs(Date.now() - startTime)} elapsed, ${runningShiftCount} total shifts]`
+      );
     }
 
     // Aggregate metadata
@@ -753,11 +939,12 @@ export const SchedulingAgentService = {
       0
     );
 
+    const totalElapsed = Date.now() - startTime;
     const metadata: GenerationMetadata = {
       totalShiftsCreated,
       totalUnfilledSlots,
       usedFallback: usedFallbackAnyDay,
-      generationTimeMs: Date.now() - startTime,
+      generationTimeMs: totalElapsed,
       tokenUsage: totalTokenUsage,
     };
 
@@ -781,6 +968,13 @@ export const SchedulingAgentService = {
         `${allWarnings.length} warning(s) noted.`
       );
     }
+
+    console.log(
+      `\n${"═".repeat(60)}\n${LOG_PREFIX} Week generation complete in ${fmtMs(totalElapsed)}\n` +
+      `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Warnings: ${allWarnings.length}\n` +
+      `  Tokens: ${fmtTokens(totalTokenUsage)} | Fallback: ${usedFallbackAnyDay ? "yes" : "no"}\n` +
+      `${"═".repeat(60)}\n`
+    );
 
     return {
       days: dayResults,

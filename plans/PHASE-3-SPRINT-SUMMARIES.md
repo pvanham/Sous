@@ -385,6 +385,7 @@ Service Object Pattern: ScheduleValidatorService uses the same object-with-metho
 
 Validation Checks Implemented
 Hard Errors (block schedule):
+
 - invalid_staff_id: staffId not in any slot's candidate list
 - double_booking: same staffId assigned to overlapping shifts same day (uses timeRangesOverlap from src/lib/utils/time-overlap.ts)
 - unavailable_staff: staffId not in the SPECIFIC slot's candidate list
@@ -393,6 +394,7 @@ Hard Errors (block schedule):
 - overlap: assignment overlaps with an already-existing shift
 
 Soft Warnings (surfaced to user):
+
 - overtime_risk: staff above 80% of maxHoursPerWeek
 - non_preferred_station: assigned to a station not in preferredStations
 - clopening_risk: gap between previous day close and current day open < 10 hours
@@ -404,3 +406,21 @@ Graceful degradation: On max retries exhausted, stripInvalidAssignments() remove
 Pure logic validator: ScheduleValidatorService.validate() makes zero DB calls. All data comes via DaySchedulingContext and StaffDTO[]. This makes it fast and unit-testable.
 Algorithmic fallback also validated: The fallback path runs through validation too, capturing warnings (should always be clean since the fallback has its own overlap checks)
 Token tracking: Retry attempts are tracked through the same generateJSON tracking pipeline as initial generation
+
+Sprint 3.9: Schedule Generation Action & UI -- Implementation Complete
+Files created (4):
+src/types/ai-scheduling.ts (updated) -- Added ReadinessCheckResult, ReadinessIssue, ReadinessIssueSeverity, ReadinessIssueCategory, and AcceptedShift types used by the generation action and UI.
+src/lib/validations/schedule-generation.schema.ts (new) -- Zod schemas for generateScheduleSchema, acceptGeneratedScheduleSchema, and checkReadinessSchema with proper validation of schedule IDs, time strings (HH:MM), date strings (YYYY-MM-DD), and shift arrays.
+src/server/actions/schedule-generation.actions.ts (new) -- Three server actions following the strict 3-layer architecture:
+checkGenerationReadiness -- Pre-generation data readiness checks (AI usage limits, missing hourly rates, availability completeness, labor requirements coverage, skill gaps, requirements outside operating hours)
+generateSchedule -- Orchestrates the full AI pipeline: usage limit check -> SchedulingAgentService.buildSchedulingContext() -> generateWeekSchedule() -> usage logging. Returns GeneratedSchedule for preview without persisting.
+acceptGeneratedSchedule -- Converts accepted shifts from the preview into CreateShiftInput objects and bulk-creates them via ShiftService.bulkCreate().
+src/app/(dashboard)/dashboard/schedule/\_components/GenerateScheduleDialog.tsx (new) -- Multi-step dialog with four states:
+Readiness -- Checklist with pass/fail indicators, stats cards, blocker/warning categorization
+Generating -- Progress spinner with time estimate
+Preview -- Delegates to GeneratedShiftPreview for day-by-day review
+Failure -- Partial results summary, unfilled slots with reasons, recovery links (Adjust Labor Requirements, Review Staff Availability), and "Save as Draft" option when 80%+ shifts generated
+src/app/(dashboard)/dashboard/schedule/\_components/GeneratedShiftPreview.tsx (new) -- Day-by-day preview component showing shift assignments with station colors, AI reasoning tooltips, validation warnings grouped by type (overtime risk, clopening risk, non-preferred station), unfilled slots with explanations, summary stats (total shifts, hours, unfilled), and Accept All / Regenerate / Cancel action buttons.
+Files updated (2):
+src/server/services/shift.service.ts -- Added bulkCreate() method that creates shifts individually with overlap checks, skipping conflicting shifts rather than failing the batch.
+src/app/(dashboard)/dashboard/schedule/\_components/ScheduleActions.tsx -- Added "Generate Schedule" button with Sparkles icon (visible only for DRAFT schedules), GenerateScheduleDialog integration with open/close state, and cache invalidation callback on accept.

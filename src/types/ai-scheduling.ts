@@ -284,3 +284,74 @@ export interface ValidationResult {
   /** Soft issues (surfaced to user but don't block) */
   warnings: ValidationWarning[];
 }
+
+// ────────────────────────────────────────────────────────────
+// Schedule Generation Action Types (Sprint 3.9)
+// ────────────────────────────────────────────────────────────
+
+/** Severity of a readiness issue */
+export type ReadinessIssueSeverity = "blocker" | "warning";
+
+/** Category of a readiness issue */
+export type ReadinessIssueCategory =
+  | "usage_limit"
+  | "missing_hourly_rate"
+  | "low_availability"
+  | "missing_requirements"
+  | "requirements_outside_hours"
+  | "no_qualified_candidates"
+  | "no_active_staff"
+  | "no_kitchen_config";
+
+/**
+ * A single readiness issue found during pre-generation checks.
+ * Blockers prevent generation; warnings allow proceeding with confirmation.
+ */
+export interface ReadinessIssue {
+  /** Whether this blocks generation or is just a warning */
+  severity: ReadinessIssueSeverity;
+  /** Category of the issue for grouping */
+  category: ReadinessIssueCategory;
+  /** Human-readable message displayed in the UI */
+  message: string;
+  /** Count of affected items (e.g., number of staff missing hourly rate) */
+  count?: number;
+}
+
+/**
+ * Result of the pre-generation readiness check.
+ * Returned by `checkGenerationReadiness()` action.
+ */
+export interface ReadinessCheckResult {
+  /** Whether generation can proceed (no blockers) */
+  canProceed: boolean;
+  /** All issues found during readiness checks */
+  issues: ReadinessIssue[];
+  /** AI usage remaining this month */
+  usageRemaining: number;
+  /** AI usage limit for this month */
+  usageLimit: number;
+  /** Total active staff count */
+  activeStaffCount: number;
+  /** Availability completeness as a percentage (0-100) */
+  availabilityCompleteness: number;
+  /** Total labor requirements defined */
+  totalRequirements: number;
+}
+
+/**
+ * A single shift accepted by the user from the generated preview.
+ * Used as input to `acceptGeneratedSchedule()` action.
+ */
+export interface AcceptedShift {
+  /** Staff member ID */
+  staffId: string;
+  /** Station for this shift */
+  station: string;
+  /** Date in ISO format (YYYY-MM-DD) */
+  date: string;
+  /** Shift start time in HH:MM format */
+  startTime: string;
+  /** Shift end time in HH:MM format */
+  endTime: string;
+}

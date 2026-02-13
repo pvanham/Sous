@@ -38,7 +38,7 @@ import type {
 // ============================================================
 
 /** Maximum number of self-correction retry attempts */
-const MAX_RETRY_ATTEMPTS = 3;
+const MAX_RETRY_ATTEMPTS = 2;
 
 /** Threshold for overtime risk warning (percentage of maxHoursPerWeek) */
 const OVERTIME_RISK_THRESHOLD = 0.8;
@@ -539,7 +539,9 @@ export const ScheduleValidatorService = {
     validationErrors: ValidationError[],
     context: DaySchedulingContext,
     tracking: ValidatorTrackingOptions,
-    attempt: number
+    attempt: number,
+    idToAlias: Map<string, string> = new Map(),
+    aliasToId: Map<string, string> = new Map()
   ): Promise<{ daySchedule: GeneratedDaySchedule; tokenUsage: TokenUsage }> {
     console.log(
       `[ScheduleValidator] Retry attempt ${attempt}/${MAX_RETRY_ATTEMPTS} with ${validationErrors.length} error(s)`
@@ -551,13 +553,19 @@ export const ScheduleValidatorService = {
     );
 
     const systemPrompt = buildSystemPrompt();
-    const correctionPrompt = buildCorrectionPrompt(original, errorMessages);
+    const correctionPrompt = buildCorrectionPrompt(
+      original,
+      errorMessages,
+      context,
+      idToAlias
+    );
 
     try {
       const { data: rawOutput, usage } = await generateJSON<AIRawDayOutput>(
         systemPrompt,
         correctionPrompt,
         {
+          model: "gpt-4o-mini",
           temperature: 0.2, // Lower temperature for corrections (more deterministic)
           maxTokens: 4000,
           tracking: {
@@ -570,11 +578,13 @@ export const ScheduleValidatorService = {
       );
 
       // Normalize through the same pipeline as initial generation
+      // (resolves aliases back to real IDs)
       const daySchedule = normalizeAIOutput(
         rawOutput,
         context.slots,
         original.date,
-        original.dayOfWeek
+        original.dayOfWeek,
+        aliasToId
       );
 
       return { daySchedule, tokenUsage: usage };

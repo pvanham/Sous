@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Copy, ChevronDown, Loader2, Undo2, Trash2 } from "lucide-react";
+import { Send, Copy, ChevronDown, Loader2, Undo2, Trash2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import type { ShiftDTO } from "@/types/shift";
 import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 import { ClearWeekDialog } from "./ClearWeekDialog";
 import { ManagerCoverageWarningDialog } from "./ManagerCoverageWarningDialog";
+import { GenerateScheduleDialog } from "./GenerateScheduleDialog";
 
 // Query keys for TanStack Query - must match ScheduleGrid
 const scheduleKeys = {
@@ -61,6 +62,7 @@ export function ScheduleActions({
   const queryClient = useQueryClient();
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [managerWarnings, setManagerWarnings] = useState<ManagerCoverageGap[]>(
     [],
   );
@@ -260,6 +262,14 @@ export function ScheduleActions({
     },
   });
 
+  // Handle generation accept -- invalidate shift cache so grid reloads
+  const handleGenerationAccept = () => {
+    queryClient.invalidateQueries({
+      queryKey: shiftKeys.bySchedule(schedule.id),
+    });
+    onStatusChange();
+  };
+
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
   const isCopying = copyWeekMutation.isPending;
@@ -269,6 +279,19 @@ export function ScheduleActions({
     <div className="mb-4 flex items-center justify-between">
       <div className="flex items-center gap-3">
         <ScheduleStatusBadge status={schedule.status} />
+
+        {/* Generate Schedule Button (AI) */}
+        {schedule.status === "DRAFT" && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setGenerateDialogOpen(true)}
+            disabled={schedule.status !== "DRAFT"}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            Generate Schedule
+          </Button>
+        )}
 
         {/* Publish/Unpublish Button */}
         {schedule.status === "DRAFT" ? (
@@ -351,6 +374,15 @@ export function ScheduleActions({
         warnings={managerWarnings}
         onPublishAnyway={handlePublishAnyway}
         isPublishing={publishMutation.isPending}
+      />
+
+      {/* Generate Schedule Dialog (AI) */}
+      <GenerateScheduleDialog
+        open={generateDialogOpen}
+        onOpenChange={setGenerateDialogOpen}
+        schedule={schedule}
+        weekStart={weekStart}
+        onAccept={handleGenerationAccept}
       />
     </div>
   );

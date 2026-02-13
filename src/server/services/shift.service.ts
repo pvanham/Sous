@@ -302,6 +302,39 @@ export const ShiftService = {
   },
 
   /**
+   * Bulk create shifts from AI-generated schedule.
+   * Creates each shift individually with overlap checks. Shifts that would
+   * overlap with existing shifts are skipped rather than failing the whole batch.
+   *
+   * @param shifts - Array of CreateShiftInput objects
+   * @returns Object with count of created and failed shifts, plus any error details
+   */
+  async bulkCreate(
+    shifts: CreateShiftInput[]
+  ): Promise<{ created: number; failed: number; errors: Array<{ index: number; staffId: string; message: string }> }> {
+    let created = 0;
+    let failed = 0;
+    const errors: Array<{ index: number; staffId: string; message: string }> = [];
+
+    for (let i = 0; i < shifts.length; i++) {
+      const shiftData = shifts[i];
+      try {
+        await this.create(shiftData);
+        created++;
+      } catch (error) {
+        failed++;
+        errors.push({
+          index: i,
+          staffId: shiftData.staffId,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
+    }
+
+    return { created, failed, errors };
+  },
+
+  /**
    * Copy shifts from one schedule to another with adjusted dates.
    * Handles overlap detection - skips shifts that would conflict with existing ones.
    * @param orgId - Organization ID (ownership check)

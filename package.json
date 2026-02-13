@@ -16,7 +16,9 @@
     "cleanup:candidate-test": "tsx scripts/seed-candidate-test.ts --cleanup",
     "test:sprint-3.6": "tsx scripts/test-sprint-3.6.ts",
     "test:sprint-3.7": "tsx scripts/test-sprint-3.7.ts",
-    "test:sprint-3.8": "tsx scripts/test-sprint-3.8.ts"
+    "test:sprint-3.8": "tsx scripts/test-sprint-3.8.ts",
+    "seed:ai-test": "tsx scripts/seed-schedule-generation.ts",
+    "cleanup:ai-test": "tsx scripts/seed-schedule-generation.ts --cleanup"
   },
   "keywords": [],
   "author": "",
