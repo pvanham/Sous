@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { z } from "zod";
 
 import {
@@ -127,10 +127,10 @@ export function BulkRequirementFormDialog({
       queryClient.invalidateQueries({ queryKey: laborRequirementKeys.list() });
 
       if (data.errors.length === 0) {
-        toast.success(`Created ${data.created} labor requirements`);
+        toast.success(`Created ${data.created} shift slots`);
       } else {
         toast.warning(
-          `Created ${data.created} requirements. ${data.errors.length} failed due to overlaps.`
+          `Created ${data.created} shift slots. ${data.errors.length} failed.`
         );
       }
       onOpenChange(false);
@@ -165,9 +165,9 @@ export function BulkRequirementFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Bulk Add Requirements</DialogTitle>
+          <DialogTitle>Bulk Add Shift Slots</DialogTitle>
           <DialogDescription>
-            Create a labor requirement for {selectedCells.length} selected
+            Create a shift slot for {selectedCells.length} selected
             cell(s).
           </DialogDescription>
         </DialogHeader>
@@ -208,6 +208,9 @@ export function BulkRequirementFormDialog({
                 )}
               />
             </div>
+
+            {/* Shift Length Warning */}
+            <ShiftLengthWarning startTime={form.watch("startTime")} endTime={form.watch("endTime")} />
 
             {/* Staff Counts */}
             <div className="grid grid-cols-2 gap-4">
@@ -288,12 +291,44 @@ export function BulkRequirementFormDialog({
                 {mutation.isPending && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                Create Requirements
+                Create Shift Slots
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Shift Length Warning
+// ────────────────────────────────────────────────────────────
+
+function computeDuration(startTime: string, endTime: string): number | null {
+  if (!startTime || !endTime) return null;
+  const startMatch = startTime.match(/^(\d{2}):(\d{2})$/);
+  const endMatch = endTime.match(/^(\d{2}):(\d{2})$/);
+  if (!startMatch || !endMatch) return null;
+
+  const startMinutes = Number(startMatch[1]) * 60 + Number(startMatch[2]);
+  const endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+  if (endMinutes <= startMinutes) return null;
+  return (endMinutes - startMinutes) / 60;
+}
+
+function ShiftLengthWarning({ startTime, endTime }: { startTime: string; endTime: string }) {
+  const duration = computeDuration(startTime, endTime);
+  if (duration === null || (duration >= 4 && duration <= 12)) return null;
+
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        {duration < 4
+          ? `This shift is only ${duration.toFixed(1)} hours. Shifts shorter than 4 hours are unusual and may be hard to fill.`
+          : `This shift is ${duration.toFixed(1)} hours. Shifts longer than 12 hours may cause scheduling issues.`}
+      </span>
+    </div>
   );
 }

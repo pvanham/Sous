@@ -22,9 +22,9 @@ export default async function LaborPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Labor Requirements</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Shift Slots</h1>
         <p className="text-muted-foreground">
-          Define staffing needs by station and day of the week.
+          Define the shifts you need filled each week. The schedule generator will assign staff to these slots.
         </p>
       </div>
 
@@ -32,8 +32,8 @@ export default async function LaborPage() {
         <div className="rounded-lg border border-dashed p-8 text-center">
           <h3 className="text-lg font-medium">No Stations Configured</h3>
           <p className="mt-2 text-sm text-muted-foreground">
-            You need to configure your kitchen stations before setting up labor
-            requirements.
+            You need to configure your kitchen stations before defining shift
+            slots.
           </p>
           <Link
             href="/dashboard/settings"

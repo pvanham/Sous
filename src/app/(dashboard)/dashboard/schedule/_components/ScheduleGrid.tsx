@@ -164,12 +164,9 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
       queryClient.setQueryData(
         shiftKeys.bySchedule(schedule.id),
-        (old: { success: boolean; data: ShiftDTO[] } | undefined) => {
-          if (!old?.success) return old;
-          return {
-            ...old,
-            data: old.data.filter((s) => s.id !== shiftId),
-          };
+        (old: ShiftDTO[] | undefined) => {
+          if (!old) return old;
+          return old.filter((s) => s.id !== shiftId);
         }
       );
 

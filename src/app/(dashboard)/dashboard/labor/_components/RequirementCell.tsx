@@ -1,8 +1,9 @@
 "use client";
 
-import { Plus } from "lucide-react";
+import { Plus, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
+import { timeRangesOverlap } from "@/lib/utils/time-overlap";
 import type { LaborRequirementDTO, LaborPriority } from "@/types/labor-requirement";
 
 interface RequirementCellProps {
@@ -19,39 +20,62 @@ interface RequirementCellProps {
 }
 
 /**
- * Get priority border classes for visual indication
+ * Get priority accent color classes (left border)
  */
-function getPriorityBorderClasses(priority: LaborPriority): string {
+function getPriorityClasses(priority: LaborPriority): string {
   switch (priority) {
     case "critical":
-      return "border-l-4 border-red-600 dark:border-red-500";
+      return "border-l-[3px] border-l-red-500 dark:border-l-red-400";
     case "high":
-      return "border-l-4 border-orange-600 dark:border-orange-500";
+      return "border-l-[3px] border-l-orange-500 dark:border-l-orange-400";
     case "normal":
-      return "border-l-4 border-slate-500 dark:border-slate-400";
+      return "border-l-[3px] border-l-slate-400 dark:border-l-slate-500";
     case "low":
-      return "border-l-4 border-slate-300 dark:border-slate-500";
+      return "border-l-[3px] border-l-slate-300 dark:border-l-slate-600";
     default:
-      return "border-l-4 border-slate-400";
+      return "border-l-[3px] border-l-slate-400";
   }
 }
 
 /**
- * Format time range for display (e.g., "9a-5p")
+ * Format time for display (e.g., "9a", "5p", "10:30a")
+ */
+function formatTime(time: string): string {
+  const [hours, minutes] = time.split(":").map(Number);
+  const period = hours >= 12 ? "p" : "a";
+  const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+  if (minutes === 0) {
+    return `${displayHours}${period}`;
+  }
+  return `${displayHours}:${minutes.toString().padStart(2, "0")}${period}`;
+}
+
+/**
+ * Format time range compactly (e.g., "9a-5p")
  */
 function formatTimeRange(startTime: string, endTime: string): string {
-  const formatTime = (time: string): string => {
-    const [hours, minutes] = time.split(":").map(Number);
-    const period = hours >= 12 ? "p" : "a";
-    const displayHours = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
-    // Only show minutes if non-zero
-    if (minutes === 0) {
-      return `${displayHours}${period}`;
-    }
-    return `${displayHours}:${minutes.toString().padStart(2, "0")}${period}`;
-  };
-  
   return `${formatTime(startTime)}-${formatTime(endTime)}`;
+}
+
+/**
+ * Check if any shift slots in the array overlap with each other.
+ */
+function hasOverlaps(requirements: LaborRequirementDTO[]): boolean {
+  for (let i = 0; i < requirements.length; i++) {
+    for (let j = i + 1; j < requirements.length; j++) {
+      if (
+        timeRangesOverlap(
+          requirements[i].startTime,
+          requirements[i].endTime,
+          requirements[j].startTime,
+          requirements[j].endTime
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 export function RequirementCell({
@@ -64,6 +88,8 @@ export function RequirementCell({
   onToggleSelect,
 }: RequirementCellProps) {
   const hasRequirements = requirements.length > 0;
+  const isMultiple = requirements.length > 1;
+  const overlapping = isMultiple && hasOverlaps(requirements);
 
   // In bulk edit mode, clicking the cell toggles selection
   const handleCellClick = () => {
@@ -76,7 +102,7 @@ export function RequirementCell({
   const cellWrapper = (children: React.ReactNode) => (
     <div
       className={cn(
-        "relative min-h-[60px]",
+        "relative h-full",
         bulkEditMode && "cursor-pointer",
         bulkEditMode && isSelected && "ring-2 ring-primary ring-inset bg-primary/5"
       )}
@@ -94,11 +120,11 @@ export function RequirementCell({
     </div>
   );
 
-  // Empty cell - show add button
+  // Empty cell - show dashed add area
   if (!hasRequirements) {
     if (bulkEditMode) {
       return cellWrapper(
-        <div className="min-h-[60px] px-2 py-2 flex items-center justify-center">
+        <div className="h-full px-2 py-2 flex items-center justify-center">
           <span className="text-xs text-muted-foreground">Empty</span>
         </div>
       );
@@ -108,20 +134,33 @@ export function RequirementCell({
       <button
         type="button"
         onClick={() => onCellClick(station, dayOfWeek)}
-        className="min-h-[60px] px-2 py-2 flex items-center justify-center hover:bg-muted/50 transition-colors rounded-sm group"
-        aria-label={`Add requirement for ${station}`}
+        className="h-full w-full px-2 py-2 flex items-center justify-center border border-dashed border-transparent hover:border-muted-foreground/30 transition-colors rounded-sm group"
+        aria-label={`Add shift slot for ${station}`}
       >
-        <Plus className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        <Plus className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground/70 transition-colors" />
       </button>
     );
   }
 
-  // Cell with requirements - show them as clickable items
+  // Cell with shift slots
   const content = (
-    <div className={cn("min-h-[60px] h-full px-1 py-1 flex flex-col gap-1", bulkEditMode && "pt-6")}>
+    <div className={cn("h-full px-1 py-1.5 flex flex-col gap-0.5", bulkEditMode && "pt-6")}>
+      {/* Overlap indicator badge */}
+      {overlapping && !bulkEditMode && (
+        <div className="flex items-center gap-1 px-1.5 pb-0.5 text-[10px] text-muted-foreground">
+          <Layers className="h-3 w-3" />
+          <span>Overlapping</span>
+        </div>
+      )}
+
       {requirements.map((req) => {
         const isZeroStaff = req.minStaff === 0 && req.preferredStaff === 0;
-        
+        const staffLabel = isZeroStaff
+          ? "Closed"
+          : req.minStaff === req.preferredStaff
+            ? `${req.minStaff} staff`
+            : `${req.minStaff}-${req.preferredStaff}`;
+
         return (
           <button
             key={req.id}
@@ -135,35 +174,34 @@ export function RequirementCell({
             }}
             disabled={bulkEditMode}
             className={cn(
-              "flex-1 min-h-0 text-left px-2 py-1.5 rounded-sm text-xs transition-colors",
-              !bulkEditMode && "hover:bg-muted",
-              isZeroStaff ? "bg-muted/50 opacity-60" : "bg-background",
-              getPriorityBorderClasses(req.priority)
+              "text-left px-1.5 py-1 rounded-sm text-xs transition-colors",
+              !bulkEditMode && "hover:bg-muted/70",
+              isZeroStaff ? "bg-muted/30 opacity-50" : "bg-muted/20",
+              getPriorityClasses(req.priority)
             )}
           >
-            <div className="font-medium">
-              {isZeroStaff
-                ? "Closed"
-                : req.minStaff === req.preferredStaff
-                  ? `${req.minStaff} staff`
-                  : `${req.minStaff}-${req.preferredStaff} staff`}
-            </div>
-            <div className="text-muted-foreground">
-              {formatTimeRange(req.startTime, req.endTime)}
+            {/* Compact single-line layout: time range + staff count */}
+            <div className="flex items-baseline justify-between gap-1">
+              <span className="font-medium whitespace-nowrap">
+                {formatTimeRange(req.startTime, req.endTime)}
+              </span>
+              <span className="text-muted-foreground text-[10px] whitespace-nowrap">
+                {staffLabel}
+              </span>
             </div>
           </button>
         );
       })}
       
-      {/* Add more button at bottom - only in normal mode */}
+      {/* Add more button at bottom - dashed affordance, only in normal mode */}
       {!bulkEditMode && (
         <button
           type="button"
           onClick={() => onCellClick(station, dayOfWeek)}
-          className="px-2 py-1 flex items-center justify-center hover:bg-muted/50 transition-colors rounded-sm group text-xs text-muted-foreground"
-          aria-label={`Add another requirement for ${station}`}
+          className="mt-auto px-1.5 py-0.5 flex items-center justify-center border border-dashed border-transparent hover:border-muted-foreground/30 transition-colors rounded-sm group"
+          aria-label={`Add another shift slot for ${station}`}
         >
-          <Plus className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <Plus className="h-3 w-3 text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors" />
         </button>
       )}
     </div>

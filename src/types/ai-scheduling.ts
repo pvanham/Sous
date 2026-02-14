@@ -223,6 +223,7 @@ export interface GeneratedSchedule {
 /** All possible hard constraint violation types */
 export type ValidationErrorType =
   | "double_booking"
+  | "multiple_shifts_same_day"
   | "unavailable_staff"
   | "max_hours_exceeded"
   | "skill_mismatch"
@@ -335,7 +336,7 @@ export interface ReadinessCheckResult {
   activeStaffCount: number;
   /** Availability completeness as a percentage (0-100) */
   availabilityCompleteness: number;
-  /** Total labor requirements defined */
+  /** Total shift slots defined */
   totalRequirements: number;
 }
 

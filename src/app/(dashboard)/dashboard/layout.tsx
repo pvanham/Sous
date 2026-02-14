@@ -7,7 +7,7 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/schedule", label: "Schedule", icon: Calendar },
   { href: "/dashboard/staff", label: "Staff", icon: Users },
-  { href: "/dashboard/labor", label: "Labor", icon: ClipboardList },
+  { href: "/dashboard/labor", label: "Shift Slots", icon: ClipboardList },
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

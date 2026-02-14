@@ -2,7 +2,6 @@ import { Types } from "mongoose";
 import LaborRequirement from "@/server/models/LaborRequirement";
 import type { LaborRequirementInput, LaborRequirementUpdateInput } from "@/lib/validations/labor-requirement.schema";
 import { LaborRequirementDTO, toLaborRequirementDTO, LaborPriority } from "@/types/labor-requirement";
-import { findOverlappingRequirement } from "@/lib/utils/time-overlap";
 
 /**
  * LaborRequirementService - Service layer for Labor Requirement operations.
@@ -69,36 +68,19 @@ export const LaborRequirementService = {
   },
 
   /**
-   * Create a new labor requirement.
+   * Create a new labor requirement (shift slot).
+   * Overlapping time ranges on the same station/day are allowed since
+   * shift slots represent shift definitions that commonly overlap.
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param data - Validated labor requirement input
    * @returns Created LaborRequirementDTO
-   * @throws Error if the time range overlaps with an existing requirement
    */
   async create(
     orgId: string,
     locationId: string,
     data: LaborRequirementInput
   ): Promise<LaborRequirementDTO> {
-    // Check for overlapping requirements on same station/day
-    const existing = await this.getByStationAndDay(
-      orgId,
-      locationId,
-      data.station,
-      data.dayOfWeek
-    );
-    const overlap = findOverlappingRequirement(
-      data.startTime,
-      data.endTime,
-      existing
-    );
-    if (overlap) {
-      throw new Error(
-        `Time ${data.startTime}-${data.endTime} overlaps with existing requirement (${overlap.startTime}-${overlap.endTime})`
-      );
-    }
-
     const doc = await LaborRequirement.create({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
@@ -115,13 +97,13 @@ export const LaborRequirementService = {
   },
 
   /**
-   * Update an existing labor requirement.
+   * Update an existing labor requirement (shift slot).
+   * Overlapping time ranges are allowed.
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)
    * @param id - Labor requirement document ID
    * @param data - Partial labor requirement data to update
    * @returns Updated LaborRequirementDTO or null if not found
-   * @throws Error if the updated time range overlaps with an existing requirement
    */
   async update(
     orgId: string,
@@ -129,44 +111,6 @@ export const LaborRequirementService = {
     id: string,
     data: LaborRequirementUpdateInput
   ): Promise<LaborRequirementDTO | null> {
-    // If updating time range, station, or day, check for overlaps
-    if (
-      data.startTime !== undefined ||
-      data.endTime !== undefined ||
-      data.station !== undefined ||
-      data.dayOfWeek !== undefined
-    ) {
-      // Get the current requirement to merge with updates
-      const current = await this.getById(orgId, locationId, id);
-      if (!current) return null;
-
-      const newStart = data.startTime ?? current.startTime;
-      const newEnd = data.endTime ?? current.endTime;
-      const newStation = data.station ?? current.station;
-      const newDay = data.dayOfWeek ?? current.dayOfWeek;
-
-      // Get existing requirements for the target station/day
-      const existing = await this.getByStationAndDay(
-        orgId,
-        locationId,
-        newStation,
-        newDay
-      );
-
-      // Check for overlaps, excluding the current requirement
-      const overlap = findOverlappingRequirement(
-        newStart,
-        newEnd,
-        existing,
-        id
-      );
-      if (overlap) {
-        throw new Error(
-          `Time ${newStart}-${newEnd} overlaps with existing requirement (${overlap.startTime}-${overlap.endTime})`
-        );
-      }
-    }
-
     const updateData: Record<string, unknown> = {};
 
     if (data.dayOfWeek !== undefined) updateData.dayOfWeek = data.dayOfWeek;
@@ -194,7 +138,8 @@ export const LaborRequirementService = {
 
   /**
    * Create or update a labor requirement.
-   * Matches by dayOfWeek + station + startTime to determine if updating or creating.
+   * Matches by dayOfWeek + station + startTime + endTime to determine if updating or creating.
+   * Two slots may share the same startTime if their endTimes differ.
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param data - Validated labor requirement input
@@ -211,11 +156,11 @@ export const LaborRequirementService = {
       dayOfWeek: data.dayOfWeek,
       station: data.station,
       startTime: data.startTime,
+      endTime: data.endTime,
     };
 
     const update = {
       $set: {
-        endTime: data.endTime,
         minStaff: data.minStaff,
         preferredStaff: data.preferredStaff,
         priority: data.priority,
@@ -226,6 +171,7 @@ export const LaborRequirementService = {
         dayOfWeek: data.dayOfWeek,
         station: data.station,
         startTime: data.startTime,
+        endTime: data.endTime,
       },
     };
 
@@ -313,7 +259,6 @@ export const LaborRequirementService = {
 
   /**
    * Get labor requirements for a specific station and day.
-   * Used for overlap validation when creating/updating requirements.
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param station - Station name
@@ -398,7 +343,6 @@ export const LaborRequirementService = {
   /**
    * Create labor requirements for multiple cells (station/day combinations).
    * Each cell gets a new requirement with the specified settings.
-   * Overlap validation is performed for each cell.
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param cells - Array of station/day combinations

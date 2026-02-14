@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Loader2, Trash2 } from "lucide-react";
+import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
 
 import {
   Dialog,
@@ -133,7 +133,7 @@ export function RequirementFormDialog({
       return result.data;
     },
     onSuccess: () => {
-      toast.success("Labor requirement created");
+      toast.success("Shift slot created");
       queryClient.invalidateQueries({ queryKey: laborRequirementKeys.list() });
       onOpenChange(false);
     },
@@ -150,7 +150,7 @@ export function RequirementFormDialog({
       return result.data;
     },
     onSuccess: () => {
-      toast.success("Labor requirement updated");
+      toast.success("Shift slot updated");
       queryClient.invalidateQueries({ queryKey: laborRequirementKeys.list() });
       onOpenChange(false);
     },
@@ -167,7 +167,7 @@ export function RequirementFormDialog({
       return result.data;
     },
     onSuccess: () => {
-      toast.success("Labor requirement deleted");
+      toast.success("Shift slot deleted");
       queryClient.invalidateQueries({ queryKey: laborRequirementKeys.list() });
       onOpenChange(false);
     },
@@ -200,12 +200,12 @@ export function RequirementFormDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {isEditMode ? "Edit Requirement" : "Add Requirement"}
+            {isEditMode ? "Edit Shift Slot" : "Add Shift Slot"}
           </DialogTitle>
           <DialogDescription>
             {isEditMode
-              ? "Update the staffing requirement for this time slot."
-              : "Define the staffing needs for this station and day."}
+              ? "Update this shift slot's details."
+              : "Define a new shift slot for this station and day."}
           </DialogDescription>
         </DialogHeader>
 
@@ -295,6 +295,9 @@ export function RequirementFormDialog({
                 )}
               />
             </div>
+
+            {/* Shift Length Warning */}
+            <ShiftLengthWarning startTime={form.watch("startTime")} endTime={form.watch("endTime")} />
 
             {/* Staff Counts */}
             <div className="grid grid-cols-2 gap-4">
@@ -391,12 +394,52 @@ export function RequirementFormDialog({
                 {(createMutation.isPending || updateMutation.isPending) && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {isEditMode ? "Save Changes" : "Add Requirement"}
+                {isEditMode ? "Save Changes" : "Add Shift Slot"}
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Shift Length Warning
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Compute shift duration in hours from HH:MM time strings.
+ * Returns null if either time is empty or invalid.
+ */
+function computeDuration(startTime: string, endTime: string): number | null {
+  if (!startTime || !endTime) return null;
+  const startMatch = startTime.match(/^(\d{2}):(\d{2})$/);
+  const endMatch = endTime.match(/^(\d{2}):(\d{2})$/);
+  if (!startMatch || !endMatch) return null;
+
+  const startMinutes = Number(startMatch[1]) * 60 + Number(startMatch[2]);
+  const endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+  if (endMinutes <= startMinutes) return null;
+  return (endMinutes - startMinutes) / 60;
+}
+
+/**
+ * Soft warning banner shown when a shift slot is shorter than 4 hours
+ * or longer than 12 hours. Non-blocking — informational only.
+ */
+function ShiftLengthWarning({ startTime, endTime }: { startTime: string; endTime: string }) {
+  const duration = computeDuration(startTime, endTime);
+  if (duration === null || (duration >= 4 && duration <= 12)) return null;
+
+  return (
+    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        {duration < 4
+          ? `This shift is only ${duration.toFixed(1)} hours. Shifts shorter than 4 hours are unusual and may be hard to fill.`
+          : `This shift is ${duration.toFixed(1)} hours. Shifts longer than 12 hours may cause scheduling issues.`}
+      </span>
+    </div>
   );
 }

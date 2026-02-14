@@ -70,6 +70,7 @@ function getShiftsByStation(
  * Get staff name by ID.
  */
 function getStaffName(staff: StaffDTO[], staffId: string): string {
+  if (!Array.isArray(staff)) return "Unknown";
   const staffMember = staff.find((s) => s.id === staffId);
   return staffMember?.name || "Unknown";
 }
@@ -363,7 +364,7 @@ export function DayStationView({
 
   // Calculate time range based on operating hours, expanding for shifts outside store hours
   const { earliest, latest } = useMemo(() => {
-    if (!config) {
+    if (!config?.operatingHours) {
       return { earliest: "09:00", latest: "21:00" };
     }
     return getDisplayTimeRange(config.operatingHours, dayShifts);
@@ -371,7 +372,7 @@ export function DayStationView({
 
   // Get actual store hours for the selected day (no buffer) for coverage warnings
   const storeHours = useMemo(() => {
-    if (!config) return null;
+    if (!config?.operatingHours) return null;
     return getStoreHoursForDay(config.operatingHours, selectedDay);
   }, [config, selectedDay]);
 

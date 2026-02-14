@@ -167,7 +167,7 @@ export async function checkGenerationReadiness(
         severity: "blocker",
         category: "missing_requirements",
         message:
-          "No labor requirements defined. Set up requirements before generating.",
+          "No shift slots defined. Set up shift slots before generating.",
       });
     } else {
       // Check for requirements on days the kitchen is open
@@ -182,7 +182,7 @@ export async function checkGenerationReadiness(
         issues.push({
           severity: "warning",
           category: "missing_requirements",
-          message: `No requirements for open days: ${dayNames.join(", ")}`,
+          message: `No shift slots for open days: ${dayNames.join(", ")}`,
           count: missingDays.length,
         });
       }
@@ -196,7 +196,7 @@ export async function checkGenerationReadiness(
         issues.push({
           severity: "warning",
           category: "requirements_outside_hours",
-          message: `${outsideHours} requirements fall outside operating hours`,
+          message: `${outsideHours} shift slots fall outside operating hours`,
           count: outsideHours,
         });
       }
@@ -210,7 +210,7 @@ export async function checkGenerationReadiness(
         issues.push({
           severity: "warning",
           category: "no_qualified_candidates",
-          message: `${skillGaps} requirements have no qualified candidates`,
+          message: `${skillGaps} shift slots have no qualified candidates`,
           count: skillGaps,
         });
       }

@@ -382,7 +382,7 @@ function ReadinessStep({
                 value={`${readiness.availabilityCompleteness}%`}
               />
               <StatCard
-                label="Requirements"
+                label="Shift Slots"
                 value={readiness.totalRequirements}
               />
             </div>
@@ -455,7 +455,7 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">
-            Analyzing staff, requirements, and availability...
+            Analyzing staff, shift slots, and availability...
           </p>
           <p className="text-xs text-muted-foreground">
             This typically takes 30-90 seconds depending on schedule complexity.
@@ -582,7 +582,7 @@ function FailureStep({
               className="flex items-center gap-2 rounded-lg border p-3 text-sm hover:bg-muted/50 transition-colors"
             >
               <Settings className="h-4 w-4 text-muted-foreground" />
-              <span>Adjust Labor Requirements</span>
+              <span>Adjust Shift Slots</span>
             </Link>
             <Link
               href="/dashboard/staff"

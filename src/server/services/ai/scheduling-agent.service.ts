@@ -276,48 +276,8 @@ function algorithmicFallback(
   const assignments: GeneratedShiftAssignment[] = [];
   const unfilledSlots: UnfilledSlot[] = [];
 
-  // Track staff already assigned in this day to avoid double-booking
-  // Key: staffId, Value: set of time ranges (as "HH:MM-HH:MM" strings)
-  const assignedStaffSlots = new Map<string, string[]>();
-
-  /**
-   * Check if a candidate is already assigned to an overlapping time range.
-   */
-  function isAlreadyAssigned(
-    staffId: string,
-    startTime: string,
-    endTime: string
-  ): boolean {
-    const existing = assignedStaffSlots.get(staffId);
-    if (!existing) return false;
-
-    const [startH, startM] = startTime.split(":").map(Number);
-    const [endH, endM] = endTime.split(":").map(Number);
-    const proposedStart = startH * 60 + startM;
-    const proposedEnd = endH * 60 + endM;
-
-    for (const range of existing) {
-      const [existStart, existEnd] = range.split("-").map((t) => {
-        const [h, m] = t.split(":").map(Number);
-        return h * 60 + m;
-      });
-      // Overlap check: existing.start < proposed.end AND existing.end > proposed.start
-      if (existStart < proposedEnd && existEnd > proposedStart) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function markAssigned(
-    staffId: string,
-    startTime: string,
-    endTime: string
-  ): void {
-    const ranges = assignedStaffSlots.get(staffId) ?? [];
-    ranges.push(`${startTime}-${endTime}`);
-    assignedStaffSlots.set(staffId, ranges);
-  }
+  // Track staff already assigned on this day (one shift per day)
+  const assignedStaff = new Set<string>();
 
   for (const { slot, candidates } of dayContext.slots) {
     const targetCount = slot.preferredStaff;
@@ -327,8 +287,8 @@ function algorithmicFallback(
     for (const candidate of candidates) {
       if (assigned >= targetCount) break;
 
-      // Skip if already assigned to an overlapping slot
-      if (isAlreadyAssigned(candidate.staffId, slot.startTime, slot.endTime)) {
+      // Skip if already assigned to any slot today (one shift per day)
+      if (assignedStaff.has(candidate.staffId)) {
         continue;
       }
 
@@ -341,7 +301,7 @@ function algorithmicFallback(
         reasoning: "Assigned via algorithmic fallback (AI unavailable)",
       });
 
-      markAssigned(candidate.staffId, slot.startTime, slot.endTime);
+      assignedStaff.add(candidate.staffId);
       assigned++;
     }
 
@@ -501,7 +461,7 @@ export const SchedulingAgentService = {
           dayOfWeek: dayName,
           assignments: [],
           unfilledSlots: [],
-          notes: "No labor requirements defined for this day.",
+          notes: "No shift slots defined for this day.",
         },
         tokenUsage: emptyTokenUsage(),
         usedFallback: false,
@@ -580,6 +540,7 @@ export const SchedulingAgentService = {
       // Error types the AI can fix by reassigning staff:
       const FIXABLE_ERROR_TYPES = new Set([
         "double_booking",
+        "multiple_shifts_same_day",
         "overlap",
         "skill_mismatch",
         "unavailable_staff",
@@ -791,7 +752,7 @@ export const SchedulingAgentService = {
 
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
-      `  Staff: ${context.staff.length} active | Requirements: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
+      `  Staff: ${context.staff.length} active | Shift slots: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
       `${"═".repeat(60)}`
     );
 
@@ -833,7 +794,7 @@ export const SchedulingAgentService = {
 
       // Skip days with no operating hours or no labor requirements
       if (!operatingHours || dayRequirements.length === 0) {
-        const reason = !operatingHours ? "closed" : "no requirements";
+        const reason = !operatingHours ? "closed" : "no shift slots";
         console.log(
           `${LOG_PREFIX} [${i + 1}/7] ${dayName} ${dateStr} — skipped (${reason}) [${fmtMs(Date.now() - startTime)} elapsed]`
         );
@@ -844,13 +805,13 @@ export const SchedulingAgentService = {
           unfilledSlots: [],
           notes: !operatingHours
             ? "Kitchen is closed on this day."
-            : "No labor requirements defined for this day.",
+            : "No shift slots defined for this day.",
         });
         continue;
       }
 
       console.log(
-        `${LOG_PREFIX} [${i + 1}/7] ${dayName} ${dateStr} — ${dayRequirements.length} requirements, hours ${operatingHours.open}-${operatingHours.close}`
+        `${LOG_PREFIX} [${i + 1}/7] ${dayName} ${dateStr} — ${dayRequirements.length} shift slots, hours ${operatingHours.open}-${operatingHours.close}`
       );
 
       // Get candidates for this day using CandidateService

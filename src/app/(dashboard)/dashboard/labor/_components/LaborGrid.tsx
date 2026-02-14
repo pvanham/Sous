@@ -73,7 +73,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
   const config = configResponse?.success ? configResponse.data : null;
   const stations = config?.stations ?? [];
 
-  // Group requirements by station and day for easy lookup
+  // Group requirements by station and day for easy lookup, sorted by start time
   const requirementsByCell = useMemo(() => {
     const map = new Map<string, LaborRequirementDTO[]>();
     
@@ -82,6 +82,11 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
       const existing = map.get(key) ?? [];
       existing.push(req);
       map.set(key, existing);
+    }
+
+    // Sort each cell's slots by start time (earliest first)
+    for (const [, reqs] of map) {
+      reqs.sort((a, b) => a.startTime.localeCompare(b.startTime));
     }
     
     return map;
@@ -224,17 +229,20 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
         onDelete={handleBulkDelete}
       />
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <div className="min-w-[800px]">
           {/* Grid Header */}
-          <div className="grid grid-cols-8 gap-1 border-b pb-2">
-            <div className="px-3 py-2 font-medium text-sm text-muted-foreground">
+          <div
+            className="grid border-b border-border bg-muted/40"
+            style={{ gridTemplateColumns: "120px repeat(7, 1fr)" }}
+          >
+            <div className="px-3 py-2.5 font-semibold text-xs uppercase tracking-wider text-muted-foreground">
               Station
             </div>
             {DAY_ORDER.map((day) => (
               <div
                 key={day}
-                className="px-3 py-2 text-center font-medium text-sm text-muted-foreground"
+                className="px-2 py-2.5 text-center font-semibold text-xs uppercase tracking-wider text-muted-foreground border-l border-border"
               >
                 {DAY_NAMES[day].slice(0, 3)}
               </div>
@@ -242,11 +250,15 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
           </div>
 
           {/* Station Rows */}
-          {stations.map((station) => (
-            <div key={station} className="grid grid-cols-8 gap-1 border-b">
+          {stations.map((station, stationIndex) => (
+            <div
+              key={station}
+              className={`grid ${stationIndex < stations.length - 1 ? "border-b border-border" : ""}`}
+              style={{ gridTemplateColumns: "120px repeat(7, 1fr)" }}
+            >
               {/* Station Label */}
               <div
-                className={`px-3 py-3 font-medium text-sm flex items-center ${getStationClasses(station)}`}
+                className={`px-3 py-2 font-medium text-sm flex items-start pt-3 ${getStationClasses(station)}`}
               >
                 {station}
               </div>
@@ -256,27 +268,34 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
                 const cellRequirements = requirementsByCell.get(`${station}-${day}`) ?? [];
                 const cellKey = `${station}|${day}`;
                 return (
-                  <RequirementCell
+                  <div
                     key={`${station}-${day}`}
-                    station={station}
-                    dayOfWeek={day}
-                    requirements={cellRequirements}
-                    onCellClick={handleCellClick}
-                    bulkEditMode={bulkEditMode}
-                    isSelected={selectedCells.has(cellKey)}
-                    onToggleSelect={() => toggleCellSelection(station, day)}
-                  />
+                    className="border-l border-border min-h-[64px] max-h-[140px] overflow-y-auto"
+                  >
+                    <RequirementCell
+                      station={station}
+                      dayOfWeek={day}
+                      requirements={cellRequirements}
+                      onCellClick={handleCellClick}
+                      bulkEditMode={bulkEditMode}
+                      isSelected={selectedCells.has(cellKey)}
+                      onToggleSelect={() => toggleCellSelection(station, day)}
+                    />
+                  </div>
                 );
               })}
             </div>
           ))}
 
           {/* Summary Row */}
-          <div className="grid grid-cols-8 gap-1 bg-muted/50 mt-1">
+          <div
+            className="grid border-t-2 border-border bg-muted/50"
+            style={{ gridTemplateColumns: "120px repeat(7, 1fr)" }}
+          >
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <div className="px-3 py-2 font-medium text-sm text-muted-foreground cursor-help flex items-center gap-1">
+                  <div className="px-3 py-2 font-medium text-xs text-muted-foreground cursor-help flex items-center gap-1">
                     Total Hours
                     <Info className="h-3 w-3" />
                   </div>
@@ -284,7 +303,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
                 <TooltipContent side="top" className="max-w-xs">
                   <p>
                     Hours are calculated using <strong>preferred staff</strong>{" "}
-                    counts. Each requirement&apos;s duration (hours) is
+                    counts. Each shift slot&apos;s duration (hours) is
                     multiplied by the preferred staff count to get total
                     person-hours.
                   </p>
@@ -294,18 +313,22 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
             {DAY_ORDER.map((day) => (
               <div
                 key={day}
-                className="px-3 py-2 text-center text-sm font-medium"
+                className="px-2 py-2 text-center text-sm font-medium border-l border-border"
               >
                 {totalHoursByDay[day] > 0 ? `${totalHoursByDay[day].toFixed(1)}h` : "-"}
               </div>
             ))}
           </div>
+
           {/* Weekly Total Row */}
-          <div className="grid grid-cols-8 gap-1 bg-muted/70 border-t">
-            <div className="px-3 py-2 font-medium text-sm">
+          <div
+            className="grid border-t border-border bg-muted/70"
+            style={{ gridTemplateColumns: "120px repeat(7, 1fr)" }}
+          >
+            <div className="px-3 py-2 font-medium text-xs text-muted-foreground">
               Weekly Total
             </div>
-            <div className="col-span-7 px-3 py-2 text-center text-sm font-bold">
+            <div className="col-span-7 px-2 py-2 text-center text-sm font-bold border-l border-border">
               {weeklyTotal > 0 ? `${weeklyTotal.toFixed(1)} person-hours` : "-"}
             </div>
           </div>

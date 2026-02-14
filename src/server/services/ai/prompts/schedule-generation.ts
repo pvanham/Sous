@@ -44,7 +44,7 @@ Your job is to SELECT the best candidate from each slot's candidate list.
 IMPORTANT RULES:
 1. You MUST only assign staff members who appear in a slot's candidate list. Never invent or reference staff outside the provided candidates.
 2. You MUST use the exact staffId alias values (e.g., "S1", "S2") from the candidate list. Do not modify or fabricate IDs.
-3. A staff member should NOT be assigned to overlapping time slots on the same day. If the same person appears as a candidate for multiple slots, pick them for the slot where they are the best fit and choose someone else for the other slots.
+3. A staff member MUST NOT be assigned more than ONE shift per day. Even if a person appears as a candidate for multiple slots, assign them to exactly ONE slot (the best fit based on the criteria below) and choose different staff for the remaining slots. This is a hard constraint — no exceptions.
 4. Assign up to the "preferredStaff" count for each slot. If fewer candidates are available than needed, assign everyone available and report the shortfall in "unfilledSlots".
 
 SELECTION CRITERIA (in priority order):

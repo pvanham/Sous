@@ -779,13 +779,20 @@ const AVAILABILITY_BY_STAFF: Record<string, AvailEntry[]> = {
 };
 
 // ============================================================================
-// Labor Requirement Definitions
+// Shift Slot Definitions (Labor Requirements)
 //
-// Structure: For each station, define requirements per day-of-week and shift.
+// Each entry defines a real shift the schedule generator will fill.
+// Shifts are 6-8 hours, matching realistic restaurant patterns.
 // dayOfWeek: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
+//
+// Balance analysis (26 active staff):
+//   ~93 person-shifts / week  (~694 person-hours)
+//   Staff min-hours total: ~422h  →  enough slots for everyone
+//   Staff max-hours total: ~919h  →  feasible without overloading
+//   Average per employee: ~3.6 shifts/week, ~27 hours/week
 // ============================================================================
 
-interface LaborReqDef {
+interface ShiftSlotDef {
   dayOfWeek: number;
   station: string;
   startTime: string;
@@ -795,74 +802,104 @@ interface LaborReqDef {
   priority: "critical" | "high" | "normal" | "low";
 }
 
-function buildLaborRequirements(): LaborReqDef[] {
-  const reqs: LaborReqDef[] = [];
+function buildShiftSlots(): ShiftSlotDef[] {
+  const slots: ShiftSlotDef[] = [];
 
-  const weekdays = [1, 2, 3, 4, 5]; // Mon-Fri
-  const weekends = [6, 0];           // Sat, Sun
+  const monThu = [1, 2, 3, 4]; // Mon-Thu
+  const monFri = [1, 2, 3, 4, 5]; // Mon-Fri
 
-  // ── GRILL ─────────────────────────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Grill", startTime: "07:00", endTime: "11:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Grill", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-    reqs.push({ dayOfWeek: d, station: "Grill", startTime: "17:00", endTime: "22:00", minStaff: 2, preferredStaff: 2, priority: "critical" });
+  // ── GRILL (high-traffic line station) ──────────────────────────
+  // Mon-Thu: AM + PM (pref 2 for dinner coverage)
+  for (const d of monThu) {
+    slots.push({ dayOfWeek: d, station: "Grill", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({ dayOfWeek: d, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "high" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Grill", startTime: d === 6 ? "08:00" : "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-    reqs.push({ dayOfWeek: d, station: "Grill", startTime: "17:00", endTime: d === 0 ? "21:00" : "22:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  }
+  // Fri: AM + PM (pref 2) + Dinner Support
+  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
+  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "17:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  // Sat: AM + PM (pref 2)
+  slots.push({ dayOfWeek: 6, station: "Grill", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 6, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
+  // Sun: AM + PM
+  slots.push({ dayOfWeek: 0, station: "Grill", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 0, station: "Grill", startTime: "15:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "high" });
 
-  // ── SAUTE ─────────────────────────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Saute", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-    reqs.push({ dayOfWeek: d, station: "Saute", startTime: "17:00", endTime: "22:00", minStaff: 2, preferredStaff: 2, priority: "critical" });
+  // ── SAUTE ──────────────────────────────────────────────────────
+  // Mon-Thu: Mid + PM
+  for (const d of monThu) {
+    slots.push({ dayOfWeek: d, station: "Saute", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({ dayOfWeek: d, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Saute", startTime: d === 6 ? "08:00" : "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-    reqs.push({ dayOfWeek: d, station: "Saute", startTime: "17:00", endTime: d === 0 ? "21:00" : "22:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  }
+  // Fri: Mid + PM (pref 2 for Friday dinner)
+  slots.push({ dayOfWeek: 5, station: "Saute", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 5, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
+  // Sat: AM + PM (pref 2)
+  slots.push({ dayOfWeek: 6, station: "Saute", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 6, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
+  // Sun: Mid + PM
+  slots.push({ dayOfWeek: 0, station: "Saute", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 0, station: "Saute", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "high" });
 
-  // ── PREP ──────────────────────────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Prep", startTime: "07:00", endTime: "11:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-    reqs.push({ dayOfWeek: d, station: "Prep", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Prep", startTime: "15:00", endTime: "19:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  // ── PREP ───────────────────────────────────────────────────────
+  // Mon-Fri: Early (6h) + AM (8h)
+  for (const d of monFri) {
+    slots.push({ dayOfWeek: d, station: "Prep", startTime: "07:00", endTime: "13:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+    slots.push({ dayOfWeek: d, station: "Prep", startTime: "09:00", endTime: "17:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Prep", startTime: d === 6 ? "08:00" : "09:00", endTime: "14:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-  }
+  // Fri extra: Afternoon prep for weekend
+  slots.push({ dayOfWeek: 5, station: "Prep", startTime: "13:00", endTime: "19:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  // Sat: AM + Mid
+  slots.push({ dayOfWeek: 6, station: "Prep", startTime: "08:00", endTime: "14:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 6, station: "Prep", startTime: "11:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  // Sun: AM only (lighter day)
+  slots.push({ dayOfWeek: 0, station: "Prep", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── ASSEMBLY ──────────────────────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Assembly", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Assembly", startTime: "17:00", endTime: "22:00", minStaff: 1, preferredStaff: 2, priority: "high" });
+  // ── ASSEMBLY ───────────────────────────────────────────────────
+  // Mon-Thu: Mid + PM
+  for (const d of monThu) {
+    slots.push({ dayOfWeek: d, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({ dayOfWeek: d, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Assembly", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 2, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Assembly", startTime: "17:00", endTime: d === 0 ? "21:00" : "22:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-  }
+  // Fri: Mid + PM (pref 2 for Friday volume)
+  slots.push({ dayOfWeek: 5, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 5, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "high" });
+  // Sat: Mid + PM
+  slots.push({ dayOfWeek: 6, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 6, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  // Sun: Mid + PM
+  slots.push({ dayOfWeek: 0, station: "Assembly", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 0, station: "Assembly", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── EXPO (meal service only) ──────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Expo", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Expo", startTime: "17:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  // ── EXPO (service periods only) ────────────────────────────────
+  // Mon-Thu: Lunch + Dinner
+  for (const d of monThu) {
+    slots.push({ dayOfWeek: d, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({ dayOfWeek: d, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Expo", startTime: "11:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    reqs.push({ dayOfWeek: d, station: "Expo", startTime: "17:00", endTime: d === 0 ? "21:00" : "22:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  }
+  // Fri: Lunch + Dinner (higher priority)
+  slots.push({ dayOfWeek: 5, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 5, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
+  // Sat: Lunch + Dinner (higher priority)
+  slots.push({ dayOfWeek: 6, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({ dayOfWeek: 6, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
+  // Sun: All Service (single shift, shorter day)
+  slots.push({ dayOfWeek: 0, station: "Expo", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── DISH ──────────────────────────────────────────────────────
-  for (const d of weekdays) {
-    reqs.push({ dayOfWeek: d, station: "Dish", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "low" });
-    reqs.push({ dayOfWeek: d, station: "Dish", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  // ── DISH ───────────────────────────────────────────────────────
+  // Mon-Fri: AM + PM
+  for (const d of monFri) {
+    slots.push({ dayOfWeek: d, station: "Dish", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({ dayOfWeek: d, station: "Dish", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
   }
-  for (const d of weekends) {
-    reqs.push({ dayOfWeek: d, station: "Dish", startTime: d === 6 ? "08:00" : "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "low" });
-    reqs.push({ dayOfWeek: d, station: "Dish", startTime: "15:00", endTime: d === 0 ? "21:00" : "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  }
+  // Sat: AM + PM
+  slots.push({ dayOfWeek: 6, station: "Dish", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 6, station: "Dish", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  // Sun: AM + PM
+  slots.push({ dayOfWeek: 0, station: "Dish", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({ dayOfWeek: 0, station: "Dish", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  return reqs;
+  return slots;
 }
 
 // ============================================================================
@@ -1028,23 +1065,23 @@ async function seed(clerkUserId: string): Promise<void> {
   }
   logSuccess(`Created ${totalAvailEntries} availability entries for ${Object.keys(AVAILABILITY_BY_STAFF).length} staff`);
 
-  // ── Labor Requirements ──────────────────────────────────────
-  logStep("Creating Labor Requirements");
-  const laborReqs = buildLaborRequirements();
+  // ── Shift Slots (Labor Requirements) ────────────────────────
+  logStep("Creating Shift Slots");
+  const shiftSlots = buildShiftSlots();
 
-  for (const req of laborReqs) {
-    await LaborRequirementService.create(orgId, locationId, req);
+  for (const slot of shiftSlots) {
+    await LaborRequirementService.create(orgId, locationId, slot);
   }
 
   // Summarize by station
   const byStation = new Map<string, number>();
-  for (const r of laborReqs) {
-    byStation.set(r.station, (byStation.get(r.station) ?? 0) + 1);
+  for (const s of shiftSlots) {
+    byStation.set(s.station, (byStation.get(s.station) ?? 0) + 1);
   }
   for (const [station, count] of byStation) {
-    log(`  ${station}: ${count} requirements`);
+    log(`  ${station}: ${count} shift slots`);
   }
-  logSuccess(`Created ${laborReqs.length} labor requirements`);
+  logSuccess(`Created ${shiftSlots.length} shift slots`);
 
   // ── Time-Off Requests ───────────────────────────────────────
   logStep("Creating Time-Off Requests");
@@ -1129,7 +1166,7 @@ async function seed(clerkUserId: string): Promise<void> {
   console.log(`  Kitchen Config:    ${config.stations.join(", ")}`);
   console.log(`  Staff:             ${activeCount} active, ${inactiveCount} inactive`);
   console.log(`  Availability:      ${totalAvailEntries} entries`);
-  console.log(`  Labor Requirements:${laborReqs.length} entries`);
+  console.log(`  Shift Slots:       ${shiftSlots.length} entries`);
   console.log(`  Time-Off Requests: 5 (3 approved, 1 pending, 1 denied)`);
   console.log(`  Schedule:          ${schedule.id} (DRAFT, week of ${TEST_WEEK_START.toDateString()})`);
   console.log(`\n  Test Week: ${TEST_WEEK_START.toDateString()}`);
@@ -1166,7 +1203,7 @@ async function deleteOrgAndData(orgId: string, orgName: string): Promise<void> {
     log(`    Schedules deleted: ${schedulesDeleted}`);
 
     const laborDeleted = await LaborRequirementService.deleteAllByLocation(orgId, location.id);
-    log(`    Labor requirements deleted: ${laborDeleted}`);
+    log(`    Shift slots deleted: ${laborDeleted}`);
 
     const timeOffDeleted = await TimeOffRequestService.deleteAllByLocation(orgId, location.id);
     log(`    Time-off requests deleted: ${timeOffDeleted}`);

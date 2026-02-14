@@ -194,7 +194,7 @@ export async function createLaborRequirement(
       return {
         success: false,
         error:
-          "A labor requirement already exists for this day, station, and start time",
+          "A shift slot with this exact time window already exists for this station and day. Adjust the staffing count on the existing slot instead.",
       };
     }
     return { success: false, error: message };
@@ -273,13 +273,22 @@ export async function updateLaborRequirement(
       error instanceof Error
         ? error.message
         : "Failed to update labor requirement";
+    // Check for duplicate key error (e.g., editing times to match an existing slot)
+    if (message.includes("duplicate key") || message.includes("E11000")) {
+      return {
+        success: false,
+        error:
+          "A shift slot with this exact time window already exists for this station and day. Adjust the staffing count on the existing slot instead.",
+      };
+    }
     return { success: false, error: message };
   }
 }
 
 /**
  * Create or update a labor requirement.
- * Matches by dayOfWeek + station + startTime to determine if updating or creating.
+ * Matches by dayOfWeek + station + startTime + endTime to determine if updating or creating.
+ * Two slots may share the same startTime if their endTimes differ.
  * @param input - Labor requirement data
  * @returns ActionResponse containing upserted LaborRequirementDTO
  */

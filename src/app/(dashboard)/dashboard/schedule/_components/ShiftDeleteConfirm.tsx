@@ -40,13 +40,16 @@ export function ShiftDeleteConfirm({
   isDeleting = false,
 }: ShiftDeleteConfirmProps) {
   // Fetch staff list to display staff name
-  const { data: staffResponse } = useQuery({
+  // IMPORTANT: queryFn must unwrap ActionResponse to match other observers of this key
+  const { data: allStaff = [] } = useQuery({
     queryKey: staffKeys.list(),
-    queryFn: () => listStaff(),
+    queryFn: async () => {
+      const result = await listStaff();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
     enabled: open,
   });
-
-  const allStaff = staffResponse?.success ? staffResponse.data : [];
 
   // Get the staff member for display
   const staffMember = useMemo(

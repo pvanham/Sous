@@ -39,7 +39,7 @@ export function BulkDeleteConfirmDialog({
       if (result.success) {
         queryClient.invalidateQueries({ queryKey: laborRequirementKeys.list() });
         toast.success(
-          `Deleted ${result.data.deleted} requirement(s) from ${count} cell(s).`
+          `Deleted ${result.data.deleted} shift slot(s) from ${count} cell(s).`
         );
         onOpenChange(false);
         onSuccess?.();
@@ -60,9 +60,9 @@ export function BulkDeleteConfirmDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Delete Requirements</AlertDialogTitle>
+          <AlertDialogTitle>Delete Shift Slots</AlertDialogTitle>
           <AlertDialogDescription>
-            This will delete all labor requirements in the {count} selected
+            This will delete all shift slots in the {count} selected
             cell{count !== 1 ? "s" : ""}. This action cannot be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>

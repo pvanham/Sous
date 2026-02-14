@@ -90,9 +90,10 @@ const LaborRequirementSchema = new Schema<ILaborRequirementDocument>(
 // Compound index for efficient day-based queries
 LaborRequirementSchema.index({ orgId: 1, locationId: 1, dayOfWeek: 1, station: 1 });
 
-// Unique constraint to prevent duplicate requirements for same day/station/time
+// Unique constraint to prevent duplicate shift slots with the same time window.
+// Two slots on the same station/day may share a startTime if their endTimes differ.
 LaborRequirementSchema.index(
-  { orgId: 1, locationId: 1, dayOfWeek: 1, station: 1, startTime: 1 },
+  { orgId: 1, locationId: 1, dayOfWeek: 1, station: 1, startTime: 1, endTime: 1 },
   { unique: true }
 );
 

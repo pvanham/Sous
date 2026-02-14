@@ -295,6 +295,27 @@ export const ScheduleValidatorService = {
       }
     }
 
+    // ── Check 2b: Multiple Shifts Same Day ────────────────
+    // A staff member must only have ONE shift per day.
+    // This is stricter than double_booking (which only checks time overlap).
+    for (const [staffId, staffAssignments] of assignmentsByStaff) {
+      if (staffAssignments.length > 1) {
+        // Keep the first assignment, flag the rest
+        for (let k = 1; k < staffAssignments.length; k++) {
+          const first = staffAssignments[0];
+          const extra = staffAssignments[k];
+          errors.push({
+            type: "multiple_shifts_same_day",
+            staffId,
+            staffName: extra.assignment.staffName,
+            shiftIndex: extra.index,
+            message: `Staff "${extra.assignment.staffName}" is assigned ${staffAssignments.length} shifts on this day (only 1 allowed). Shifts: ${staffAssignments.map((a) => `${a.assignment.station} ${a.assignment.startTime}-${a.assignment.endTime}`).join(", ")}.`,
+            correctionHint: `Keep ${first.assignment.staffName} on ${first.assignment.station} ${first.assignment.startTime}-${first.assignment.endTime} and assign a different staff member to ${extra.assignment.station} ${extra.assignment.startTime}-${extra.assignment.endTime}.`,
+          });
+        }
+      }
+    }
+
     // ── Check 3: Unavailable Staff (per-slot candidate check) ──
     for (let i = 0; i < assignments.length; i++) {
       const assignment = assignments[i];
