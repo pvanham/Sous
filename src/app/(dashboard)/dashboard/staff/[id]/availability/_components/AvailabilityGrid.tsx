@@ -21,9 +21,27 @@ import { StaffConstraintsForm } from "./StaffConstraintsForm";
 // Time periods for the grid
 // Note: Use "23:59" for end of day since HH:MM format only allows 00-23 hours
 const TIME_PERIODS = [
-  { id: "morning", label: "Morning", subLabel: "(6a-12p)", from: "06:00", to: "12:00" },
-  { id: "afternoon", label: "Afternoon", subLabel: "(12p-6p)", from: "12:00", to: "18:00" },
-  { id: "evening", label: "Evening", subLabel: "(6p-12a)", from: "18:00", to: "23:59" },
+  {
+    id: "morning",
+    label: "Morning",
+    subLabel: "(6a-12p)",
+    from: "06:00",
+    to: "12:00",
+  },
+  {
+    id: "afternoon",
+    label: "Afternoon",
+    subLabel: "(12p-6p)",
+    from: "12:00",
+    to: "18:00",
+  },
+  {
+    id: "evening",
+    label: "Evening",
+    subLabel: "(6p-12a)",
+    from: "18:00",
+    to: "23:59",
+  },
 ] as const;
 
 // Days of the week (0 = Sunday)
@@ -56,7 +74,8 @@ interface AvailabilityGridProps {
 // Query keys for TanStack Query
 const availabilityKeys = {
   all: ["staff-availability"] as const,
-  byStaff: (staffId: string) => [...availabilityKeys.all, "staff", staffId] as const,
+  byStaff: (staffId: string) =>
+    [...availabilityKeys.all, "staff", staffId] as const,
 };
 
 const staffKeys = {
@@ -64,22 +83,58 @@ const staffKeys = {
 };
 
 /**
- * Build initial slot state from availability DTOs
+ * Build initial slot state from availability DTOs.
+ *
+ * Matches each availability record to a time period using overlap logic:
+ * a record is considered to cover a period if its window intersects that
+ * period's window (availableFrom < period.to AND availableTo > period.from).
+ *
+ * This handles both the canonical period-boundary format produced by the UI
+ * (e.g. "06:00"–"12:00") and wider ranges stored by data-seeding scripts
+ * (e.g. "07:00"–"23:00"). Exact boundary matches take priority over partial
+ * overlaps so that previously-saved UI data round-trips perfectly.
+ *
+ * The slot state always stores the period's own boundaries (not the raw
+ * record values), so a subsequent Save normalises the data to period format.
  */
 function buildSlotState(
-  availability: StaffAvailabilityDTO[]
+  availability: StaffAvailabilityDTO[],
 ): Map<SlotKey, SlotState> {
   const state = new Map<SlotKey, SlotState>();
 
+  // First pass: exact boundary matches (canonical UI format) — highest priority.
   for (const avail of availability) {
-    // Find which time period this availability matches
+    if (avail.availableFrom === null || avail.availableTo === null) continue;
     for (const period of TIME_PERIODS) {
-      if (avail.availableFrom === period.from && avail.availableTo === period.to) {
+      if (
+        avail.availableFrom === period.from &&
+        avail.availableTo === period.to
+      ) {
         const key: SlotKey = `${avail.dayOfWeek}-${period.id}`;
         state.set(key, {
           preference: avail.preference,
-          availableFrom: avail.availableFrom,
-          availableTo: avail.availableTo,
+          availableFrom: period.from,
+          availableTo: period.to,
+          notes: avail.notes,
+        });
+      }
+    }
+  }
+
+  // Second pass: overlap matches for records that use non-standard time ranges
+  // (e.g. seeded data). Only fills slots not already set by an exact match.
+  for (const avail of availability) {
+    if (avail.availableFrom === null || avail.availableTo === null) continue;
+    for (const period of TIME_PERIODS) {
+      const key: SlotKey = `${avail.dayOfWeek}-${period.id}`;
+      if (state.has(key)) continue; // exact match already present
+      const overlaps =
+        avail.availableFrom < period.to && avail.availableTo > period.from;
+      if (overlaps) {
+        state.set(key, {
+          preference: avail.preference,
+          availableFrom: period.from,
+          availableTo: period.to,
           notes: avail.notes,
         });
       }
@@ -104,7 +159,9 @@ function getDefaultSlotState(): SlotState {
 /**
  * Cycle through preference states: unavailable -> available -> preferred -> unavailable
  */
-function cyclePreference(current: AvailabilityPreference): AvailabilityPreference {
+function cyclePreference(
+  current: AvailabilityPreference,
+): AvailabilityPreference {
   switch (current) {
     case "unavailable":
       return "available";
@@ -126,12 +183,12 @@ export function AvailabilityGrid({
 
   // Local state for slot preferences
   const [slots, setSlots] = useState<Map<SlotKey, SlotState>>(() =>
-    buildSlotState(initialAvailability)
+    buildSlotState(initialAvailability),
   );
 
   // Track the initial state to detect changes
   const [initialSlots] = useState<Map<SlotKey, SlotState>>(() =>
-    buildSlotState(initialAvailability)
+    buildSlotState(initialAvailability),
   );
 
   // Check if there are unsaved changes
@@ -219,7 +276,9 @@ export function AvailabilityGrid({
     },
     onSuccess: () => {
       toast.success("Availability saved successfully");
-      queryClient.invalidateQueries({ queryKey: availabilityKeys.byStaff(staff.id) });
+      queryClient.invalidateQueries({
+        queryKey: availabilityKeys.byStaff(staff.id),
+      });
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to save availability");
@@ -237,7 +296,7 @@ export function AvailabilityGrid({
       const key: SlotKey = `${dayOfWeek}-${periodId}`;
       return slots.get(key)?.preference ?? "unavailable";
     },
-    [slots]
+    [slots],
   );
 
   return (
@@ -285,7 +344,6 @@ export function AvailabilityGrid({
                   {day.label}
                 </div>
               ))}
-
               {/* Time period rows */}
               {TIME_PERIODS.map((period) => (
                 <Fragment key={period.id}>
@@ -314,7 +372,10 @@ export function AvailabilityGrid({
           <div className="flex items-center justify-between mt-6 pt-4 border-t">
             <div className="text-sm text-muted-foreground">
               {hasChanges ? (
-                <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+                <Badge
+                  variant="outline"
+                  className="bg-yellow-50 text-yellow-700 border-yellow-200"
+                >
                   Unsaved changes
                 </Badge>
               ) : (

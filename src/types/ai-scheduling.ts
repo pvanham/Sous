@@ -286,6 +286,20 @@ export interface ValidationResult {
   warnings: ValidationWarning[];
 }
 
+/**
+ * Result of partitioning a day's assignments into locked (valid) and
+ * failed (invalid) groups during the correction loop.
+ * Used to send only failed slots back to the AI while preserving valid ones.
+ */
+export interface PartitionedAssignments {
+  /** Assignments that passed validation -- preserved as-is during retries */
+  lockedAssignments: GeneratedShiftAssignment[];
+  /** Assignments that failed validation -- sent back to the AI for correction */
+  failedAssignments: GeneratedShiftAssignment[];
+  /** Compound keys ("station|startTime|endTime") identifying the failed slots */
+  failedSlotKeys: Set<string>;
+}
+
 // ────────────────────────────────────────────────────────────
 // Schedule Generation Action Types (Sprint 3.9)
 // ────────────────────────────────────────────────────────────

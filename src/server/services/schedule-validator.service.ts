@@ -8,7 +8,10 @@ import {
   buildSystemPrompt,
   buildCorrectionPrompt,
 } from "@/server/services/ai/prompts/schedule-generation";
-import { normalizeAIOutput } from "@/server/services/ai/scheduling-agent.service";
+import {
+  normalizeAIOutput,
+  mergeLockedAndCorrected,
+} from "@/server/services/ai/scheduling-agent.service";
 import type { StaffDTO } from "@/types/staff";
 import type { ShiftDTO } from "@/types/shift";
 import type { SlotCandidates } from "@/types/candidate";
@@ -21,6 +24,7 @@ import type {
   ValidationError,
   ValidationWarning,
   ValidationResult,
+  PartitionedAssignments,
 } from "@/types/ai-scheduling";
 
 // ============================================================
@@ -541,18 +545,20 @@ export const ScheduleValidatorService = {
   /**
    * Retry schedule generation with correction hints fed back to the AI.
    *
-   * Uses the existing `buildCorrectionPrompt()` from Sprint 3.7 to
-   * format validation errors as a correction prompt, then calls
-   * `generateJSON<AIRawDayOutput>()` to get a corrected output.
-   *
-   * The corrected output is run through `normalizeAIOutput()` to
-   * strip any remaining invalid staffIds before returning.
+   * When `lockedAssignments` and `failedSlotKeys` are provided, uses a
+   * "locked state" strategy: only failed slots are sent to the AI, and
+   * the corrected output is merged with the locked assignments before
+   * returning. This reduces token usage and prevents regressions.
    *
    * @param original - The previous (invalid) day schedule
    * @param validationErrors - Hard constraint violations to correct
    * @param context - Day scheduling context (for candidate validation)
    * @param tracking - Usage tracking options for the AI call
    * @param attempt - Current retry attempt number (for logging)
+   * @param idToAlias - Map of real staffId -> alias
+   * @param aliasToId - Map of alias -> real staffId
+   * @param lockedAssignments - Valid assignments to preserve (locked state)
+   * @param failedSlotKeys - Compound keys for slots that need correction
    * @returns Corrected GeneratedDaySchedule and token usage
    */
   async retryWithCorrections(
@@ -562,13 +568,22 @@ export const ScheduleValidatorService = {
     tracking: ValidatorTrackingOptions,
     attempt: number,
     idToAlias: Map<string, string> = new Map(),
-    aliasToId: Map<string, string> = new Map()
+    aliasToId: Map<string, string> = new Map(),
+    lockedAssignments?: GeneratedShiftAssignment[],
+    failedSlotKeys?: Set<string>,
   ): Promise<{ daySchedule: GeneratedDaySchedule; tokenUsage: TokenUsage }> {
+    const hasLockedState =
+      lockedAssignments !== undefined &&
+      failedSlotKeys !== undefined &&
+      lockedAssignments.length > 0;
+
     console.log(
-      `[ScheduleValidator] Retry attempt ${attempt}/${MAX_RETRY_ATTEMPTS} with ${validationErrors.length} error(s)`
+      `[ScheduleValidator] Retry attempt ${attempt}/${MAX_RETRY_ATTEMPTS} with ${validationErrors.length} error(s)` +
+        (hasLockedState
+          ? ` (locked: ${lockedAssignments.length}, failed slots: ${failedSlotKeys.size})`
+          : ""),
     );
 
-    // Build error messages with correction hints for the AI
     const errorMessages = validationErrors.map(
       (e) => `${e.message} HINT: ${e.correctionHint}`
     );
@@ -578,7 +593,9 @@ export const ScheduleValidatorService = {
       original,
       errorMessages,
       context,
-      idToAlias
+      idToAlias,
+      lockedAssignments,
+      failedSlotKeys,
     );
 
     try {
@@ -587,8 +604,8 @@ export const ScheduleValidatorService = {
         correctionPrompt,
         {
           model: "gpt-4o-mini",
-          temperature: 0.2, // Lower temperature for corrections (more deterministic)
-          maxTokens: 4000,
+          temperature: 0.2,
+          maxTokens: hasLockedState ? 2000 : 4000,
           tracking: {
             orgId: tracking.orgId,
             locationId: tracking.locationId,
@@ -598,9 +615,7 @@ export const ScheduleValidatorService = {
         }
       );
 
-      // Normalize through the same pipeline as initial generation
-      // (resolves aliases back to real IDs)
-      const daySchedule = normalizeAIOutput(
+      const normalized = normalizeAIOutput(
         rawOutput,
         context.slots,
         original.date,
@@ -608,10 +623,12 @@ export const ScheduleValidatorService = {
         aliasToId
       );
 
+      const daySchedule = hasLockedState
+        ? mergeLockedAndCorrected(lockedAssignments, normalized)
+        : normalized;
+
       return { daySchedule, tokenUsage: usage };
     } catch (error) {
-      // If AI is unavailable during retry, re-throw
-      // The caller (scheduling-agent) will handle fallback
       if (
         error instanceof AILimitExceededError ||
         error instanceof AIServiceUnavailableError
@@ -620,6 +637,38 @@ export const ScheduleValidatorService = {
       }
       throw error;
     }
+  },
+
+  /**
+   * Partition a day's assignments into locked (valid) and failed (invalid) groups.
+   * Used by the correction loop to preserve valid assignments while only
+   * re-generating the failed ones.
+   *
+   * @param generated - The day schedule containing all assignments
+   * @param validationErrors - Errors identifying which assignments failed
+   * @returns Locked assignments, failed assignments, and compound keys for failed slots
+   */
+  partitionAssignments(
+    generated: GeneratedDaySchedule,
+    validationErrors: ValidationError[]
+  ): PartitionedAssignments {
+    const errorIndices = new Set(validationErrors.map((e) => e.shiftIndex));
+
+    const lockedAssignments: GeneratedShiftAssignment[] = [];
+    const failedAssignments: GeneratedShiftAssignment[] = [];
+    const failedSlotKeys = new Set<string>();
+
+    for (let i = 0; i < generated.assignments.length; i++) {
+      const a = generated.assignments[i];
+      if (errorIndices.has(i)) {
+        failedAssignments.push(a);
+        failedSlotKeys.add(`${a.station}|${a.startTime}|${a.endTime}`);
+      } else {
+        lockedAssignments.push(a);
+      }
+    }
+
+    return { lockedAssignments, failedAssignments, failedSlotKeys };
   },
 
   /**

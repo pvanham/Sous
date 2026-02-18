@@ -1,6 +1,7 @@
 import type {
   DaySchedulingContext,
   GeneratedDaySchedule,
+  GeneratedShiftAssignment,
 } from "@/types/ai-scheduling";
 import type { ShiftDTO } from "@/types/shift";
 import type { CandidateDTO } from "@/types/candidate";
@@ -254,32 +255,51 @@ export function buildDayUserPrompt(
 
 /**
  * Build a correction prompt for the self-correction loop.
- * Takes the previous AI output, a list of validation errors, and the
- * ORIGINAL day context (candidate lists, operating hours) so the AI
- * has full information to make valid corrections.
  *
- * Without the original context, the AI cannot know which staffIds are
- * valid for each slot, leading to new errors on every retry.
+ * When `lockedAssignments` and `failedSlotKeys` are provided, the prompt
+ * uses a "locked state" strategy: valid assignments are listed as immutable,
+ * only failed slots' candidates are included, and the AI is instructed to
+ * generate replacements for the failed slots only. This reduces token usage
+ * and prevents the AI from regressing previously-valid assignments.
+ *
+ * Falls back to the full-context prompt when locked state is not provided.
  *
  * @param previousOutput - The AI's previous (invalid) output (with real staffIds)
  * @param errors - List of specific validation error messages
  * @param context - Original day scheduling context (candidates, slots, hours)
  * @param idToAlias - Map of real staffId -> short alias (for prompt consistency)
+ * @param lockedAssignments - Assignments that passed validation (immutable)
+ * @param failedSlotKeys - Compound keys ("station|startTime|endTime") for failed slots
  * @returns Formatted correction prompt string
  */
 export function buildCorrectionPrompt(
   previousOutput: GeneratedDaySchedule,
   errors: string[],
   context: DaySchedulingContext,
-  idToAlias: Map<string, string>
+  idToAlias: Map<string, string>,
+  lockedAssignments?: GeneratedShiftAssignment[],
+  failedSlotKeys?: Set<string>,
 ): string {
   const errorList = errors.map((e, i) => `  ${i + 1}. ${e}`).join("\n");
 
-  // Include the original day prompt so the AI knows who is available
+  const hasLockedState =
+    lockedAssignments !== undefined &&
+    failedSlotKeys !== undefined &&
+    lockedAssignments.length > 0;
+
+  if (hasLockedState) {
+    return buildLockedCorrectionPrompt(
+      errorList,
+      context,
+      idToAlias,
+      lockedAssignments,
+      failedSlotKeys,
+    );
+  }
+
+  // Fallback: full-context correction (no locked state)
   const originalContext = buildDayUserPrompt(context, idToAlias);
 
-  // Convert the previous output's real staffIds back to aliases so the AI
-  // sees consistent IDs between the candidate lists and the output to fix
   const aliasedOutput = {
     ...previousOutput,
     assignments: previousOutput.assignments.map((a) => ({
@@ -304,4 +324,87 @@ INSTRUCTIONS:
 - You MUST only use staffId aliases from the candidate lists above.
 - Do not assign the same staff member to overlapping time slots.
 - Output the corrected schedule in the same JSON format.`;
+}
+
+/**
+ * Build the locked-state correction prompt. Only includes candidates for
+ * the failed slots and lists locked assignments so the AI avoids conflicts.
+ */
+function buildLockedCorrectionPrompt(
+  errorList: string,
+  context: DaySchedulingContext,
+  idToAlias: Map<string, string>,
+  lockedAssignments: GeneratedShiftAssignment[],
+  failedSlotKeys: Set<string>,
+): string {
+  const dateStr = context.date.toISOString().split("T")[0];
+
+  // Build the locked assignments section with aliased IDs
+  const lockedLines = lockedAssignments.map((a) => {
+    const alias = idToAlias.get(a.staffId) ?? a.staffId;
+    return `  - ${alias} "${a.staffName}" -> ${a.station} ${a.startTime}-${a.endTime}`;
+  });
+
+  // Collect locked staff aliases so the AI knows who is unavailable
+  const lockedStaffAliases = new Set(
+    lockedAssignments.map((a) => idToAlias.get(a.staffId) ?? a.staffId),
+  );
+
+  // Filter context slots to only the failed ones
+  const failedSlots = context.slots.filter((sc) => {
+    const key = `${sc.slot.station}|${sc.slot.startTime}|${sc.slot.endTime}`;
+    return failedSlotKeys.has(key);
+  });
+
+  // Build a mini candidate context for just the failed slots
+  const slotLines: string[] = [];
+  for (let i = 0; i < failedSlots.length; i++) {
+    const { slot, candidates, hasSufficientCandidates } = failedSlots[i];
+
+    slotLines.push(
+      `[Failed Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff} min:${slot.minStaff} pri:${slot.priority}`,
+    );
+
+    // Filter out candidates who are already locked into another slot
+    const availableCandidates = candidates.filter(
+      (c) => !lockedStaffAliases.has(idToAlias.get(c.staffId) ?? c.staffId),
+    );
+
+    if (availableCandidates.length === 0) {
+      slotLines.push("  Candidates: NONE — add to unfilledSlots");
+    } else {
+      if (!hasSufficientCandidates) {
+        slotLines.push(
+          `  WARNING: Only ${availableCandidates.length} available candidates (need ${slot.minStaff} min)`,
+        );
+      }
+      slotLines.push(`  Candidates (${availableCandidates.length}):`);
+      for (const candidate of availableCandidates) {
+        slotLines.push(formatCandidate(candidate, slot.station, idToAlias));
+      }
+    }
+    slotLines.push("");
+  }
+
+  return `Your previous schedule output for ${context.dayName}, ${dateStr} contained validation errors. Some assignments were valid and are now LOCKED. You must only fix the failed slots.
+
+LOCKED ASSIGNMENTS (do NOT change, remove, or re-assign these):
+${lockedLines.join("\n")}
+
+The staff listed above are already committed. Do NOT assign any of them to additional slots.
+
+FAILED SLOTS TO FIX (provide new assignments for these only):
+${slotLines.join("\n")}
+
+VALIDATION ERRORS:
+${errorList}
+
+INSTRUCTIONS:
+- Your output MUST include ONLY assignments for the FAILED SLOTS listed above.
+- Do NOT include the locked assignments in your output — they are already saved.
+- You MUST only use staffId aliases from the candidate lists above.
+- Do not assign a staff member who is already locked (listed above) to a failed slot.
+- Do not assign the same staff member to multiple failed slots.
+- If a failed slot cannot be filled, include it in "unfilledSlots".
+- Output valid JSON in the same format (assignments, unfilledSlots, notes).`;
 }
