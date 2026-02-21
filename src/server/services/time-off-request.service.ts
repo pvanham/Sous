@@ -141,6 +141,33 @@ export const TimeOffRequestService = {
   },
 
   /**
+   * Batch-fetch all staff IDs that have approved time off on a single date.
+   * Replaces N individual hasApprovedTimeOff() calls with a single query.
+   *
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param date - The date to check
+   * @returns Set of staff IDs who have approved time off on the given date
+   */
+  async getStaffIdsWithApprovedTimeOff(
+    orgId: string,
+    locationId: string,
+    date: Date
+  ): Promise<Set<string>> {
+    const docs = await TimeOffRequest.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "approved",
+      startDate: { $lte: date },
+      endDate: { $gte: date },
+    })
+      .select("staffId")
+      .lean();
+
+    return new Set(docs.map((d) => String(d.staffId)));
+  },
+
+  /**
    * Check if a staff member has any approved time off on a single date.
    * Convenience method wrapping getApprovedTimeOff for single-date checks.
    *

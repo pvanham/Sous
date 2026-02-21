@@ -163,6 +163,52 @@ function calculateWeekHours(
   return hoursMap;
 }
 
+/** Minimum hours between a closing shift end and a next-day opening shift */
+const CLOPENING_THRESHOLD_HOURS = 10;
+
+/**
+ * Remove staff who closed the previous day and would start too soon
+ * (less than CLOPENING_THRESHOLD_HOURS gap). This prevents clopening
+ * at the hard-filter level rather than relying on AI/solver avoidance.
+ *
+ * @param staff - Staff to filter
+ * @param previousDayClosingShifts - Closing shifts from the previous day
+ * @param slotStartTime - Proposed slot start time in HH:MM format
+ * @returns Staff who do NOT have a clopening risk for this slot
+ */
+function filterByClopening(
+  staff: StaffDTO[],
+  previousDayClosingShifts: ShiftDTO[],
+  slotStartTime: string,
+): StaffDTO[] {
+  if (previousDayClosingShifts.length === 0) return staff;
+
+  const closingByStaff = new Map<string, Date>();
+  for (const shift of previousDayClosingShifts) {
+    const existing = closingByStaff.get(shift.staffId);
+    const shiftEnd = new Date(shift.end);
+    if (!existing || shiftEnd > existing) {
+      closingByStaff.set(shift.staffId, shiftEnd);
+    }
+  }
+
+  const [openH, openM] = slotStartTime.split(":").map(Number);
+  const openingMinutes = openH * 60 + openM;
+
+  return staff.filter((s) => {
+    const closingEnd = closingByStaff.get(s.id);
+    if (!closingEnd) return true;
+
+    const closingEndMinutes =
+      closingEnd.getHours() * 60 + closingEnd.getMinutes();
+    const minutesRemainingInDay = 24 * 60 - closingEndMinutes;
+    const gapMinutes = minutesRemainingInDay + openingMinutes;
+    const gapHours = gapMinutes / 60;
+
+    return gapHours >= CLOPENING_THRESHOLD_HOURS;
+  });
+}
+
 /**
  * Determine the duration of a proposed shift in hours from HH:MM time strings.
  *
@@ -257,22 +303,13 @@ export const CandidateService = {
       availableStaff
     );
 
-    // Step 3: Filter by time-off (batch check)
-    // Collect approved time-off for all remaining candidates on this date
-    const timeOffChecks = await Promise.all(
-      availableFiltered.map(async (s) => ({
-        staffId: s.id,
-        hasTimeOff: await TimeOffRequestService.hasApprovedTimeOff(
-          orgId,
-          locationId,
-          s.id,
-          date
-        ),
-      }))
-    );
-    const staffIdsWithTimeOff = new Set(
-      timeOffChecks.filter((c) => c.hasTimeOff).map((c) => c.staffId)
-    );
+    // Step 3: Filter by time-off (single batch query instead of per-staff)
+    const staffIdsWithTimeOff =
+      await TimeOffRequestService.getStaffIdsWithApprovedTimeOff(
+        orgId,
+        locationId,
+        date
+      );
     const afterTimeOff = filterByTimeOff(availableFiltered, staffIdsWithTimeOff);
 
     // Step 4: Filter by skills
@@ -356,6 +393,8 @@ export const CandidateService = {
    * @param date - The target date
    * @param laborRequirements - Labor requirements for this day (from LaborRequirementService)
    * @param existingShifts - Pre-fetched shifts for the week
+   * @param precomputedWeekHours - Optional pre-computed week hours map (avoids recalculation)
+   * @param previousDayClosingShifts - Closing shifts from previous day for clopening hard filter
    * @returns Array of SlotCandidates, one per labor requirement
    */
   async getCandidatesForDay(
@@ -363,7 +402,9 @@ export const CandidateService = {
     locationId: string,
     date: Date,
     laborRequirements: LaborRequirementDTO[],
-    existingShifts: ShiftDTO[]
+    existingShifts: ShiftDTO[],
+    precomputedWeekHours?: Map<string, number>,
+    previousDayClosingShifts: ShiftDTO[] = [],
   ): Promise<SlotCandidates[]> {
     if (laborRequirements.length === 0) {
       return [];
@@ -381,25 +422,17 @@ export const CandidateService = {
 
     const activeStaff = allStaff.filter((s) => s.isActive);
 
-    // Batch fetch: check time-off for all active staff on this date
-    const timeOffChecks = await Promise.all(
-      activeStaff.map(async (s) => ({
-        staffId: s.id,
-        hasTimeOff: await TimeOffRequestService.hasApprovedTimeOff(
-          orgId,
-          locationId,
-          s.id,
-          date
-        ),
-      }))
-    );
-    const staffIdsWithTimeOff = new Set(
-      timeOffChecks.filter((c) => c.hasTimeOff).map((c) => c.staffId)
-    );
+    // Single batch query: fetch all staff IDs with approved time-off on this date
+    const staffIdsWithTimeOff =
+      await TimeOffRequestService.getStaffIdsWithApprovedTimeOff(
+        orgId,
+        locationId,
+        date
+      );
 
-    // Pre-compute week hours for all active staff
+    // Use pre-computed week hours if provided, otherwise calculate from shifts
     const allStaffIds = new Set(activeStaff.map((s) => s.id));
-    const weekHoursMap = calculateWeekHours(
+    const weekHoursMap = precomputedWeekHours ?? calculateWeekHours(
       allStaffIds,
       existingShifts,
       weekStart,
@@ -444,8 +477,15 @@ export const CandidateService = {
         proposedEnd
       );
 
+      // Filter 5: Clopening -- remove staff who closed previous day with insufficient gap
+      const afterClopening = filterByClopening(
+        afterShifts,
+        previousDayClosingShifts,
+        req.startTime,
+      );
+
       // Build CandidateDTOs
-      const allCandidates: CandidateDTO[] = afterShifts.map((s) => {
+      const allCandidates: CandidateDTO[] = afterClopening.map((s) => {
         const currentWeekHours = weekHoursMap.get(s.id) ?? 0;
         const overtimeWarning =
           currentWeekHours + slotDuration > s.maxHoursPerWeek;

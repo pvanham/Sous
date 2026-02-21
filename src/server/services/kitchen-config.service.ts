@@ -58,7 +58,7 @@ export const KitchenConfigService = {
     // Include aiSettings if provided, using defaults for missing values
     if (data.aiSettings) {
       updateData.aiSettings = {
-        monthlyGenerationLimit: data.aiSettings.monthlyGenerationLimit ?? 50,
+        monthlyGenerationLimit: data.aiSettings.monthlyGenerationLimit ?? 1000,
         subscriptionTier: data.aiSettings.subscriptionTier ?? "free",
       };
     }

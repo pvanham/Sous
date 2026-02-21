@@ -5,34 +5,32 @@ import {
 } from "@/lib/ai/openai-client";
 import { timeRangesOverlap } from "@/lib/utils/time-overlap";
 import {
-  buildSystemPrompt,
-  buildCorrectionPrompt,
+  buildOptimizerSystemPrompt,
+  buildOptimizerCorrectionPrompt,
 } from "@/server/services/ai/prompts/schedule-generation";
-import {
-  normalizeAIOutput,
-  mergeLockedAndCorrected,
-} from "@/server/services/ai/scheduling-agent.service";
+import type { OptimizerRejectionReason } from "@/server/services/ai/prompts/schedule-generation";
+import { normalizeAIOutput } from "@/server/services/ai/scheduling-agent.service";
 import type { StaffDTO } from "@/types/staff";
 import type { ShiftDTO } from "@/types/shift";
-import type { SlotCandidates } from "@/types/candidate";
+import type { SlotCandidates, CandidateDTO } from "@/types/candidate";
 import type { TokenUsage } from "@/types/ai-usage";
 import type {
   DaySchedulingContext,
   GeneratedDaySchedule,
   GeneratedShiftAssignment,
   AIRawDayOutput,
+  UnfilledSlot,
   ValidationError,
   ValidationWarning,
   ValidationResult,
-  PartitionedAssignments,
 } from "@/types/ai-scheduling";
 
 // ============================================================
-// ScheduleValidatorService -- Sprint 3.8: Validator Layer
+// ScheduleValidatorService -- Hybrid Architecture Validator
 // ============================================================
-// Deterministic validation of AI-generated schedules against
-// hard constraints, plus a self-correction retry loop that
-// feeds specific errors back to the AI.
+// Deterministic validation of schedules against hard constraints,
+// quality scoring for comparing base vs optimized schedules, and
+// a retry loop that sends correction prompts to the AI optimizer.
 //
 // Architecture: Service Layer (per ARCHITECTURE.md)
 // - Does NOT import Mongoose models directly
@@ -543,59 +541,154 @@ export const ScheduleValidatorService = {
   },
 
   /**
-   * Retry schedule generation with correction hints fed back to the AI.
+   * Score a valid schedule's quality for comparison purposes.
+   * Higher score = better schedule. Used by the optimizer loop
+   * to decide whether the AI's output beats the deterministic base.
    *
-   * When `lockedAssignments` and `failedSlotKeys` are provided, uses a
-   * "locked state" strategy: only failed slots are sent to the AI, and
-   * the corrected output is merged with the locked assignments before
-   * returning. This reduces token usage and prevents regressions.
+   * @param generated - A valid day schedule to score
+   * @param context - The day's scheduling context (for candidate lookups)
+   * @returns Numeric quality score
+   */
+  scoreQuality(
+    generated: GeneratedDaySchedule,
+    context: DaySchedulingContext,
+  ): number {
+    let score = 0;
+
+    const candidateMap = new Map<string, CandidateDTO>();
+    for (const { candidates } of context.slots) {
+      for (const c of candidates) {
+        if (!candidateMap.has(c.staffId)) {
+          candidateMap.set(c.staffId, c);
+        }
+      }
+    }
+
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (!candidate) continue;
+
+      if (candidate.preferredStations.includes(a.station)) {
+        score += 3;
+      }
+
+      if (candidate.preference === "preferred") {
+        score += 2;
+      }
+    }
+
+    // Hour balance: penalise variance in remaining hours across assigned staff
+    const remainingHours: number[] = [];
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (candidate) {
+        const slotDur = getShiftDurationHours(a.startTime, a.endTime);
+        remainingHours.push(
+          candidate.maxHoursPerWeek - candidate.currentWeekHours - slotDur,
+        );
+      }
+    }
+    if (remainingHours.length > 1) {
+      const mean =
+        remainingHours.reduce((s, v) => s + v, 0) / remainingHours.length;
+      const variance =
+        remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
+        remainingHours.length;
+      score -= variance * 0.1;
+    }
+
+    score -= generated.unfilledSlots.length * 10;
+
+    return Math.round(score * 100) / 100;
+  },
+
+  /**
+   * Recalculate unfilled slots by comparing assignments against
+   * the original slot requirements. Fixes the bug where stripped
+   * assignments leave stale unfilled slot data.
    *
-   * @param original - The previous (invalid) day schedule
-   * @param validationErrors - Hard constraint violations to correct
-   * @param context - Day scheduling context (for candidate validation)
+   * @param generated - Day schedule with current assignments
+   * @param context - Day scheduling context with original slot requirements
+   * @returns Updated GeneratedDaySchedule with accurate unfilledSlots
+   */
+  recalculateUnfilledSlots(
+    generated: GeneratedDaySchedule,
+    context: DaySchedulingContext,
+  ): GeneratedDaySchedule {
+    const assignmentCounts = new Map<string, number>();
+    for (const a of generated.assignments) {
+      const key = `${a.station}|${a.startTime}|${a.endTime}`;
+      assignmentCounts.set(key, (assignmentCounts.get(key) ?? 0) + 1);
+    }
+
+    const unfilledSlots: UnfilledSlot[] = [];
+    for (const { slot, candidates } of context.slots) {
+      const key = `${slot.station}|${slot.startTime}|${slot.endTime}`;
+      const assigned = assignmentCounts.get(key) ?? 0;
+      if (assigned < slot.preferredStaff) {
+        unfilledSlots.push({
+          station: slot.station,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          needed: slot.preferredStaff,
+          assigned,
+          reason:
+            candidates.length === 0
+              ? "No valid candidates available"
+              : assigned === 0
+                ? "No assignment could be made for this slot"
+                : `Only ${assigned} of ${slot.preferredStaff} positions filled`,
+        });
+      }
+    }
+
+    return {
+      ...generated,
+      unfilledSlots,
+    };
+  },
+
+  /**
+   * Retry optimization with a correction prompt.
+   * Used when the AI's previous optimizer output was invalid or scored
+   * lower than the deterministic base.
+   *
+   * @param baseSchedule - The deterministic base (always-valid reference)
+   * @param previousOutput - The AI's rejected output
+   * @param rejectionReason - Why the previous output was rejected
+   * @param context - Day scheduling context
    * @param tracking - Usage tracking options for the AI call
    * @param attempt - Current retry attempt number (for logging)
    * @param idToAlias - Map of real staffId -> alias
    * @param aliasToId - Map of alias -> real staffId
-   * @param lockedAssignments - Valid assignments to preserve (locked state)
-   * @param failedSlotKeys - Compound keys for slots that need correction
    * @returns Corrected GeneratedDaySchedule and token usage
    */
-  async retryWithCorrections(
-    original: GeneratedDaySchedule,
-    validationErrors: ValidationError[],
+  async retryOptimization(
+    baseSchedule: GeneratedDaySchedule,
+    previousOutput: GeneratedDaySchedule,
+    rejectionReason: OptimizerRejectionReason,
     context: DaySchedulingContext,
     tracking: ValidatorTrackingOptions,
     attempt: number,
-    idToAlias: Map<string, string> = new Map(),
-    aliasToId: Map<string, string> = new Map(),
-    lockedAssignments?: GeneratedShiftAssignment[],
-    failedSlotKeys?: Set<string>,
+    idToAlias: Map<string, string>,
+    aliasToId: Map<string, string>,
   ): Promise<{ daySchedule: GeneratedDaySchedule; tokenUsage: TokenUsage }> {
-    const hasLockedState =
-      lockedAssignments !== undefined &&
-      failedSlotKeys !== undefined &&
-      lockedAssignments.length > 0;
+    const reasonStr =
+      rejectionReason.type === "invalid"
+        ? `${rejectionReason.errors.length} validation error(s)`
+        : `lower quality (${rejectionReason.aiScore} vs base ${rejectionReason.baseScore})`;
 
     console.log(
-      `[ScheduleValidator] Retry attempt ${attempt}/${MAX_RETRY_ATTEMPTS} with ${validationErrors.length} error(s)` +
-        (hasLockedState
-          ? ` (locked: ${lockedAssignments.length}, failed slots: ${failedSlotKeys.size})`
-          : ""),
+      `[ScheduleValidator] Optimizer retry ${attempt}/${MAX_RETRY_ATTEMPTS}: ${reasonStr}`,
     );
 
-    const errorMessages = validationErrors.map(
-      (e) => `${e.message} HINT: ${e.correctionHint}`
-    );
-
-    const systemPrompt = buildSystemPrompt();
-    const correctionPrompt = buildCorrectionPrompt(
-      original,
-      errorMessages,
+    const systemPrompt = buildOptimizerSystemPrompt();
+    const correctionPrompt = buildOptimizerCorrectionPrompt(
+      baseSchedule,
+      previousOutput,
+      rejectionReason,
       context,
       idToAlias,
-      lockedAssignments,
-      failedSlotKeys,
     );
 
     try {
@@ -605,27 +698,23 @@ export const ScheduleValidatorService = {
         {
           model: "gpt-4o-mini",
           temperature: 0.2,
-          maxTokens: hasLockedState ? 2000 : 4000,
+          maxTokens: 4000,
           tracking: {
             orgId: tracking.orgId,
             locationId: tracking.locationId,
             clerkUserId: tracking.clerkUserId,
             action: tracking.action,
           },
-        }
+        },
       );
 
-      const normalized = normalizeAIOutput(
+      const daySchedule = normalizeAIOutput(
         rawOutput,
         context.slots,
-        original.date,
-        original.dayOfWeek,
-        aliasToId
+        baseSchedule.date,
+        baseSchedule.dayOfWeek,
+        aliasToId,
       );
-
-      const daySchedule = hasLockedState
-        ? mergeLockedAndCorrected(lockedAssignments, normalized)
-        : normalized;
 
       return { daySchedule, tokenUsage: usage };
     } catch (error) {
@@ -640,73 +729,47 @@ export const ScheduleValidatorService = {
   },
 
   /**
-   * Partition a day's assignments into locked (valid) and failed (invalid) groups.
-   * Used by the correction loop to preserve valid assignments while only
-   * re-generating the failed ones.
-   *
-   * @param generated - The day schedule containing all assignments
-   * @param validationErrors - Errors identifying which assignments failed
-   * @returns Locked assignments, failed assignments, and compound keys for failed slots
-   */
-  partitionAssignments(
-    generated: GeneratedDaySchedule,
-    validationErrors: ValidationError[]
-  ): PartitionedAssignments {
-    const errorIndices = new Set(validationErrors.map((e) => e.shiftIndex));
-
-    const lockedAssignments: GeneratedShiftAssignment[] = [];
-    const failedAssignments: GeneratedShiftAssignment[] = [];
-    const failedSlotKeys = new Set<string>();
-
-    for (let i = 0; i < generated.assignments.length; i++) {
-      const a = generated.assignments[i];
-      if (errorIndices.has(i)) {
-        failedAssignments.push(a);
-        failedSlotKeys.add(`${a.station}|${a.startTime}|${a.endTime}`);
-      } else {
-        lockedAssignments.push(a);
-      }
-    }
-
-    return { lockedAssignments, failedAssignments, failedSlotKeys };
-  },
-
-  /**
-   * Strip invalid assignments from a day schedule.
-   * Used as a last resort when max retries are exhausted --
-   * a partial schedule is better than no schedule.
+   * Strip invalid assignments from a day schedule and recalculate
+   * unfilled slots to reflect reality.
    *
    * @param generated - The day schedule with potential violations
    * @param validationErrors - The errors identifying which assignments to remove
-   * @returns Cleaned schedule with invalid assignments removed
+   * @param context - Day scheduling context for unfilled slot recalculation
+   * @returns Cleaned schedule with accurate unfilled slots
    */
   stripInvalidAssignments(
     generated: GeneratedDaySchedule,
-    validationErrors: ValidationError[]
+    validationErrors: ValidationError[],
+    context?: DaySchedulingContext,
   ): GeneratedDaySchedule {
-    // Collect indices of assignments that have errors
     const errorIndices = new Set<number>();
     for (const error of validationErrors) {
       errorIndices.add(error.shiftIndex);
     }
 
-    // Keep only valid assignments
     const cleanAssignments = generated.assignments.filter(
-      (_, i) => !errorIndices.has(i)
+      (_, i) => !errorIndices.has(i),
     );
 
     const removedCount = generated.assignments.length - cleanAssignments.length;
-    const updatedNotes = removedCount > 0
-      ? `${generated.notes} (${removedCount} invalid assignment(s) removed after failed validation retries)`
-      : generated.notes;
+    const updatedNotes =
+      removedCount > 0
+        ? `${generated.notes} (${removedCount} invalid assignment(s) removed after failed validation retries)`
+        : generated.notes;
 
-    return {
+    let result: GeneratedDaySchedule = {
       ...generated,
       assignments: cleanAssignments,
       notes: updatedNotes,
     };
+
+    if (context) {
+      result = this.recalculateUnfilledSlots(result, context);
+    }
+
+    return result;
   },
 
-  /** Expose the max retry attempts constant for external use */
+  /** Maximum optimizer retry attempts */
   MAX_RETRY_ATTEMPTS,
 };

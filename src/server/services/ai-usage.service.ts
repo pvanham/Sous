@@ -12,7 +12,7 @@ import type {
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 
 /** Default monthly generation limit if KitchenConfig has no aiSettings */
-const DEFAULT_MONTHLY_GENERATION_LIMIT = 50;
+const DEFAULT_MONTHLY_GENERATION_LIMIT = 1000;
 
 /**
  * AIUsageService - Service layer for AI usage tracking and limit enforcement.

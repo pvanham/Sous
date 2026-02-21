@@ -12,7 +12,7 @@ export interface AISettingsDTO {
 
 /** Default AI settings applied when the field is missing on legacy documents */
 const DEFAULT_AI_SETTINGS: AISettingsDTO = {
-  monthlyGenerationLimit: 50,
+  monthlyGenerationLimit: 1000,
   subscriptionTier: "free",
 };
 

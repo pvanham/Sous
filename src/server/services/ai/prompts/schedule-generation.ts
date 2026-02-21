@@ -1,107 +1,51 @@
 import type {
   DaySchedulingContext,
   GeneratedDaySchedule,
-  GeneratedShiftAssignment,
+  ValidationError,
 } from "@/types/ai-scheduling";
-import type { ShiftDTO } from "@/types/shift";
 import type { CandidateDTO } from "@/types/candidate";
 
 // ============================================================
-// Schedule Generation Prompts -- Sprint 3.7
+// Schedule Generation Prompts -- Hybrid Architecture
 // ============================================================
-// Prompt templates for the AI Scheduling Agent "Soft Selector."
-// These functions build the system and user prompts that are
-// sent to OpenAI's generateJSON<T>() for day-by-day schedule
-// generation.
+// Prompt templates for the AI Schedule Optimizer.
+// The AI receives a valid base schedule from the deterministic
+// solver and attempts to improve it by reassigning staff for
+// better preference alignment and hour fairness.
 //
 // Architecture: Part of the AI Service Layer (per ARCHITECTURE.md).
 // These are pure functions -- no DB access, no side effects.
 // ============================================================
 
-/** Minimum hours between closing shift end and next day opening shift start */
-const CLOPENING_THRESHOLD_HOURS = 10;
+const MAX_CANDIDATES_PER_SLOT = 8;
 
 // ────────────────────────────────────────────────────────────
-// System Prompt
+// Shared Helpers
 // ────────────────────────────────────────────────────────────
 
 /**
- * Build the static system prompt that defines the AI's role and output format.
- * This prompt does NOT change between days or kitchens.
- *
- * The system prompt instructs the AI to:
- * - Act as "Sous," a kitchen scheduling assistant
- * - SELECT from pre-verified candidates only (never invent staff)
- * - Consider preferences, fairness, experience mix, and clopening avoidance
- * - Output strict JSON matching the GeneratedDaySchedule shape
+ * Compute a 1-based hours-utilization rank for each candidate in a slot.
+ * Rank 1 = most remaining hours (best pick for fairness).
  */
-export function buildSystemPrompt(): string {
-  return `You are Sous, an expert kitchen scheduling assistant.
-
-You will receive a list of OPEN SLOTS and VALID CANDIDATES for each slot.
-All candidates have already been verified as available and qualified — do NOT question their eligibility.
-Your job is to SELECT the best candidate from each slot's candidate list.
-
-IMPORTANT RULES:
-1. You MUST only assign staff members who appear in a slot's candidate list. Never invent or reference staff outside the provided candidates.
-2. You MUST use the exact staffId alias values (e.g., "S1", "S2") from the candidate list. Do not modify or fabricate IDs.
-3. A staff member MUST NOT be assigned more than ONE shift per day. Even if a person appears as a candidate for multiple slots, assign them to exactly ONE slot (the best fit based on the criteria below) and choose different staff for the remaining slots. This is a hard constraint — no exceptions.
-4. Assign up to the "preferredStaff" count for each slot. If fewer candidates are available than needed, assign everyone available and report the shortfall in "unfilledSlots".
-
-SELECTION CRITERIA (in priority order):
-1. Hour distribution — STRONGLY prefer candidates with the most remaining weekly hours. This is the most important factor for building a viable full-week schedule. Spread hours evenly across the team. A candidate with 30h remaining is much better than one with 5h remaining, even if the latter is more skilled.
-2. Staff preferences — Favor candidates whose "preference" is "preferred" over "available". Favor candidates working at their preferredStations.
-3. Skill match — Higher proficiency for the target station is better, but do NOT sacrifice hour fairness for marginally higher proficiency.
-4. Clopening avoidance — If previous day closing shifts are provided, avoid assigning someone who closed late the previous night to an early morning slot (less than ${CLOPENING_THRESHOLD_HOURS} hours between shifts).
-5. Team balance — Mix experience levels when possible.
-
-For each assignment, provide a brief "reasoning" (1-2 sentences) that mentions the candidate's remaining hours to explain why you chose them.
-
-OUTPUT FORMAT — respond with a single JSON object matching this exact structure:
-{
-  "assignments": [
-    {
-      "staffId": "<exact alias from candidate list, e.g. S1>",
-      "staffName": "<name from candidate list>",
-      "station": "<station name>",
-      "startTime": "<HH:MM>",
-      "endTime": "<HH:MM>",
-      "reasoning": "<1-2 sentences>"
-    }
-  ],
-  "unfilledSlots": [
-    {
-      "station": "<station name>",
-      "startTime": "<HH:MM>",
-      "endTime": "<HH:MM>",
-      "needed": <number>,
-      "assigned": <number>,
-      "reason": "<why it couldn't be filled>"
-    }
-  ],
-  "notes": "<1-3 sentence summary of scheduling decisions for this day>"
+function computeHoursRankMap(candidates: CandidateDTO[]): Map<string, number> {
+  const sorted = [...candidates].sort(
+    (a, b) =>
+      (b.maxHoursPerWeek - b.currentWeekHours) -
+      (a.maxHoursPerWeek - a.currentWeekHours),
+  );
+  return new Map(sorted.map((c, i) => [c.staffId, i + 1]));
 }
-
-Only include slots in "unfilledSlots" if the number of assignments for that slot is fewer than its "preferredStaff" target. If a slot has zero candidates, still list it in "unfilledSlots".`;
-}
-
-// ────────────────────────────────────────────────────────────
-// Day User Prompt
-// ────────────────────────────────────────────────────────────
 
 /**
- * Format a candidate for inclusion in the prompt.
- * Uses short alias IDs (e.g., "S1") instead of raw MongoDB ObjectIds to
- * reduce token count and prevent LLM ID-hallucination errors.
- *
- * @param candidate - The candidate to format
- * @param station - Target station for proficiency lookup
- * @param idToAlias - Map of real staffId -> short alias (e.g., "S1")
+ * Format a candidate compactly for inclusion in the prompt.
+ * Uses short alias IDs (e.g., "S1") to reduce token count.
  */
 function formatCandidate(
   candidate: CandidateDTO,
   station: string,
-  idToAlias: Map<string, string>
+  idToAlias: Map<string, string>,
+  hoursRank: number,
+  totalInSlot: number,
 ): string {
   const alias = idToAlias.get(candidate.staffId) ?? candidate.staffId;
   const proficiency =
@@ -116,295 +60,294 @@ function formatCandidate(
 
   const flagStr = flags.length > 0 ? ` [${flags.join(",")}]` : "";
 
-  // Compact single-line format: ~60% fewer tokens than multi-line
-  return `    - ${alias} "${candidate.staffName}" prof:${proficiency}/5 pref:${candidate.preference} hrs:${candidate.currentWeekHours.toFixed(1)}/${candidate.maxHoursPerWeek}(${hoursRemaining.toFixed(1)}rem)${flagStr}`;
+  return `    - ${alias} "${candidate.staffName}" prof:${proficiency}/5 hrs:${hoursRemaining.toFixed(1)}rem rank:${hoursRank}/${totalInSlot}${flagStr}`;
 }
 
-/**
- * Format a closing shift for the clopening warning section.
- * Uses alias if available.
- */
-function formatClosingShift(
-  shift: ShiftDTO,
-  idToAlias: Map<string, string>
-): string {
-  const alias = idToAlias.get(shift.staffId) ?? shift.staffId;
-  const endTime = new Date(shift.end);
-  const hours = String(endTime.getHours()).padStart(2, "0");
-  const minutes = String(endTime.getMinutes()).padStart(2, "0");
-  return `  - Staff ID: ${alias}, ended at ${hours}:${minutes}, station: ${shift.station}`;
-}
+// ────────────────────────────────────────────────────────────
+// Optimizer System Prompt
+// ────────────────────────────────────────────────────────────
 
 /**
- * Build the user prompt for a single day's schedule generation.
- * Serializes the DaySchedulingContext into a structured format
- * that the AI can parse and reason about.
- *
- * Uses short alias IDs (e.g., "S1") instead of raw MongoDB ObjectIds
- * to reduce token count and prevent LLM ID-hallucination errors.
- *
- * @param context - The day's scheduling context with pre-filtered candidates
- * @param idToAlias - Map of real staffId -> short alias (e.g., "S1")
- * @returns Formatted user prompt string
+ * Build the system prompt for the AI optimizer role.
+ * Positions the AI as an optimizer that improves a valid base schedule,
+ * NOT as the primary scheduler.
  */
-export function buildDayUserPrompt(
+export function buildOptimizerSystemPrompt(): string {
+  return `You are Sous, a kitchen schedule optimizer.
+
+You will receive a VALID BASE SCHEDULE and a list of AVAILABLE CANDIDATES for each slot. The base schedule already satisfies all hard constraints. Your job is to IMPROVE it by reassigning staff to better match preferences and balance hours.
+
+HARD RULES (violating any of these makes your output invalid):
+1. You MUST only assign staff who appear in a slot's candidate list. Never invent staff.
+2. You MUST use the exact staffId alias values (e.g., "S1", "S2") from the candidate lists.
+3. A staff member MUST NOT be assigned more than ONE shift per day — no exceptions.
+4. Assign up to the "need" count for each slot. If fewer candidates exist, report in "unfilledSlots".
+5. Every slot from the base schedule must appear in your output with an assignment (or in unfilledSlots).
+
+OPTIMIZATION GOALS (what makes a schedule "better"):
+1. Station preferences — Assign staff to stations in their preferredStations list when possible. This is the primary optimization target.
+2. Hour fairness — Spread hours evenly. Prefer candidates with more remaining weekly hours.
+3. Time preferences — Favor candidates flagged as PREF_TIME over others.
+4. If the base schedule is already optimal, return it unchanged.
+
+For each assignment, provide a brief "reasoning" (one short phrase).
+
+OUTPUT FORMAT — respond with a single JSON object:
+{
+  "assignments": [
+    {
+      "staffId": "<alias, e.g. S1>",
+      "staffName": "<name>",
+      "station": "<station>",
+      "startTime": "<HH:MM>",
+      "endTime": "<HH:MM>",
+      "reasoning": "<short phrase>"
+    }
+  ],
+  "unfilledSlots": [
+    {
+      "station": "<station>",
+      "startTime": "<HH:MM>",
+      "endTime": "<HH:MM>",
+      "needed": <number>,
+      "assigned": <number>,
+      "reason": "<why>"
+    }
+  ],
+  "notes": "<1 sentence summary>"
+}`;
+}
+
+// ────────────────────────────────────────────────────────────
+// Optimizer User Prompt
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Build the user prompt for the AI optimizer. Includes:
+ * 1. Day header
+ * 2. The base schedule from the deterministic solver
+ * 3. Auto-detected optimization opportunities
+ * 4. Available candidates per slot (capped at MAX_CANDIDATES_PER_SLOT)
+ *
+ * @param context - Day scheduling context with candidates
+ * @param baseSchedule - The deterministic solver's valid output
+ * @param idToAlias - Map of real staffId -> short alias
+ */
+export function buildOptimizerUserPrompt(
   context: DaySchedulingContext,
-  idToAlias: Map<string, string>
+  baseSchedule: GeneratedDaySchedule,
+  idToAlias: Map<string, string>,
 ): string {
-  const {
-    date,
-    dayName,
-    slots,
-    previousDayClosingShifts,
-    kitchenContext,
-  } = context;
-
-  const dateStr = date.toISOString().split("T")[0];
+  const dateStr = context.date.toISOString().split("T")[0];
+  const lines: string[] = [];
 
   // Header
-  const lines: string[] = [
-    `SCHEDULE REQUEST FOR: ${dayName}, ${dateStr}`,
-    "",
-  ];
-
-  // Operating hours
-  if (kitchenContext.operatingHours) {
+  lines.push(`OPTIMIZE SCHEDULE FOR: ${context.dayName}, ${dateStr}`);
+  if (context.kitchenContext.operatingHours) {
     lines.push(
-      `Operating Hours: ${kitchenContext.operatingHours.open} - ${kitchenContext.operatingHours.close}`
+      `Operating Hours: ${context.kitchenContext.operatingHours.open} - ${context.kitchenContext.operatingHours.close}`,
     );
-  } else {
-    lines.push("Operating Hours: CLOSED (no shifts needed)");
   }
-  lines.push(`Total Active Staff: ${kitchenContext.totalStaffCount}`);
   lines.push("");
 
-  // Clopening warning
-  if (previousDayClosingShifts.length > 0) {
-    lines.push("PREVIOUS DAY CLOSING SHIFTS (check for clopening risk):");
-    for (const shift of previousDayClosingShifts) {
-      lines.push(formatClosingShift(shift, idToAlias));
+  // Base schedule
+  lines.push(`BASE SCHEDULE (${baseSchedule.assignments.length} assignments — all valid):`);
+  for (const a of baseSchedule.assignments) {
+    const alias = idToAlias.get(a.staffId) ?? a.staffId;
+    lines.push(`  ${alias} "${a.staffName}" -> ${a.station} ${a.startTime}-${a.endTime}`);
+  }
+  if (baseSchedule.unfilledSlots.length > 0) {
+    lines.push(`  Unfilled: ${baseSchedule.unfilledSlots.map((u) => `${u.station} ${u.startTime}-${u.endTime}`).join(", ")}`);
+  }
+  lines.push("");
+
+  // Optimization opportunities
+  const opportunities = detectOptimizationOpportunities(
+    baseSchedule,
+    context,
+    idToAlias,
+  );
+  if (opportunities.length > 0) {
+    lines.push("OPTIMIZATION OPPORTUNITIES:");
+    for (const opp of opportunities) {
+      lines.push(`  - ${opp}`);
     }
-    lines.push(
-      `  Note: Avoid assigning these staff to shifts starting less than ${CLOPENING_THRESHOLD_HOURS} hours after their close.`
-    );
     lines.push("");
   }
 
-  // Slots with candidates
-  lines.push(`OPEN SLOTS (${slots.length} total):`);
+  // Available candidates per slot
+  lines.push(`AVAILABLE CANDIDATES PER SLOT (${context.slots.length} slots):`);
   lines.push("");
 
-  for (let i = 0; i < slots.length; i++) {
-    const { slot, candidates, hasSufficientCandidates } = slots[i];
+  for (let i = 0; i < context.slots.length; i++) {
+    const { slot, candidates } = context.slots[i];
+    const capped = candidates.slice(0, MAX_CANDIDATES_PER_SLOT);
 
-    // Compact slot header: single line
     lines.push(
-      `[Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff} min:${slot.minStaff} pri:${slot.priority}`
+      `[Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff}`,
     );
 
-    if (candidates.length === 0) {
-      lines.push("  Candidates: NONE — add to unfilledSlots");
+    if (capped.length === 0) {
+      lines.push("  Candidates: NONE");
     } else {
-      if (!hasSufficientCandidates) {
-        lines.push(
-          `  WARNING: Only ${candidates.length} candidates (need ${slot.minStaff} min)`
-        );
-      }
-      lines.push(`  Candidates (${candidates.length}):`);
-      for (const candidate of candidates) {
-        lines.push(formatCandidate(candidate, slot.station, idToAlias));
+      const rankMap = computeHoursRankMap(capped);
+      lines.push(`  Candidates (${capped.length}${candidates.length > MAX_CANDIDATES_PER_SLOT ? ` of ${candidates.length}` : ""}):`);
+      for (const candidate of capped) {
+        const rank = rankMap.get(candidate.staffId) ?? capped.length;
+        lines.push(formatCandidate(candidate, slot.station, idToAlias, rank, capped.length));
       }
     }
-    lines.push("");
-  }
-
-  // Existing shifts already assigned for this day (from prior generation or manual)
-  const dayShifts = context.existingShifts.filter((s) => {
-    const shiftDate = new Date(s.start).toISOString().split("T")[0];
-    return shiftDate === dateStr;
-  });
-
-  if (dayShifts.length > 0) {
-    lines.push("ALREADY ASSIGNED SHIFTS FOR THIS DAY:");
-    for (const shift of dayShifts) {
-      const alias = idToAlias.get(shift.staffId) ?? shift.staffId;
-      const start = new Date(shift.start);
-      const end = new Date(shift.end);
-      const startStr = `${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`;
-      const endStr = `${String(end.getHours()).padStart(2, "0")}:${String(end.getMinutes()).padStart(2, "0")}`;
-      lines.push(
-        `  - Staff ${alias}: ${shift.station} ${startStr}-${endStr}`
-      );
-    }
-    lines.push(
-      "  Note: Do not assign these staff members to overlapping times."
-    );
     lines.push("");
   }
 
   lines.push(
-    "Please generate the optimal shift assignments for this day. Remember to output valid JSON."
+    "Improve this schedule by reassigning staff to better match station preferences and balance hours. Output the full optimized schedule as valid JSON.",
   );
 
   return lines.join("\n");
 }
 
+/**
+ * Detect specific optimization opportunities in the base schedule
+ * to guide the AI toward useful swaps.
+ */
+function detectOptimizationOpportunities(
+  baseSchedule: GeneratedDaySchedule,
+  context: DaySchedulingContext,
+  idToAlias: Map<string, string>,
+): string[] {
+  const opportunities: string[] = [];
+
+  const candidateMap = new Map<string, CandidateDTO>();
+  for (const { candidates } of context.slots) {
+    for (const c of candidates) {
+      if (!candidateMap.has(c.staffId)) {
+        candidateMap.set(c.staffId, c);
+      }
+    }
+  }
+
+  for (const a of baseSchedule.assignments) {
+    const candidate = candidateMap.get(a.staffId);
+    if (!candidate) continue;
+
+    const alias = idToAlias.get(a.staffId) ?? a.staffId;
+
+    if (
+      candidate.preferredStations.length > 0 &&
+      !candidate.preferredStations.includes(a.station)
+    ) {
+      opportunities.push(
+        `${alias} "${a.staffName}" is on ${a.station} but prefers: ${candidate.preferredStations.join(", ")}`,
+      );
+    }
+  }
+
+  return opportunities;
+}
+
 // ────────────────────────────────────────────────────────────
-// Correction Prompt (Stub for Sprint 3.8)
+// Optimizer Correction Prompt
 // ────────────────────────────────────────────────────────────
 
 /**
- * Build a correction prompt for the self-correction loop.
+ * Build a correction prompt when the AI's optimization attempt was
+ * rejected (invalid output or lower quality score than the base).
  *
- * When `lockedAssignments` and `failedSlotKeys` are provided, the prompt
- * uses a "locked state" strategy: valid assignments are listed as immutable,
- * only failed slots' candidates are included, and the AI is instructed to
- * generate replacements for the failed slots only. This reduces token usage
- * and prevents the AI from regressing previously-valid assignments.
- *
- * Falls back to the full-context prompt when locked state is not provided.
- *
- * @param previousOutput - The AI's previous (invalid) output (with real staffIds)
- * @param errors - List of specific validation error messages
- * @param context - Original day scheduling context (candidates, slots, hours)
- * @param idToAlias - Map of real staffId -> short alias (for prompt consistency)
- * @param lockedAssignments - Assignments that passed validation (immutable)
- * @param failedSlotKeys - Compound keys ("station|startTime|endTime") for failed slots
- * @returns Formatted correction prompt string
+ * @param baseSchedule - The deterministic base (reference point)
+ * @param previousOutput - The AI's rejected output
+ * @param rejectionReason - Why it was rejected
+ * @param context - Day scheduling context
+ * @param idToAlias - Alias map
  */
-export function buildCorrectionPrompt(
+export function buildOptimizerCorrectionPrompt(
+  baseSchedule: GeneratedDaySchedule,
   previousOutput: GeneratedDaySchedule,
-  errors: string[],
+  rejectionReason: OptimizerRejectionReason,
   context: DaySchedulingContext,
   idToAlias: Map<string, string>,
-  lockedAssignments?: GeneratedShiftAssignment[],
-  failedSlotKeys?: Set<string>,
 ): string {
-  const errorList = errors.map((e, i) => `  ${i + 1}. ${e}`).join("\n");
+  const dateStr = context.date.toISOString().split("T")[0];
+  const lines: string[] = [];
 
-  const hasLockedState =
-    lockedAssignments !== undefined &&
-    failedSlotKeys !== undefined &&
-    lockedAssignments.length > 0;
+  lines.push(
+    `Your previous optimization for ${context.dayName}, ${dateStr} was REJECTED.`,
+  );
+  lines.push("");
 
-  if (hasLockedState) {
-    return buildLockedCorrectionPrompt(
-      errorList,
-      context,
-      idToAlias,
-      lockedAssignments,
-      failedSlotKeys,
+  // Explain why
+  if (rejectionReason.type === "invalid") {
+    lines.push("REASON: Your output contained validation errors:");
+    for (const err of rejectionReason.errors) {
+      lines.push(`  - ${err.message} HINT: ${err.correctionHint}`);
+    }
+  } else {
+    lines.push(
+      `REASON: Your output scored LOWER than the base schedule (${rejectionReason.aiScore} vs ${rejectionReason.baseScore}).`,
+    );
+    if (rejectionReason.details) {
+      lines.push(`Details: ${rejectionReason.details}`);
+    }
+  }
+  lines.push("");
+
+  // Show the base schedule as reference
+  lines.push("BASE SCHEDULE (the valid reference — you must beat this):");
+  for (const a of baseSchedule.assignments) {
+    const alias = idToAlias.get(a.staffId) ?? a.staffId;
+    lines.push(
+      `  ${alias} "${a.staffName}" -> ${a.station} ${a.startTime}-${a.endTime}`,
     );
   }
+  lines.push("");
 
-  // Fallback: full-context correction (no locked state)
-  const originalContext = buildDayUserPrompt(context, idToAlias);
-
-  const aliasedOutput = {
+  // Show aliased version of the rejected output
+  const aliasedPrev = {
     ...previousOutput,
     assignments: previousOutput.assignments.map((a) => ({
       ...a,
       staffId: idToAlias.get(a.staffId) ?? a.staffId,
     })),
   };
+  lines.push("YOUR PREVIOUS (REJECTED) OUTPUT:");
+  lines.push(JSON.stringify(aliasedPrev, null, 2));
+  lines.push("");
 
-  return `Your previous schedule output for this day contained validation errors that must be fixed.
+  // Candidate lists (compact)
+  lines.push("AVAILABLE CANDIDATES PER SLOT:");
+  for (let i = 0; i < context.slots.length; i++) {
+    const { slot, candidates } = context.slots[i];
+    const capped = candidates.slice(0, MAX_CANDIDATES_PER_SLOT);
 
-ORIGINAL SCHEDULING CONTEXT (valid candidates for each slot):
-${originalContext}
-
-VALIDATION ERRORS TO FIX:
-${errorList}
-
-YOUR PREVIOUS (INVALID) OUTPUT:
-${JSON.stringify(aliasedOutput, null, 2)}
-
-INSTRUCTIONS:
-- Fix ONLY the assignments flagged above. Keep all valid assignments unchanged.
-- You MUST only use staffId aliases from the candidate lists above.
-- Do not assign the same staff member to overlapping time slots.
-- Output the corrected schedule in the same JSON format.`;
-}
-
-/**
- * Build the locked-state correction prompt. Only includes candidates for
- * the failed slots and lists locked assignments so the AI avoids conflicts.
- */
-function buildLockedCorrectionPrompt(
-  errorList: string,
-  context: DaySchedulingContext,
-  idToAlias: Map<string, string>,
-  lockedAssignments: GeneratedShiftAssignment[],
-  failedSlotKeys: Set<string>,
-): string {
-  const dateStr = context.date.toISOString().split("T")[0];
-
-  // Build the locked assignments section with aliased IDs
-  const lockedLines = lockedAssignments.map((a) => {
-    const alias = idToAlias.get(a.staffId) ?? a.staffId;
-    return `  - ${alias} "${a.staffName}" -> ${a.station} ${a.startTime}-${a.endTime}`;
-  });
-
-  // Collect locked staff aliases so the AI knows who is unavailable
-  const lockedStaffAliases = new Set(
-    lockedAssignments.map((a) => idToAlias.get(a.staffId) ?? a.staffId),
-  );
-
-  // Filter context slots to only the failed ones
-  const failedSlots = context.slots.filter((sc) => {
-    const key = `${sc.slot.station}|${sc.slot.startTime}|${sc.slot.endTime}`;
-    return failedSlotKeys.has(key);
-  });
-
-  // Build a mini candidate context for just the failed slots
-  const slotLines: string[] = [];
-  for (let i = 0; i < failedSlots.length; i++) {
-    const { slot, candidates, hasSufficientCandidates } = failedSlots[i];
-
-    slotLines.push(
-      `[Failed Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff} min:${slot.minStaff} pri:${slot.priority}`,
+    lines.push(
+      `[Slot ${i + 1}] ${slot.station} ${slot.startTime}-${slot.endTime} | need:${slot.preferredStaff}`,
     );
 
-    // Filter out candidates who are already locked into another slot
-    const availableCandidates = candidates.filter(
-      (c) => !lockedStaffAliases.has(idToAlias.get(c.staffId) ?? c.staffId),
-    );
-
-    if (availableCandidates.length === 0) {
-      slotLines.push("  Candidates: NONE — add to unfilledSlots");
+    if (capped.length === 0) {
+      lines.push("  Candidates: NONE");
     } else {
-      if (!hasSufficientCandidates) {
-        slotLines.push(
-          `  WARNING: Only ${availableCandidates.length} available candidates (need ${slot.minStaff} min)`,
+      const rankMap = computeHoursRankMap(capped);
+      for (const candidate of capped) {
+        const rank = rankMap.get(candidate.staffId) ?? capped.length;
+        lines.push(
+          formatCandidate(candidate, slot.station, idToAlias, rank, capped.length),
         );
       }
-      slotLines.push(`  Candidates (${availableCandidates.length}):`);
-      for (const candidate of availableCandidates) {
-        slotLines.push(formatCandidate(candidate, slot.station, idToAlias));
-      }
     }
-    slotLines.push("");
   }
+  lines.push("");
 
-  return `Your previous schedule output for ${context.dayName}, ${dateStr} contained validation errors. Some assignments were valid and are now LOCKED. You must only fix the failed slots.
+  lines.push(
+    "Try again. Your output MUST be valid (no constraint violations) AND score higher than the base schedule. Focus on matching staff to their preferred stations. Output the full schedule as valid JSON.",
+  );
 
-LOCKED ASSIGNMENTS (do NOT change, remove, or re-assign these):
-${lockedLines.join("\n")}
-
-The staff listed above are already committed. Do NOT assign any of them to additional slots.
-
-FAILED SLOTS TO FIX (provide new assignments for these only):
-${slotLines.join("\n")}
-
-VALIDATION ERRORS:
-${errorList}
-
-INSTRUCTIONS:
-- Your output MUST include ONLY assignments for the FAILED SLOTS listed above.
-- Do NOT include the locked assignments in your output — they are already saved.
-- You MUST only use staffId aliases from the candidate lists above.
-- Do not assign a staff member who is already locked (listed above) to a failed slot.
-- Do not assign the same staff member to multiple failed slots.
-- If a failed slot cannot be filled, include it in "unfilledSlots".
-- Output valid JSON in the same format (assignments, unfilledSlots, notes).`;
+  return lines.join("\n");
 }
+
+// ────────────────────────────────────────────────────────────
+// Rejection Reason Type
+// ────────────────────────────────────────────────────────────
+
+export type OptimizerRejectionReason =
+  | { type: "invalid"; errors: ValidationError[] }
+  | { type: "lower_quality"; baseScore: number; aiScore: number; details?: string };

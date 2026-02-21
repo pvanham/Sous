@@ -182,15 +182,17 @@ src/
 │   │   ├── staff-availability.service.ts
 │   │   ├── time-off-request.service.ts
 │   │   ├── coverage-analyzer.service.ts
+│   │   ├── deterministic-solver.service.ts  # Greedy constraint solver (Phase 1 of hybrid)
+│   │   ├── schedule-validator.service.ts    # Validation + quality scoring
 │   │   ├── message.service.ts
 │   │   ├── notification.service.ts
 │   │   │
 │   │   └── ai/                       # AI/LLM services
-│   │       ├── scheduling-agent.service.ts
+│   │       ├── scheduling-agent.service.ts  # Orchestrator (solver + AI optimizer)
 │   │       ├── message-agent.service.ts
 │   │       ├── prompt-builder.ts
 │   │       └── prompts/
-│   │           ├── schedule-generation.ts
+│   │           ├── schedule-generation.ts   # Optimizer prompts
 │   │           └── message-parsing.ts
 │   │
 │   └── actions/                      # Server Actions
@@ -801,7 +803,9 @@ _components/
 
 ## 8. AI/LLM Integration
 
-### Architecture
+### Hybrid Schedule Architecture (Deterministic + AI Optimizer)
+
+Schedule generation uses a two-phase approach: a fast deterministic solver produces a guaranteed-valid base schedule, then the AI acts as an optimizer that attempts to improve preference alignment and hour fairness.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -812,80 +816,70 @@ _components/
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    AI Service Layer                          │
+│               Scheduling Service Layer                       │
 │                                                              │
-│   ┌─────────────────────┐    ┌─────────────────────┐        │
-│   │SchedulingAgentService│   │ MessageAgentService │        │
-│   │  • buildContext()    │   │  • parseMessage()   │        │
-│   │  • generateSchedule()│   │  • canHandle()      │        │
-│   │  • refineSchedule()  │   │  • handleRequest()  │        │
-│   └──────────┬──────────┘    └──────────┬──────────┘        │
-│              │                          │                    │
-│              ▼                          ▼                    │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │              Prompt Builder                          │   │
-│   │  prompts/schedule-generation.ts                      │   │
-│   │  prompts/message-parsing.ts                          │   │
-│   └──────────────────────────┬──────────────────────────┘   │
-│                              │                               │
-│                              ▼                               │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │              OpenAI Client                           │   │
-│   │  src/lib/ai/openai-client.ts                         │   │
-│   │  • generateCompletion()                              │   │
-│   │  • generateJSON<T>()                                 │   │
-│   └─────────────────────────────────────────────────────┘   │
+│   SchedulingAgentService (orchestrator)                      │
+│     │                                                        │
+│     ├─ Phase 1: DeterministicSolverService.solve()           │
+│     │    └─ Weighted greedy assignment (~5ms, always valid)   │
+│     │                                                        │
+│     ├─ Phase 2: AI Optimizer (up to 3 attempts)              │
+│     │    ├─ buildOptimizerSystemPrompt()                     │
+│     │    ├─ buildOptimizerUserPrompt(baseSchedule)           │
+│     │    ├─ generateJSON<AIRawDayOutput>()                   │
+│     │    └─ If invalid or lower quality → retry with         │
+│     │       buildOptimizerCorrectionPrompt()                 │
+│     │                                                        │
+│     └─ ScheduleValidatorService                              │
+│          ├─ validate() — hard constraint checks              │
+│          ├─ scoreQuality() — compare base vs optimized       │
+│          └─ recalculateUnfilledSlots() — accuracy fix        │
+│                                                              │
+│   CandidateService (hard filter layer)                       │
+│     └─ Filters: availability, time-off, skills, overlap,    │
+│        clopening (10h gap), overtime                         │
+│                                                              │
+│   Cross-Day Hour Budgeting                                   │
+│     └─ Per-day soft budgets prevent late-week collapse       │
 └─────────────────────────────────────────────────────────────┘
+
+Fallback: If AI is unavailable or cannot beat the base after 3
+attempts, the deterministic base schedule is used — no degraded output.
 ```
+
+### Key Services
+
+| Service | Purpose |
+|---------|---------|
+| `DeterministicSolverService` | Weighted greedy solver, pure TypeScript, no DB/AI calls |
+| `SchedulingAgentService` | Orchestrates Phase 1 + Phase 2, manages week generation |
+| `ScheduleValidatorService` | Hard validation, quality scoring, optimizer retry loop |
+| `CandidateService` | Hard-filters candidates (availability, skills, clopening, etc.) |
 
 ### AI Service Pattern
 
 ```typescript
 // src/server/services/ai/scheduling-agent.service.ts
-import { generateJSON } from "@/lib/ai/openai-client";
-import { buildSchedulingPrompt } from "./prompts/schedule-generation";
-import type { SchedulingContext, GeneratedSchedule } from "@/types/ai-scheduling";
-
 export const SchedulingAgentService = {
-  /**
-   * Build context from all data sources
-   */
-  async buildContext(userId: string, weekStart: Date): Promise<SchedulingContext> {
-    const [config, staff, requirements, existingShifts] = await Promise.all([
-      KitchenConfigService.getByUserId(userId),
-      StaffService.getAllWithAvailability(userId),
-      LaborRequirementService.getByUserId(userId),
-      ShiftService.getByWeek(userId, weekStart),
-    ]);
+  async generateDaySchedule(context, tracking, allStaff, dayHourBudget?) {
+    // Phase 1: Deterministic base (instant, always valid)
+    const baseSchedule = DeterministicSolverService.solve(context, dayHourBudget);
+    const baseScore = ScheduleValidatorService.scoreQuality(baseSchedule, context);
 
-    return { config, staff, requirements, existingShifts, weekStart };
-  },
+    // Phase 2: AI optimizer (up to 3 attempts)
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const aiSchedule = /* AI call with optimizer prompt */;
+      const validation = ScheduleValidatorService.validate(aiSchedule, context, allStaff);
 
-  /**
-   * Generate schedule using LLM
-   */
-  async generateSchedule(context: SchedulingContext): Promise<GeneratedSchedule> {
-    const { systemPrompt, userPrompt } = buildSchedulingPrompt(context);
-    
-    const result = await generateJSON<GeneratedSchedule>(systemPrompt, userPrompt);
-    
-    return result;
-  },
+      if (!validation.valid) continue;  // Invalid → retry
 
-  /**
-   * Validate generated schedule
-   */
-  async validate(schedule: GeneratedSchedule, context: SchedulingContext) {
-    const errors: string[] = [];
-    
-    for (const shift of schedule.shifts) {
-      // Check staff exists
-      // Check availability
-      // Check no overlaps
-      // Check max hours
+      const aiScore = ScheduleValidatorService.scoreQuality(aiSchedule, context);
+      if (aiScore > baseScore) return aiSchedule;  // AI improved it
+
+      // Lower quality → retry with correction prompt
     }
-    
-    return { valid: errors.length === 0, errors };
+
+    return baseSchedule;  // Fallback: deterministic base
   },
 };
 ```
@@ -1147,4 +1141,4 @@ npm run test:phase-2  # Phase 2 verification
 
 ---
 
-*Last Updated: January 2026*
+*Last Updated: February 2026*

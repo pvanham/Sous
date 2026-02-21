@@ -5,7 +5,7 @@
  *
  * Verifies:
  *   1. SchedulingAgentService.buildSchedulingContext -- parallel data fetch
- *   2. Prompt builder -- buildSystemPrompt() and buildDayUserPrompt()
+ *   2. Prompt builder -- buildOptimizerSystemPrompt() and buildOptimizerUserPrompt()
  *   3. Algorithmic fallback -- deterministic assignment logic
  *   4. generateDaySchedule -- AI generation or fallback
  *   5. generateWeekSchedule -- day-by-day orchestration and shift accumulation
@@ -44,9 +44,10 @@ import { SchedulingAgentService } from "../src/server/services/ai/scheduling-age
 
 // Prompt builder imports
 import {
-  buildSystemPrompt,
-  buildDayUserPrompt,
+  buildOptimizerSystemPrompt,
+  buildOptimizerUserPrompt,
 } from "../src/server/services/ai/prompts/schedule-generation";
+import { DeterministicSolverService } from "../src/server/services/deterministic-solver.service";
 
 // Type imports
 import type { KitchenConfigInput } from "../src/lib/validations/kitchen-config.schema";
@@ -422,14 +423,13 @@ async function testBuildSchedulingContext(): Promise<void> {
 async function testPromptBuilder(): Promise<void> {
   logStep("Test 2: Prompt Builder");
 
-  // System prompt
-  const systemPrompt = buildSystemPrompt();
+  // System prompt (optimizer role)
+  const systemPrompt = buildOptimizerSystemPrompt();
   assert(systemPrompt.length > 100, `system prompt is substantial (${systemPrompt.length} chars)`);
   assert(systemPrompt.includes("Sous"), "system prompt mentions Sous");
-  assert(systemPrompt.includes("VALID CANDIDATES"), "system prompt mentions VALID CANDIDATES");
+  assert(systemPrompt.includes("optimizer"), "system prompt mentions optimizer role");
   assert(systemPrompt.includes("staffId"), "system prompt mentions staffId");
   assert(systemPrompt.includes("unfilledSlots"), "system prompt mentions unfilledSlots");
-  assert(systemPrompt.includes("clopening") || systemPrompt.includes("Clopening") || systemPrompt.includes("closing"), "system prompt mentions clopening avoidance");
   assert(systemPrompt.includes("JSON"), "system prompt mentions JSON output");
 
   // Day user prompt
@@ -482,14 +482,19 @@ async function testPromptBuilder(): Promise<void> {
     },
   };
 
-  const userPrompt = buildDayUserPrompt(dayCtx);
+  // Generate a base schedule to pass to the optimizer prompt
+  const baseSchedule = DeterministicSolverService.solve(dayCtx);
+  const idToAlias = new Map<string, string>([["staff-1", "S1"], ["staff-2", "S2"]]);
+
+  const userPrompt = buildOptimizerUserPrompt(dayCtx, baseSchedule, idToAlias);
   assert(userPrompt.length > 50, `user prompt is substantial (${userPrompt.length} chars)`);
   assert(userPrompt.includes("Monday"), "user prompt includes day name");
   assert(userPrompt.includes("Grill"), "user prompt includes station name");
-  assert(userPrompt.includes("staff-1"), "user prompt includes staff IDs");
+  assert(userPrompt.includes("S1") || userPrompt.includes("S2"), "user prompt includes staff aliases");
   assert(userPrompt.includes("Anna Grill"), "user prompt includes staff names");
   assert(userPrompt.includes("5/5"), "user prompt includes proficiency");
   assert(userPrompt.includes("09:00"), "user prompt includes times");
+  assert(userPrompt.includes("BASE SCHEDULE"), "user prompt includes base schedule section");
 
   // Test with previous day closing shifts
   const dayCtxWithClopening: DaySchedulingContext = {
@@ -511,14 +516,14 @@ async function testPromptBuilder(): Promise<void> {
     ],
   };
 
-  const userPromptClopening = buildDayUserPrompt(dayCtxWithClopening);
+  // With clopening, the candidates are now hard-filtered by CandidateService.
+  // The optimizer prompt won't show clopening-specific sections since filtering
+  // happens upstream. Just verify the prompt still generates without error.
+  const baseScheduleClopening = DeterministicSolverService.solve(dayCtxWithClopening);
+  const userPromptClopening = buildOptimizerUserPrompt(dayCtxWithClopening, baseScheduleClopening, idToAlias);
   assert(
-    userPromptClopening.includes("PREVIOUS DAY CLOSING SHIFTS"),
-    "user prompt includes clopening section when closing shifts exist"
-  );
-  assert(
-    userPromptClopening.includes("staff-1"),
-    "clopening section includes the staff ID"
+    userPromptClopening.length > 50,
+    "user prompt with clopening context is substantial"
   );
 }
 
@@ -814,21 +819,11 @@ async function testClopeningDetection(): Promise<void> {
     },
   };
 
-  const prompt = buildDayUserPrompt(dayCtx);
-
-  // The closing shift ends at 21:00, so it should be included
+  // With clopening now handled by CandidateService hard filter,
+  // just verify closing shifts are detected correctly
   if (closingShifts.length > 0) {
-    assert(
-      prompt.includes("PREVIOUS DAY CLOSING SHIFTS"),
-      "Tuesday prompt includes clopening section"
-    );
-    assert(
-      prompt.includes(annaId),
-      "clopening section includes Anna's staff ID"
-    );
+    assert(true, "Tuesday closing shifts detected correctly");
   } else {
-    // Shift ends at 21:00 which is >= 20:00, so it should be found
-    // If not found, the threshold logic might differ
     assert(
       closingShifts.length > 0,
       `found ${closingShifts.length} closing shift(s) for Monday (expected >= 1)`
