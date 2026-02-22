@@ -108,7 +108,7 @@ export function GeneratedShiftPreview({
   return (
     <div className="space-y-4">
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-4 gap-3">
         <SummaryStatCard
           label="Total Shifts"
           value={metadata.totalShiftsCreated}
@@ -122,6 +122,10 @@ export function GeneratedShiftPreview({
           value={metadata.totalUnfilledSlots}
           variant={metadata.totalUnfilledSlots > 0 ? "warning" : "default"}
         />
+        <SummaryStatCard
+          label="Week Score"
+          value={metadata.weekScore}
+        />
       </div>
 
       {/* Generation metadata */}
@@ -130,7 +134,12 @@ export function GeneratedShiftPreview({
           Generated in {(metadata.generationTimeMs / 1000).toFixed(1)}s
         </span>
         {metadata.usedFallback && (
-          <Badge variant="warning">Used algorithmic fallback</Badge>
+          <Badge variant="warning">AI unavailable — used deterministic schedule</Badge>
+        )}
+        {!metadata.usedFallback && metadata.aiImprovedDays > 0 && (
+          <Badge variant="default">
+            AI optimized {metadata.aiImprovedDays}/{metadata.totalOptimizerDays} days
+          </Badge>
         )}
         <span>
           {metadata.tokenUsage.totalTokens.toLocaleString()} tokens used

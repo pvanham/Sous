@@ -1,7 +1,10 @@
 "use server";
 
 import { auth } from "@clerk/nextjs/server";
-import { kitchenConfigSchema } from "@/lib/validations/kitchen-config.schema";
+import {
+  kitchenConfigSchema,
+  aiSettingsSchema,
+} from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -359,5 +362,45 @@ export async function saveKitchenConfig(
     const message =
       error instanceof Error ? error.message : "Failed to save kitchen config";
     return { success: false, error: message };
+  }
+}
+
+/**
+ * Save only the AI settings for the current user's location.
+ * @param input - AI settings data (monthlyGenerationLimit, subscriptionTier)
+ * @returns ActionResponse containing the updated config
+ */
+export async function saveAISettings(
+  input: unknown
+): Promise<ActionResponse<KitchenConfigDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const parsed = aiSettingsSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error:
+          parsed.error.issues[0]?.message ?? "Invalid input",
+      };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    const result = await KitchenConfigService.updateAISettings(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data
+    );
+
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to save",
+    };
   }
 }

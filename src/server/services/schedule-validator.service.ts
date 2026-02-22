@@ -40,7 +40,19 @@ import type {
 // ============================================================
 
 /** Maximum number of self-correction retry attempts */
-const MAX_RETRY_ATTEMPTS = 2;
+const MAX_RETRY_ATTEMPTS = 1;
+
+/** Quality score breakdown for debugging and comparison logging */
+export interface QualityScoreBreakdown {
+  total: number;
+  preferredStationMatches: number;
+  preferredStationCount: number;
+  timePreferenceMatches: number;
+  timePreferenceCount: number;
+  hourBalancePenalty: number;
+  unfilledPenalty: number;
+  unfilledCount: number;
+}
 
 /** Threshold for overtime risk warning (percentage of maxHoursPerWeek) */
 const OVERTIME_RISK_THRESHOLD = 0.8;
@@ -552,6 +564,7 @@ export const ScheduleValidatorService = {
   scoreQuality(
     generated: GeneratedDaySchedule,
     context: DaySchedulingContext,
+    weekHoursOverride?: Map<string, number>,
   ): number {
     let score = 0;
 
@@ -583,8 +596,9 @@ export const ScheduleValidatorService = {
       const candidate = candidateMap.get(a.staffId);
       if (candidate) {
         const slotDur = getShiftDurationHours(a.startTime, a.endTime);
+        const actualWeekHours = weekHoursOverride?.get(a.staffId) ?? candidate.currentWeekHours;
         remainingHours.push(
-          candidate.maxHoursPerWeek - candidate.currentWeekHours - slotDur,
+          candidate.maxHoursPerWeek - actualWeekHours - slotDur,
         );
       }
     }
@@ -600,6 +614,107 @@ export const ScheduleValidatorService = {
     score -= generated.unfilledSlots.length * 10;
 
     return Math.round(score * 100) / 100;
+  },
+
+  /**
+   * Quality score breakdown for debugging and comparison logging.
+   * Same math as scoreQuality() but returns structured components.
+   */
+  scoreQualityDetailed(
+    generated: GeneratedDaySchedule,
+    context: DaySchedulingContext,
+    weekHoursOverride?: Map<string, number>,
+  ): QualityScoreBreakdown {
+    const candidateMap = new Map<string, CandidateDTO>();
+    for (const { candidates } of context.slots) {
+      for (const c of candidates) {
+        if (!candidateMap.has(c.staffId)) {
+          candidateMap.set(c.staffId, c);
+        }
+      }
+    }
+
+    let preferredStationMatches = 0;
+    let preferredStationCount = 0;
+    let timePreferenceMatches = 0;
+    let timePreferenceCount = 0;
+
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (!candidate) continue;
+
+      if (candidate.preferredStations.includes(a.station)) {
+        preferredStationMatches += 3;
+        preferredStationCount++;
+      }
+
+      if (candidate.preference === "preferred") {
+        timePreferenceMatches += 2;
+        timePreferenceCount++;
+      }
+    }
+
+    let hourBalancePenalty = 0;
+    const remainingHours: number[] = [];
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (candidate) {
+        const slotDur = getShiftDurationHours(a.startTime, a.endTime);
+        const actualWeekHours = weekHoursOverride?.get(a.staffId) ?? candidate.currentWeekHours;
+        remainingHours.push(
+          candidate.maxHoursPerWeek - actualWeekHours - slotDur,
+        );
+      }
+    }
+    if (remainingHours.length > 1) {
+      const mean =
+        remainingHours.reduce((s, v) => s + v, 0) / remainingHours.length;
+      const variance =
+        remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
+        remainingHours.length;
+      hourBalancePenalty = variance * 0.1;
+    }
+
+    const unfilledCount = generated.unfilledSlots.length;
+    const unfilledPenalty = unfilledCount * 10;
+
+    const total =
+      preferredStationMatches +
+      timePreferenceMatches -
+      hourBalancePenalty -
+      unfilledPenalty;
+
+    return {
+      total: Math.round(total * 100) / 100,
+      preferredStationMatches,
+      preferredStationCount,
+      timePreferenceMatches,
+      timePreferenceCount,
+      hourBalancePenalty: Math.round(hourBalancePenalty * 100) / 100,
+      unfilledPenalty,
+      unfilledCount,
+    };
+  },
+
+  /**
+   * Aggregate quality score across all days of the week.
+   * Sums per-day scoreQuality() results into a single metric.
+   *
+   * @param days - Array of generated day schedules
+   * @param contexts - Matching array of day scheduling contexts
+   * @param weekHoursOverride - Live week-hours accumulator for accurate balance calc
+   * @returns Aggregate week quality score
+   */
+  scoreWeek(
+    days: GeneratedDaySchedule[],
+    contexts: DaySchedulingContext[],
+    weekHoursOverride?: Map<string, number>,
+  ): number {
+    let total = 0;
+    for (let i = 0; i < days.length; i++) {
+      total += this.scoreQuality(days[i], contexts[i], weekHoursOverride);
+    }
+    return Math.round(total * 100) / 100;
   },
 
   /**
@@ -678,10 +793,6 @@ export const ScheduleValidatorService = {
         ? `${rejectionReason.errors.length} validation error(s)`
         : `lower quality (${rejectionReason.aiScore} vs base ${rejectionReason.baseScore})`;
 
-    console.log(
-      `[ScheduleValidator] Optimizer retry ${attempt}/${MAX_RETRY_ATTEMPTS}: ${reasonStr}`,
-    );
-
     const systemPrompt = buildOptimizerSystemPrompt();
     const correctionPrompt = buildOptimizerCorrectionPrompt(
       baseSchedule,
@@ -691,12 +802,17 @@ export const ScheduleValidatorService = {
       idToAlias,
     );
 
+    const promptLen = correctionPrompt.length;
+    console.log(
+      `[ScheduleValidator] Optimizer retry ${attempt}/${MAX_RETRY_ATTEMPTS}: ${reasonStr} — correction prompt ${promptLen.toLocaleString()} chars`,
+    );
+
     try {
       const { data: rawOutput, usage } = await generateJSON<AIRawDayOutput>(
         systemPrompt,
         correctionPrompt,
         {
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           temperature: 0.2,
           maxTokens: 4000,
           tracking: {

@@ -1,6 +1,9 @@
 import { Types } from "mongoose";
 import KitchenConfig from "@/server/models/KitchenConfig";
-import type { KitchenConfigInput } from "@/lib/validations/kitchen-config.schema";
+import type {
+  KitchenConfigInput,
+  AISettingsInput,
+} from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
 
 /**
@@ -75,6 +78,34 @@ export const KitchenConfigService = {
 
     if (!doc) {
       throw new Error("Failed to upsert kitchen config");
+    }
+
+    return toKitchenConfigDTO(doc);
+  },
+
+  /**
+   * Update only the AI settings for a location's kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param data - Validated AI settings input
+   * @returns Updated KitchenConfigDTO
+   */
+  async updateAISettings(
+    orgId: string,
+    locationId: string,
+    data: AISettingsInput
+  ): Promise<KitchenConfigDTO> {
+    const doc = await KitchenConfig.findOneAndUpdate(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { aiSettings: data } },
+      { new: true, upsert: false }
+    ).lean();
+
+    if (!doc) {
+      throw new Error("Kitchen config not found.");
     }
 
     return toKitchenConfigDTO(doc);

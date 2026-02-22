@@ -82,6 +82,46 @@ export interface DaySchedulingContext {
 }
 
 // ────────────────────────────────────────────────────────────
+// Week-Level Solver Input
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Pre-fetched candidate data for a single day, used as input to
+ * `DeterministicSolverService.solveWeek()`. Contains the same
+ * `SlotCandidates` as `DaySchedulingContext.slots` but without
+ * cross-day dependencies (shifts accumulate inside the solver).
+ */
+export interface WeekDayCandidates {
+  /** Index into the weekDays array (0 = Monday ... 6 = Sunday) */
+  dayIndex: number;
+  /** The calendar date for this day */
+  date: Date;
+  /** ISO date string (YYYY-MM-DD) */
+  dateStr: string;
+  /** Day of week (0 = Sunday, 1 = Monday, ..., 6 = Saturday) */
+  dayOfWeek: number;
+  /** Human-readable day name (e.g., "Monday") */
+  dayName: string;
+  /** Pre-filtered candidates per slot (from CandidateService) */
+  slots: SlotCandidates[];
+}
+
+/**
+ * Input to `DeterministicSolverService.solveWeek()`.
+ * Aggregates all 7 days' candidate pools plus staff hour limits,
+ * allowing the solver to distribute assignments optimally across
+ * the entire week and avoid late-week candidate starvation.
+ */
+export interface WeekSolverInput {
+  /** Candidate pools for each day of the week */
+  days: WeekDayCandidates[];
+  /** staffId -> maxHoursPerWeek (from StaffDTO) */
+  maxHoursLookup: Map<string, number>;
+  /** staffId -> hours already committed from existing DB shifts */
+  existingWeekHours: Map<string, number>;
+}
+
+// ────────────────────────────────────────────────────────────
 // AI Raw Output (what the LLM returns -- before normalization)
 // ────────────────────────────────────────────────────────────
 
@@ -107,6 +147,30 @@ export interface AIRawDayOutput {
     assigned: number;
     reason: string;
   }>;
+  notes: string;
+}
+
+// ────────────────────────────────────────────────────────────
+// AI Swap Output (what the LLM returns in swap-based mode)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Raw JSON structure expected from the LLM in swap-based mode.
+ * Instead of regenerating the full schedule, the AI suggests
+ * specific swaps to improve the hill-climbed base.
+ */
+export interface AISwapOutput {
+  swaps: Array<{
+    /** Slot identifier: "Station HH:MM-HH:MM" */
+    slot: string;
+    /** Alias of the staff member to remove from this slot */
+    removeStaffId: string;
+    /** Alias of the staff member to assign to this slot */
+    assignStaffId: string;
+    /** Brief reasoning for the swap */
+    reasoning: string;
+  }>;
+  /** Summary of changes */
   notes: string;
 }
 
@@ -189,12 +253,18 @@ export interface GenerationMetadata {
   totalShiftsCreated: number;
   /** Total number of unfilled slots across all days */
   totalUnfilledSlots: number;
-  /** Whether the algorithmic fallback was used (AI unavailable) */
+  /** Whether the AI was genuinely unavailable (API error, rate limit) */
   usedFallback: boolean;
+  /** Number of days where AI optimizer improved the base schedule */
+  aiImprovedDays: number;
+  /** Total number of days the optimizer ran on */
+  totalOptimizerDays: number;
   /** Total generation time in milliseconds */
   generationTimeMs: number;
   /** Aggregated token usage across all AI calls */
   tokenUsage: TokenUsage;
+  /** Aggregate quality score across all days of the week */
+  weekScore: number;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -228,6 +298,7 @@ export type ValidationErrorType =
   | "max_hours_exceeded"
   | "skill_mismatch"
   | "invalid_staff_id"
+  | "invalid_swap"
   | "overlap";
 
 /**

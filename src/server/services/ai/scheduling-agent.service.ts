@@ -19,10 +19,14 @@ import { StaffService } from "@/server/services/staff.service";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
-import { ScheduleValidatorService } from "@/server/services/schedule-validator.service";
+import {
+  ScheduleValidatorService,
+  type QualityScoreBreakdown,
+} from "@/server/services/schedule-validator.service";
 import {
   buildOptimizerSystemPrompt,
   buildOptimizerUserPrompt,
+  buildSwapCorrectionPrompt,
 } from "./prompts/schedule-generation";
 import type { StaffDTO } from "@/types/staff";
 import type { ShiftDTO } from "@/types/shift";
@@ -37,9 +41,12 @@ import type {
   UnfilledSlot,
   GenerationMetadata,
   AIRawDayOutput,
+  AISwapOutput,
+  ValidationError,
   ValidationWarning,
+  WeekDayCandidates,
+  WeekSolverInput,
 } from "@/types/ai-scheduling";
-import type { LaborRequirementDTO } from "@/types/labor-requirement";
 import type { OptimizerRejectionReason } from "./prompts/schedule-generation";
 
 // ============================================================
@@ -63,6 +70,52 @@ import type { OptimizerRejectionReason } from "./prompts/schedule-generation";
 /** Closing shift threshold hour -- shifts ending at or after this are "closing shifts" */
 const CLOSING_SHIFT_HOUR = 20;
 
+/** Minimum hours between a closing shift end and the next day's opening shift start */
+const CLOPENING_THRESHOLD_HOURS = 10;
+
+/** Adjacent-day shift data for cross-day clopening validation */
+interface AdjacentDayShifts {
+  previousDay: ShiftDTO[];
+  nextDay: ShiftDTO[];
+}
+
+function timeToMinutesSwap(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+/**
+ * Check whether assigning a staff member to a slot would create a clopening
+ * violation with their shifts on adjacent days.
+ */
+function wouldSwapCreateClopening(
+  staffId: string,
+  slotStartTime: string,
+  slotEndTime: string,
+  adjacentDayShifts: AdjacentDayShifts,
+): boolean {
+  const startMin = timeToMinutesSwap(slotStartTime);
+  const endMin = timeToMinutesSwap(slotEndTime);
+
+  for (const shift of adjacentDayShifts.previousDay) {
+    if (shift.staffId !== staffId) continue;
+    const prevEnd = new Date(shift.end);
+    const prevEndMin = prevEnd.getHours() * 60 + prevEnd.getMinutes();
+    const gapMinutes = (24 * 60 - prevEndMin) + startMin;
+    if (gapMinutes / 60 < CLOPENING_THRESHOLD_HOURS) return true;
+  }
+
+  for (const shift of adjacentDayShifts.nextDay) {
+    if (shift.staffId !== staffId) continue;
+    const nextStart = new Date(shift.start);
+    const nextStartMin = nextStart.getHours() * 60 + nextStart.getMinutes();
+    const gapMinutes = (24 * 60 - endMin) + nextStartMin;
+    if (gapMinutes / 60 < CLOPENING_THRESHOLD_HOURS) return true;
+  }
+
+  return false;
+}
+
 const DAY_NAMES = [
   "Sunday",
   "Monday",
@@ -73,7 +126,7 @@ const DAY_NAMES = [
   "Saturday",
 ] as const;
 
-const MAX_OPTIMIZER_ATTEMPTS = 3;
+const MAX_OPTIMIZER_ATTEMPTS = 2;
 
 // ────────────────────────────────────────────────────────────
 // Logging helpers
@@ -93,6 +146,303 @@ function fmtTokens(t: TokenUsage): string {
   return `${t.totalTokens} tokens ($${(t.estimatedCostCents / 100).toFixed(3)})`;
 }
 
+/**
+ * Format validation errors for terminal logging: type frequency + per-error details.
+ */
+function formatErrorBreakdown(errors: ValidationError[]): string {
+  const byType = new Map<string, ValidationError[]>();
+  for (const e of errors) {
+    const list = byType.get(e.type) ?? [];
+    list.push(e);
+    byType.set(e.type, list);
+  }
+  const typeFreq = [...byType.entries()]
+    .map(([type, list]) => `${list.length}x ${type}`)
+    .join(", ");
+  const lines: string[] = [`  Errors: ${typeFreq}`];
+  for (const e of errors) {
+    const shortMsg = e.message
+      .replace(/^Staff "[^"]+"\s+/, "")
+      .replace(/\.\s*$/, "");
+    lines.push(`    [${e.type}] "${e.staffName}" — ${shortMsg}`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Format a quality score breakdown for terminal logging.
+ */
+function formatScoreBreakdown(
+  label: string,
+  b: QualityScoreBreakdown,
+): string {
+  const prefStn = `${b.preferredStationCount}x(+${b.preferredStationMatches})`;
+  const prefTime = `${b.timePreferenceCount}x(+${b.timePreferenceMatches})`;
+  const hrsBal = b.hourBalancePenalty.toFixed(1);
+  const unfilled = `${b.unfilledCount}(-${b.unfilledPenalty})`;
+  return `  ${label.padEnd(4)}: pref_stn: ${prefStn} | pref_time: ${prefTime} | hrs_bal: -${hrsBal} | unfilled: ${unfilled} = ${b.total}`;
+}
+
+/**
+ * Format the delta between two score breakdowns.
+ */
+function formatScoreDelta(
+  base: QualityScoreBreakdown,
+  ai: QualityScoreBreakdown,
+): string {
+  const prefStnDelta = ai.preferredStationCount - base.preferredStationCount;
+  const prefTimeDelta = ai.timePreferenceCount - base.timePreferenceCount;
+  const hrsBalDelta = (base.hourBalancePenalty - ai.hourBalancePenalty).toFixed(
+    1,
+  );
+  const netDelta = (ai.total - base.total).toFixed(1);
+  const parts: string[] = [];
+  if (prefStnDelta !== 0) parts.push(`pref_stn: ${prefStnDelta > 0 ? "+" : ""}${prefStnDelta}`);
+  if (prefTimeDelta !== 0) parts.push(`pref_time: ${prefTimeDelta > 0 ? "+" : ""}${prefTimeDelta}`);
+  parts.push(`hrs_bal: ${Number(hrsBalDelta) >= 0 ? "+" : ""}${hrsBalDelta}`);
+  parts.push(`net: ${Number(netDelta) >= 0 ? "+" : ""}${netDelta}`);
+  return `  Delta: ${parts.join(" | ")}`;
+}
+
+/** Result of applying AI swap suggestions to a base schedule */
+interface SwapApplicationResult {
+  schedule: GeneratedDaySchedule;
+  appliedCount: number;
+  skippedSwaps: Array<{ slot: string; reason: string }>;
+}
+
+/**
+ * Apply AI-suggested swaps to a base schedule one at a time.
+ * Each swap is independently validated: invalid swaps are skipped,
+ * allowing partial success. This eliminates the double-booking
+ * problem since the running assignedStaff set is always consistent.
+ */
+function applySwaps(
+  baseSchedule: GeneratedDaySchedule,
+  swaps: AISwapOutput["swaps"],
+  slots: SlotCandidates[],
+  aliasToId: Map<string, string>,
+  adjacentDayShifts?: AdjacentDayShifts,
+): SwapApplicationResult {
+  if (swaps.length === 0) {
+    return { schedule: baseSchedule, appliedCount: 0, skippedSwaps: [] };
+  }
+
+  const assignments = baseSchedule.assignments.map((a) => ({ ...a }));
+
+  // Build slot key -> assignment index map
+  // Slot format: "Station HH:MM-HH:MM"
+  const assignmentBySlot = new Map<string, number>();
+  for (let i = 0; i < assignments.length; i++) {
+    const key = `${assignments[i].station} ${assignments[i].startTime}-${assignments[i].endTime}`;
+    assignmentBySlot.set(key, i);
+  }
+
+  // Build per-slot valid candidate sets using the same key format
+  const slotValidCandidates = new Map<string, Set<string>>();
+  for (const { slot, candidates } of slots) {
+    const key = `${slot.station} ${slot.startTime}-${slot.endTime}`;
+    const validIds = new Set<string>();
+    for (const c of candidates) {
+      validIds.add(c.staffId);
+    }
+    slotValidCandidates.set(key, validIds);
+  }
+
+  // Staff name lookup from candidates
+  const staffNames = new Map<string, string>();
+  for (const { candidates } of slots) {
+    for (const c of candidates) {
+      staffNames.set(c.staffId, c.staffName);
+    }
+  }
+
+  const assignedStaff = new Set(assignments.map((a) => a.staffId));
+
+  let appliedCount = 0;
+  const skippedSwaps: Array<{ slot: string; reason: string }> = [];
+
+  for (const swap of swaps) {
+    const resolvedRemoveId = aliasToId.get(swap.removeStaffId) ?? swap.removeStaffId;
+    const resolvedAssignId = aliasToId.get(swap.assignStaffId) ?? swap.assignStaffId;
+
+    const assignIdx = assignmentBySlot.get(swap.slot);
+    if (assignIdx === undefined) {
+      skippedSwaps.push({ slot: swap.slot, reason: `Slot "${swap.slot}" not found in schedule` });
+      continue;
+    }
+
+    if (assignments[assignIdx].staffId !== resolvedRemoveId) {
+      skippedSwaps.push({
+        slot: swap.slot,
+        reason: `"${swap.removeStaffId}" is not currently assigned to ${swap.slot} (current: "${assignments[assignIdx].staffName}")`,
+      });
+      continue;
+    }
+
+    const validForSlot = slotValidCandidates.get(swap.slot);
+    if (!validForSlot?.has(resolvedAssignId)) {
+      skippedSwaps.push({
+        slot: swap.slot,
+        reason: `"${swap.assignStaffId}" is not a valid candidate for ${swap.slot}`,
+      });
+      continue;
+    }
+
+    if (assignedStaff.has(resolvedAssignId)) {
+      skippedSwaps.push({
+        slot: swap.slot,
+        reason: `"${swap.assignStaffId}" is already assigned to another slot today`,
+      });
+      continue;
+    }
+
+    if (adjacentDayShifts) {
+      const slotParts = swap.slot.match(/(\d{2}:\d{2})-(\d{2}:\d{2})$/);
+      if (slotParts) {
+        const [, slotStart, slotEnd] = slotParts;
+        if (wouldSwapCreateClopening(resolvedAssignId, slotStart, slotEnd, adjacentDayShifts)) {
+          skippedSwaps.push({
+            slot: swap.slot,
+            reason: `"${swap.assignStaffId}" would create clopening with adjacent day shift`,
+          });
+          continue;
+        }
+      }
+    }
+
+    // Apply the swap
+    assignedStaff.delete(resolvedRemoveId);
+    assignedStaff.add(resolvedAssignId);
+
+    assignments[assignIdx] = {
+      ...assignments[assignIdx],
+      staffId: resolvedAssignId,
+      staffName: staffNames.get(resolvedAssignId) ?? swap.assignStaffId,
+      reasoning: swap.reasoning || "AI swap",
+    };
+
+    appliedCount++;
+  }
+
+  return {
+    schedule: {
+      ...baseSchedule,
+      assignments,
+    },
+    appliedCount,
+    skippedSwaps,
+  };
+}
+
+/**
+ * Greedy swap selection: when applying all swaps together doesn't improve
+ * the score, try each swap independently against the base and keep only
+ * the ones that individually increase the running score.
+ *
+ * This is the "deterministic fix-up" — it salvages good individual swaps
+ * from a batch that collectively hurts the score.
+ */
+function greedySwapSelection(
+  baseSchedule: GeneratedDaySchedule,
+  rawSwaps: AISwapOutput["swaps"],
+  slots: SlotCandidates[],
+  aliasToId: Map<string, string>,
+  context: DaySchedulingContext,
+  adjacentDayShifts?: AdjacentDayShifts,
+  weekHoursAccumulator?: Map<string, number>,
+): SwapApplicationResult {
+  let currentSchedule: GeneratedDaySchedule = {
+    ...baseSchedule,
+    assignments: baseSchedule.assignments.map((a) => ({ ...a })),
+  };
+  let currentScore = ScheduleValidatorService.scoreQuality(
+    currentSchedule,
+    context,
+    weekHoursAccumulator,
+  );
+  let totalApplied = 0;
+  const allSkipped: Array<{ slot: string; reason: string }> = [];
+
+  for (const swap of rawSwaps) {
+    const { schedule: candidate, appliedCount, skippedSwaps } = applySwaps(
+      currentSchedule,
+      [swap],
+      slots,
+      aliasToId,
+      adjacentDayShifts,
+    );
+
+    if (appliedCount === 0) {
+      allSkipped.push(...skippedSwaps);
+      continue;
+    }
+
+    const newScore = ScheduleValidatorService.scoreQuality(candidate, context, weekHoursAccumulator);
+    if (newScore > currentScore) {
+      currentSchedule = candidate;
+      currentScore = newScore;
+      totalApplied++;
+    } else {
+      allSkipped.push({
+        slot: swap.slot,
+        reason: `Swap would not improve score (${newScore.toFixed(2)} <= ${currentScore.toFixed(2)})`,
+      });
+    }
+  }
+
+  return {
+    schedule: currentSchedule,
+    appliedCount: totalApplied,
+    skippedSwaps: allSkipped,
+  };
+}
+
+/**
+ * Log AI swap results for terminal output.
+ */
+function logSwapResults(
+  dateStr: string,
+  swaps: AISwapOutput["swaps"],
+  appliedCount: number,
+  skippedSwaps: Array<{ slot: string; reason: string }>,
+  aliasToId: Map<string, string>,
+): void {
+  if (swaps.length === 0) {
+    console.log(`${LOG_PREFIX} ${dateStr} AI suggested 0 swaps (base is optimal)`);
+    return;
+  }
+
+  const appliedLines: string[] = [];
+  const skippedSet = new Set(skippedSwaps.map((s) => s.slot));
+
+  for (const swap of swaps) {
+    if (!skippedSet.has(swap.slot)) {
+      appliedLines.push(
+        `  ${swap.slot}: "${swap.removeStaffId}" -> "${swap.assignStaffId}" (${swap.reasoning})`,
+      );
+    }
+  }
+
+  if (appliedLines.length > 0) {
+    console.log(
+      `${LOG_PREFIX} ${dateStr} AI swaps applied (${appliedCount}/${swaps.length}):`,
+    );
+    for (const line of appliedLines) {
+      console.log(line);
+    }
+  }
+
+  if (skippedSwaps.length > 0) {
+    console.log(
+      `${LOG_PREFIX} ${dateStr} AI swaps skipped (${skippedSwaps.length}):`,
+    );
+    for (const s of skippedSwaps) {
+      console.log(`  ${s.slot}: ${s.reason}`);
+    }
+  }
+}
+
 // ────────────────────────────────────────────────────────────
 // Usage tracking options
 // ────────────────────────────────────────────────────────────
@@ -102,6 +452,15 @@ interface TrackingOptions {
   locationId: string;
   clerkUserId: string;
   action: "schedule_generation";
+}
+
+/** Accumulator for weekly optimizer stats (passed by generateWeekSchedule) */
+interface OptimizerStatsAccumulator {
+  aiImproved: number;
+  usedBase: number;
+  totalAttempts: number;
+  allErrors: ValidationError[];
+  scoreDeltas: number[];
 }
 
 // ────────────────────────────────────────────────────────────
@@ -116,31 +475,6 @@ function getClosingShifts(shifts: ShiftDTO[], date: Date): ShiftDTO[] {
     const endHour = new Date(s.end).getHours();
     return endHour >= CLOSING_SHIFT_HOUR;
   });
-}
-
-function calculateDayPriority(
-  laborRequirements: LaborRequirementDTO[],
-  weekDays: Date[],
-): number[] {
-  const difficulties: { dayIndex: number; score: number }[] = [];
-
-  for (let i = 0; i < weekDays.length; i++) {
-    const dayOfWeek = getDayOfWeek(weekDays[i]);
-    const dayReqs = laborRequirements.filter((r) => r.dayOfWeek === dayOfWeek);
-
-    let score = 0;
-    for (const req of dayReqs) {
-      const [startH, startM] = req.startTime.split(":").map(Number);
-      const [endH, endM] = req.endTime.split(":").map(Number);
-      const durationHours = (endH * 60 + endM - (startH * 60 + startM)) / 60;
-      score += req.minStaff * durationHours;
-    }
-
-    difficulties.push({ dayIndex: i, score });
-  }
-
-  difficulties.sort((a, b) => b.score - a.score);
-  return difficulties.map((d) => d.dayIndex);
 }
 
 function assignmentToSyntheticShift(
@@ -365,27 +699,36 @@ export const SchedulingAgentService = {
    * Generate a schedule for ONE day using the hybrid approach:
    *
    * Phase 1: DeterministicSolverService produces a guaranteed-valid base
-   * Phase 2: AI optimizer tries to improve the base (up to 3 attempts)
-   *          - If AI output is valid AND scores higher than base, use it
-   *          - If invalid or lower quality, retry with correction prompt
-   *          - After all attempts, fall back to the deterministic base
+   *          schedule using greedy assignment + hill-climbing local search.
+   * Phase 2: AI swap optimizer suggests specific staff swaps to improve
+   *          the base. Each swap is independently validated; invalid swaps
+   *          are skipped (partial success). If batch swaps lower the score,
+   *          greedy swap selection salvages individually improving swaps.
+   *          Falls back to the hill-climbed base if AI cannot improve.
    *
    * @param context - Day scheduling context with pre-filtered candidates
    * @param tracking - Usage tracking options
    * @param allStaff - All active staff DTOs (for validation lookups)
-   * @param dayHourBudget - Optional soft hour budget for this day
+   * @param presolvedBase - Optional pre-solved base schedule from solveWeek() (skips Phase 1)
+   * @param stats - Optional optimizer stats accumulator
+   * @param adjacentDayShifts - Optional adjacent-day shifts for cross-day clopening validation in AI swaps
    * @returns GeneratedDaySchedule with shift assignments, token usage, and warnings
    */
   async generateDaySchedule(
     context: DaySchedulingContext,
     tracking: TrackingOptions,
     allStaff: StaffDTO[] = [],
-    dayHourBudget?: number,
+    presolvedBase?: GeneratedDaySchedule,
+    stats?: OptimizerStatsAccumulator,
+    adjacentDayShifts?: AdjacentDayShifts,
+    weekHoursAccumulator?: Map<string, number>,
   ): Promise<{
     daySchedule: GeneratedDaySchedule;
     tokenUsage: TokenUsage;
     usedFallback: boolean;
+    aiImproved: boolean;
     warnings: ValidationWarning[];
+    optimizerOutcome: string;
   }> {
     const dateStr = context.date.toISOString().split("T")[0];
     const dayName = context.dayName;
@@ -401,7 +744,9 @@ export const SchedulingAgentService = {
         },
         tokenUsage: emptyTokenUsage(),
         usedFallback: false,
+        aiImproved: false,
         warnings: [],
+        optimizerOutcome: "",
       };
     }
 
@@ -429,88 +774,106 @@ export const SchedulingAgentService = {
         },
         tokenUsage: emptyTokenUsage(),
         usedFallback: false,
+        aiImproved: false,
         warnings: [],
+        optimizerOutcome: "",
       };
     }
 
     // ── Phase 1: Deterministic Base Schedule ──────────────────
-    const solverStart = Date.now();
-    const baseSchedule = DeterministicSolverService.solve(
-      context,
-      dayHourBudget,
-    );
-    const solverElapsed = Date.now() - solverStart;
+    let baseSchedule: GeneratedDaySchedule;
+
+    if (presolvedBase) {
+      baseSchedule = presolvedBase;
+    } else {
+      const solverStart = Date.now();
+      baseSchedule = DeterministicSolverService.solve(context);
+      const solverElapsed = Date.now() - solverStart;
+      console.log(
+        `${LOG_PREFIX} ${dateStr} Solver: ${baseSchedule.assignments.length} assignments, ` +
+          `${baseSchedule.unfilledSlots.length} unfilled (${fmtMs(solverElapsed)})`,
+      );
+    }
 
     const baseScore = ScheduleValidatorService.scoreQuality(
       baseSchedule,
       context,
+      weekHoursAccumulator,
+    );
+    const baseBreakdownForPrompt = ScheduleValidatorService.scoreQualityDetailed(
+      baseSchedule,
+      context,
+      weekHoursAccumulator,
     );
 
-    console.log(
-      `${LOG_PREFIX} ${dateStr} Solver: ${baseSchedule.assignments.length} assignments, ` +
-        `${baseSchedule.unfilledSlots.length} unfilled, score=${baseScore} (${fmtMs(solverElapsed)})`,
-    );
-
-    // ── Phase 2: AI Optimizer (up to 3 attempts) ─────────────
+    // ── Phase 2: AI Swap Optimizer (up to 2 attempts) ───────
     const { idToAlias, aliasToId } = buildAliasMap(context.slots);
     let accumulatedTokenUsage = emptyTokenUsage();
     let bestSchedule = baseSchedule;
     let aiImproved = false;
-    let lastRejectedOutput: GeneratedDaySchedule | undefined;
+    let aiUnavailable = false;
+    let optimizerOutcome = `USED BASE — AI failed ${MAX_OPTIMIZER_ATTEMPTS}/${MAX_OPTIMIZER_ATTEMPTS}`;
+    let lastFailedSwapDescriptions: string[] = [];
     let lastRejectionReason: OptimizerRejectionReason | undefined;
 
-    try {
-      for (let attempt = 1; attempt <= MAX_OPTIMIZER_ATTEMPTS; attempt++) {
-        let aiSchedule: GeneratedDaySchedule;
-        let attemptUsage: TokenUsage;
+    // Pre-check: count free (unassigned) candidates across all slots
+    const assignedStaffIds = new Set(baseSchedule.assignments.map((a) => a.staffId));
+    const freeCandidateIds = new Set<string>();
+    for (const { candidates } of context.slots) {
+      for (const c of candidates) {
+        if (!assignedStaffIds.has(c.staffId)) {
+          freeCandidateIds.add(c.staffId);
+        }
+      }
+    }
 
+    if (freeCandidateIds.size < 2) {
+      optimizerOutcome = `SKIPPED — only ${freeCandidateIds.size} free candidate(s)`;
+      if (stats) {
+        stats.usedBase++;
+        stats.totalAttempts += 0;
+      }
+      console.log(
+        `${LOG_PREFIX} ${dateStr} Skipping AI optimizer — insufficient free candidates (${freeCandidateIds.size})`,
+      );
+    }
+
+    if (freeCandidateIds.size >= 2) try {
+      for (let attempt = 1; attempt <= MAX_OPTIMIZER_ATTEMPTS; attempt++) {
         const aiStart = Date.now();
 
+        const systemPrompt = buildOptimizerSystemPrompt();
+        let userPrompt: string;
+
         if (attempt === 1) {
-          const systemPrompt = buildOptimizerSystemPrompt();
-          const userPrompt = buildOptimizerUserPrompt(
+          userPrompt = buildOptimizerUserPrompt(
             context,
             baseSchedule,
             idToAlias,
+            baseBreakdownForPrompt,
           );
-
-          const { data: rawOutput, usage } =
-            await generateJSON<AIRawDayOutput>(systemPrompt, userPrompt, {
-              model: "gpt-4o-mini",
-              temperature: 0.3,
-              maxTokens: 4000,
-              tracking: {
-                orgId: tracking.orgId,
-                locationId: tracking.locationId,
-                clerkUserId: tracking.clerkUserId,
-                action: tracking.action,
-              },
-            });
-
-          aiSchedule = normalizeAIOutput(
-            rawOutput,
-            context.slots,
-            dateStr,
-            dayName,
-            aliasToId,
-          );
-          attemptUsage = usage;
         } else {
-          const { daySchedule: corrected, tokenUsage: retryUsage } =
-            await ScheduleValidatorService.retryOptimization(
-              baseSchedule,
-              lastRejectedOutput!,
-              lastRejectionReason!,
-              context,
-              tracking,
-              attempt - 1,
-              idToAlias,
-              aliasToId,
-            );
-
-          aiSchedule = corrected;
-          attemptUsage = retryUsage;
+          userPrompt = buildSwapCorrectionPrompt(
+            baseSchedule,
+            lastFailedSwapDescriptions,
+            lastRejectionReason!,
+            context,
+            idToAlias,
+          );
         }
+
+        const { data: swapOutput, usage: attemptUsage } =
+          await generateJSON<AISwapOutput>(systemPrompt, userPrompt, {
+            model: "gpt-4o",
+            temperature: attempt === 1 ? 0.3 : 0.2,
+            maxTokens: 2000,
+            tracking: {
+              orgId: tracking.orgId,
+              locationId: tracking.locationId,
+              clerkUserId: tracking.clerkUserId,
+              action: tracking.action,
+            },
+          });
 
         const aiElapsed = Date.now() - aiStart;
         accumulatedTokenUsage = mergeTokenUsage(
@@ -518,47 +881,149 @@ export const SchedulingAgentService = {
           attemptUsage,
         );
 
-        // Validate the AI output
-        const validation = ScheduleValidatorService.validate(
-          aiSchedule,
-          context,
-          allStaff,
-        );
+        const receivedSwaps = swapOutput.swaps ?? [];
 
-        if (!validation.valid) {
+        // No swaps suggested — base is already optimal per AI
+        if (receivedSwaps.length === 0) {
+          console.log(
+            `${LOG_PREFIX} ${dateStr} Optimizer attempt ${attempt}/${MAX_OPTIMIZER_ATTEMPTS}: ` +
+              `NO SWAPS suggested (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
+          );
+          optimizerOutcome = "USED BASE — AI found no improvements";
+          break;
+        }
+
+        // Apply swaps sequentially with validation (includes cross-day clopening check)
+        const { schedule: swappedSchedule, appliedCount, skippedSwaps } =
+          applySwaps(baseSchedule, receivedSwaps, context.slots, aliasToId, adjacentDayShifts);
+
+        logSwapResults(dateStr, receivedSwaps, appliedCount, skippedSwaps, aliasToId);
+
+        if (appliedCount === 0) {
+          // All swaps were invalid -- track with accurate error type
+          const swapBySlot = new Map(receivedSwaps.map((sw) => [sw.slot, sw]));
+          const syntheticErrors: ValidationError[] = skippedSwaps.map((s, idx) => {
+            const originalSwap = swapBySlot.get(s.slot);
+            const resolvedId = originalSwap
+              ? (aliasToId.get(originalSwap.assignStaffId) ?? originalSwap.assignStaffId)
+              : "";
+            return {
+              type: "invalid_swap" as const,
+              staffId: resolvedId,
+              staffName: originalSwap?.assignStaffId ?? "",
+              shiftIndex: idx,
+              message: `Swap for ${s.slot}: ${s.reason}`,
+              correctionHint: s.reason,
+            };
+          });
+          if (stats) stats.allErrors.push(...syntheticErrors);
+
           console.warn(
             `${LOG_PREFIX} ${dateStr} Optimizer attempt ${attempt}/${MAX_OPTIMIZER_ATTEMPTS}: ` +
-              `INVALID (${validation.errors.length} error(s)) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
+              `ALL SWAPS INVALID (${skippedSwaps.length} skipped) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
           );
-          lastRejectedOutput = aiSchedule;
+          lastFailedSwapDescriptions = skippedSwaps.map(
+            (s) => `Swap for ${s.slot}: ${s.reason}`,
+          );
           lastRejectionReason = {
             type: "invalid",
-            errors: validation.errors,
+            errors: syntheticErrors,
           };
           continue;
         }
 
-        // Valid -- check quality score
+        // Some swaps applied — score the result
         const aiScore = ScheduleValidatorService.scoreQuality(
-          aiSchedule,
+          swappedSchedule,
           context,
+          weekHoursAccumulator,
         );
 
         if (aiScore > baseScore) {
+          const scoreDelta = aiScore - baseScore;
+          optimizerOutcome = `AI IMPROVED +${scoreDelta.toFixed(1)} on attempt ${attempt} (${appliedCount}/${receivedSwaps.length} swaps)`;
+          if (stats) {
+            stats.aiImproved++;
+            stats.totalAttempts += attempt;
+            stats.scoreDeltas.push(scoreDelta);
+          }
           console.log(
             `${LOG_PREFIX} ${dateStr} Optimizer attempt ${attempt}/${MAX_OPTIMIZER_ATTEMPTS}: ` +
-              `ACCEPTED (score ${aiScore} > base ${baseScore}) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
+              `ACCEPTED (score ${aiScore} > base ${baseScore}, ${appliedCount} swaps) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
           );
-          bestSchedule = aiSchedule;
+          bestSchedule = swappedSchedule;
           aiImproved = true;
           break;
         }
 
+        // Applied swaps but score didn't improve — try greedy fix-up
         console.warn(
           `${LOG_PREFIX} ${dateStr} Optimizer attempt ${attempt}/${MAX_OPTIMIZER_ATTEMPTS}: ` +
-            `LOWER QUALITY (score ${aiScore} <= base ${baseScore}) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
+            `batch score ${aiScore} <= base ${baseScore} — trying greedy swap selection...`,
         );
-        lastRejectedOutput = aiSchedule;
+
+        const greedy = greedySwapSelection(
+          baseSchedule,
+          receivedSwaps,
+          context.slots,
+          aliasToId,
+          context,
+          adjacentDayShifts,
+          weekHoursAccumulator,
+        );
+
+        if (greedy.appliedCount > 0) {
+          const greedyScore = ScheduleValidatorService.scoreQuality(
+            greedy.schedule,
+            context,
+            weekHoursAccumulator,
+          );
+
+          if (greedyScore > baseScore) {
+            const scoreDelta = greedyScore - baseScore;
+            optimizerOutcome = `AI IMPROVED +${scoreDelta.toFixed(1)} on attempt ${attempt} (greedy: ${greedy.appliedCount}/${receivedSwaps.length} swaps)`;
+            if (stats) {
+              stats.aiImproved++;
+              stats.totalAttempts += attempt;
+              stats.scoreDeltas.push(scoreDelta);
+            }
+            console.log(
+              `${LOG_PREFIX} ${dateStr} Greedy fix-up: ACCEPTED (score ${greedyScore} > base ${baseScore}, ${greedy.appliedCount} swaps kept) (${fmtMs(aiElapsed)}) | ${fmtTokens(attemptUsage)}`,
+            );
+            bestSchedule = greedy.schedule;
+            aiImproved = true;
+            break;
+          }
+        }
+
+        // Greedy didn't help either — log comparison and retry
+        const baseBreakdown = ScheduleValidatorService.scoreQualityDetailed(
+          baseSchedule,
+          context,
+        );
+        const aiBreakdown = ScheduleValidatorService.scoreQualityDetailed(
+          swappedSchedule,
+          context,
+        );
+        console.warn(
+          `${LOG_PREFIX} ${dateStr} Optimizer attempt ${attempt}/${MAX_OPTIMIZER_ATTEMPTS}: ` +
+            `LOWER QUALITY (score ${aiScore} <= base ${baseScore}, greedy also failed) (${fmtMs(aiElapsed)})`,
+        );
+        console.warn(
+          formatScoreBreakdown("Base", baseBreakdown) +
+            "\n" +
+            formatScoreBreakdown("AI", aiBreakdown) +
+            "\n" +
+            formatScoreDelta(baseBreakdown, aiBreakdown),
+        );
+        lastFailedSwapDescriptions = [
+          `Applied ${appliedCount} swaps but score decreased from ${baseScore} to ${aiScore}. Greedy selection also couldn't improve the base.`,
+        ];
+        if (skippedSwaps.length > 0) {
+          lastFailedSwapDescriptions.push(
+            ...skippedSwaps.map((s) => `Swap for ${s.slot}: ${s.reason}`),
+          );
+        }
         lastRejectionReason = {
           type: "lower_quality",
           baseScore,
@@ -571,6 +1036,12 @@ export const SchedulingAgentService = {
         error instanceof AILimitExceededError ||
         error instanceof AIServiceUnavailableError
       ) {
+        aiUnavailable = true;
+        optimizerOutcome = "USED BASE — AI unavailable";
+        if (stats) {
+          stats.usedBase++;
+          stats.totalAttempts += 1;
+        }
         console.warn(
           `${LOG_PREFIX} ${dateStr} AI unavailable: ${error.message}. Using deterministic base.`,
         );
@@ -579,7 +1050,11 @@ export const SchedulingAgentService = {
       }
     }
 
-    if (!aiImproved) {
+    if (!aiImproved && freeCandidateIds.size >= 2) {
+      if (stats) {
+        stats.usedBase++;
+        stats.totalAttempts += MAX_OPTIMIZER_ATTEMPTS;
+      }
       console.log(
         `${LOG_PREFIX} ${dateStr} Using deterministic base (score=${baseScore})`,
       );
@@ -595,17 +1070,24 @@ export const SchedulingAgentService = {
     return {
       daySchedule: bestSchedule,
       tokenUsage: accumulatedTokenUsage,
-      usedFallback: !aiImproved,
+      usedFallback: aiUnavailable,
+      aiImproved,
       warnings: finalValidation.warnings,
+      optimizerOutcome,
     };
   },
 
   /**
-   * Generate a full week's schedule using day-by-day chunking.
+   * Generate a full week's schedule using week-level deterministic solving
+   * followed by per-day AI optimization.
    *
-   * Sequential processing is critical:
-   * - CandidateService needs prior days' shifts for overlap + clopening
-   * - Week hours accumulate across days
+   * Three-phase approach:
+   * 1. Pre-fetch candidates for ALL 7 days (using only existing DB shifts)
+   * 2. Week-level deterministic solve (global tightness sort + hill climbing)
+   * 3. Per-day AI optimizer attempts on top of the week-level base
+   *
+   * The week-level solve prevents late-week candidate starvation by
+   * considering all slots across all days simultaneously.
    *
    * @param context - Full week scheduling context
    * @returns GeneratedSchedule with all days and metadata
@@ -633,8 +1115,16 @@ export const SchedulingAgentService = {
     let totalTokenUsage = emptyTokenUsage();
     let usedFallbackAnyDay = false;
     const allWarnings: ValidationWarning[] = [];
+    const optimizerStats: OptimizerStatsAccumulator = {
+      aiImproved: 0,
+      usedBase: 0,
+      totalAttempts: 0,
+      allErrors: [],
+      scoreDeltas: [],
+    };
 
     const dayResults: GeneratedDaySchedule[] = [];
+    const dayContexts: DaySchedulingContext[] = [];
     let runningShiftCount = 0;
 
     const weekHoursAccumulator = initWeekHoursFromShifts(
@@ -642,54 +1132,24 @@ export const SchedulingAgentService = {
       context.weekStart,
     );
 
-    const generationOrder = calculateDayPriority(
-      context.laborRequirements,
-      weekDays,
-    );
+    // ══════════════════════════════════════════════════════════
+    // Phase 1: Pre-fetch candidates for ALL days
+    // ══════════════════════════════════════════════════════════
+    // Candidates are fetched using only existing DB shifts (no synthetic).
+    // The week-level solver handles cross-day hour distribution and
+    // clopening from generated shifts internally.
+    const prefetchStart = Date.now();
+    const allDayCandidates: WeekDayCandidates[] = [];
+    const dayContextMap = new Map<number, {
+      date: Date;
+      dayOfWeek: number;
+      dayName: string;
+      dateStr: string;
+      operatingHours: { open: string; close: string } | null;
+      slotCandidates: SlotCandidates[];
+    }>();
 
-    // ── Cross-day hour budgeting ─────────────────────────────
-    // Calculate per-day hour targets to prevent late-week collapse.
-    // Budget is proportional to each day's demand relative to total.
-    const totalAvailableHours = context.staff.reduce(
-      (sum, s) => sum + s.maxHoursPerWeek,
-      0,
-    );
-    const dayHourBudgets = new Map<number, number>();
-    let totalNeededHours = 0;
-    const dayNeededHoursMap = new Map<number, number>();
-
-    for (let d = 0; d < weekDays.length; d++) {
-      const dow = getDayOfWeek(weekDays[d]);
-      const dayReqs = context.laborRequirements.filter(
-        (r) => r.dayOfWeek === dow,
-      );
-      let dayHours = 0;
-      for (const req of dayReqs) {
-        dayHours +=
-          getSlotDurationHours(req.startTime, req.endTime) * req.preferredStaff;
-      }
-      dayNeededHoursMap.set(d, dayHours);
-      totalNeededHours += dayHours;
-    }
-
-    if (totalNeededHours > 0) {
-      for (let d = 0; d < weekDays.length; d++) {
-        const dayNeeded = dayNeededHoursMap.get(d) ?? 0;
-        const budget =
-          totalAvailableHours * (dayNeeded / totalNeededHours);
-        dayHourBudgets.set(d, budget);
-      }
-    }
-
-    console.log(
-      `${LOG_PREFIX} Hour budgets: total available=${totalAvailableHours.toFixed(0)}h, ` +
-        `total needed=${totalNeededHours.toFixed(0)}h`,
-    );
-
-    let step = 0;
-    for (const i of generationOrder) {
-      step++;
-      const dayStart = Date.now();
+    for (let i = 0; i < weekDays.length; i++) {
       const date = weekDays[i];
       const dayOfWeek = getDayOfWeek(date);
       const dayName = DAY_NAMES[dayOfWeek];
@@ -707,7 +1167,7 @@ export const SchedulingAgentService = {
       if (!operatingHours || dayRequirements.length === 0) {
         const reason = !operatingHours ? "closed" : "no shift slots";
         console.log(
-          `${LOG_PREFIX} [${step}/7] ${dayName} ${dateStr} — skipped (${reason}) [${fmtMs(Date.now() - startTime)} elapsed]`,
+          `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — skipped (${reason})`,
         );
         dayResults.push({
           date: dateStr,
@@ -721,66 +1181,162 @@ export const SchedulingAgentService = {
         continue;
       }
 
-      console.log(
-        `${LOG_PREFIX} [${step}/7] ${dayName} ${dateStr} — ${dayRequirements.length} shift slots, hours ${operatingHours.open}-${operatingHours.close}`,
-      );
-
-      // Get previous day's closing shifts for clopening hard filter
       let previousDayClosingShifts: ShiftDTO[] = [];
       if (i > 0) {
         const previousDay = weekDays[i - 1];
+        previousDayClosingShifts = getClosingShifts(
+          context.existingShifts,
+          previousDay,
+        );
+      }
+
+      const slotCandidates = await CandidateService.getCandidatesForDay(
+        context.orgId,
+        context.locationId,
+        date,
+        dayRequirements,
+        context.existingShifts,
+        weekHoursAccumulator,
+        previousDayClosingShifts,
+      );
+
+      const totalCandidates = slotCandidates.reduce(
+        (sum, s) => sum + s.candidates.length, 0,
+      );
+      console.log(
+        `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — ${totalCandidates} candidates across ${slotCandidates.length} slot(s)`,
+      );
+
+      allDayCandidates.push({
+        dayIndex: i,
+        date,
+        dateStr,
+        dayOfWeek,
+        dayName,
+        slots: slotCandidates,
+      });
+
+      dayContextMap.set(i, {
+        date,
+        dayOfWeek,
+        dayName,
+        dateStr,
+        operatingHours,
+        slotCandidates,
+      });
+    }
+
+    console.log(
+      `${LOG_PREFIX} Pre-fetch complete: ${allDayCandidates.length} active day(s) (${fmtMs(Date.now() - prefetchStart)})`,
+    );
+
+    // ══════════════════════════════════════════════════════════
+    // Phase 2: Week-level deterministic solve
+    // ══════════════════════════════════════════════════════════
+    const weekSolverInput: WeekSolverInput = {
+      days: allDayCandidates,
+      maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
+      existingWeekHours: new Map(weekHoursAccumulator),
+    };
+
+    const solverStart = Date.now();
+    const weekDaySchedules = DeterministicSolverService.solveWeek(weekSolverInput);
+    const solverElapsed = Date.now() - solverStart;
+
+    const totalWeekAssignments = weekDaySchedules.reduce(
+      (sum, d) => sum + d.assignments.length, 0,
+    );
+    const totalWeekUnfilled = weekDaySchedules.reduce(
+      (sum, d) => sum + d.unfilledSlots.length, 0,
+    );
+
+    const weekSolveBreakdown = weekDaySchedules
+      .map((ds) => `    ${ds.dayOfWeek} ${ds.date}: ${ds.assignments.length} assigned, ${ds.unfilledSlots.length} unfilled`)
+      .join("\n");
+    console.log(
+      `${LOG_PREFIX} Week-level solve: ${totalWeekAssignments} assignments, ${totalWeekUnfilled} unfilled (${fmtMs(solverElapsed)})\n${weekSolveBreakdown}`,
+    );
+
+    // Build a lookup from dateStr -> week-level base schedule
+    const weekBaseMap = new Map<string, GeneratedDaySchedule>();
+    for (const ds of weekDaySchedules) {
+      weekBaseMap.set(ds.date, ds);
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Phase 3: Per-day AI optimizer on top of week-level base
+    // ══════════════════════════════════════════════════════════
+    let step = 0;
+    for (const dayCandidate of allDayCandidates) {
+      step++;
+      const dayStart = Date.now();
+      const { date, dayOfWeek, dayName, dateStr } = dayCandidate;
+      const dayInfo = dayContextMap.get(dayCandidate.dayIndex)!;
+
+      const weekBase = weekBaseMap.get(dateStr);
+      if (!weekBase) continue;
+
+      console.log(
+        `${LOG_PREFIX} [${step}/${allDayCandidates.length}] ${dayName} ${dateStr} — base: ${weekBase.assignments.length} assignments, ${weekBase.unfilledSlots.length} unfilled`,
+      );
+
+      // Get closing shifts from accumulated (includes generated shifts from prior days)
+      let previousDayClosingShifts: ShiftDTO[] = [];
+      if (dayCandidate.dayIndex > 0) {
+        const previousDay = weekDays[dayCandidate.dayIndex - 1];
         previousDayClosingShifts = getClosingShifts(
           accumulatedShifts,
           previousDay,
         );
       }
 
-      // Get candidates -- now with clopening hard filter
-      const candidateStart = Date.now();
-      const slotCandidates = await CandidateService.getCandidatesForDay(
-        context.orgId,
-        context.locationId,
-        date,
-        dayRequirements,
-        accumulatedShifts,
-        weekHoursAccumulator,
-        previousDayClosingShifts,
-      );
-      const candidateElapsed = Date.now() - candidateStart;
+      // Build adjacent-day shifts for cross-day clopening validation in AI swaps.
+      // Previous day: finalized shifts from accumulatedShifts.
+      // Next day: week-level base assignments (AI hasn't optimized the next day yet).
+      const prevDayDate = dayCandidate.dayIndex > 0 ? weekDays[dayCandidate.dayIndex - 1] : null;
+      const nextDayDate = dayCandidate.dayIndex < weekDays.length - 1 ? weekDays[dayCandidate.dayIndex + 1] : null;
+      const prevDayStr = prevDayDate ? format(prevDayDate, "yyyy-MM-dd") : null;
+      const nextDayStr = nextDayDate ? format(nextDayDate, "yyyy-MM-dd") : null;
 
-      const totalCandidates = slotCandidates.reduce(
-        (sum, s) => sum + s.candidates.length,
-        0,
-      );
-      console.log(
-        `${LOG_PREFIX} ${dateStr} Candidates: ${totalCandidates} across ${slotCandidates.length} slot(s) (${fmtMs(candidateElapsed)})`,
-      );
+      const adjacentShifts: AdjacentDayShifts = {
+        previousDay: prevDayStr
+          ? accumulatedShifts.filter((s) => format(new Date(s.start), "yyyy-MM-dd") === prevDayStr)
+          : [],
+        nextDay: nextDayStr
+          ? (weekBaseMap.get(nextDayStr)?.assignments ?? []).map((a) =>
+              assignmentToSyntheticShift(a, nextDayDate!, context.orgId, context.locationId, context.schedule.id),
+            )
+          : [],
+      };
 
       const dayContext: DaySchedulingContext = {
         date,
         dayOfWeek,
         dayName,
-        slots: slotCandidates,
+        slots: dayInfo.slotCandidates,
         existingShifts: accumulatedShifts,
         previousDayClosingShifts,
         kitchenContext: {
-          operatingHours: operatingHours
-            ? { open: operatingHours.open, close: operatingHours.close }
+          operatingHours: dayInfo.operatingHours
+            ? { open: dayInfo.operatingHours.open, close: dayInfo.operatingHours.close }
             : null,
           totalStaffCount: context.staff.length,
         },
       };
 
-      const dayBudget = dayHourBudgets.get(i);
-      const { daySchedule, tokenUsage, usedFallback, warnings } =
+      const { daySchedule, tokenUsage, usedFallback, warnings, optimizerOutcome } =
         await this.generateDaySchedule(
           dayContext,
           tracking,
           context.staff,
-          dayBudget,
+          weekBase,
+          optimizerStats,
+          adjacentShifts,
+          weekHoursAccumulator,
         );
 
       dayResults.push(daySchedule);
+      dayContexts.push(dayContext);
       allWarnings.push(...warnings);
       totalTokenUsage = mergeTokenUsage(totalTokenUsage, tokenUsage);
       if (usedFallback) usedFallbackAnyDay = true;
@@ -807,8 +1363,99 @@ export const SchedulingAgentService = {
       }
 
       const dayElapsed = Date.now() - dayStart;
+      const finalScore = ScheduleValidatorService.scoreQuality(
+        daySchedule,
+        dayContext,
+        weekHoursAccumulator,
+      );
       console.log(
-        `${LOG_PREFIX} ${dateStr} Done: ${daySchedule.assignments.length} shifts, ${daySchedule.unfilledSlots.length} unfilled, ${warnings.length} warnings (${fmtMs(dayElapsed)}) [${fmtMs(Date.now() - startTime)} elapsed, ${runningShiftCount} total shifts]`,
+        `${LOG_PREFIX} ${dateStr} Done: ${daySchedule.assignments.length} shifts, ${daySchedule.unfilledSlots.length} unfilled, score=${finalScore} (${optimizerOutcome}) (${fmtMs(dayElapsed)}) [${fmtMs(Date.now() - startTime)} elapsed, ${runningShiftCount} total shifts]`,
+      );
+    }
+
+    // ══════════════════════════════════════════════════════════
+    // Phase 4: Post-AI greedy pass for remaining unfilled slots
+    // ══════════════════════════════════════════════════════════
+    // After AI optimization, some candidates may have been freed up by swaps.
+    // Do a final lightweight pass to fill any remaining unfilled slots.
+    let phase4Fills = 0;
+
+    for (let dayIdx = 0; dayIdx < dayResults.length; dayIdx++) {
+      const dayResult = dayResults[dayIdx];
+      if (dayResult.unfilledSlots.length === 0) continue;
+
+      const dayCandidate = allDayCandidates.find((dc) => dc.dateStr === dayResult.date);
+      if (!dayCandidate) continue;
+
+      const dayAssignedIds = new Set(dayResult.assignments.map((a) => a.staffId));
+      const prevDate = dayIdx > 0 ? weekDays[dayIdx] : null;
+      const nextDate = dayIdx < weekDays.length - 1 ? weekDays[dayIdx + 1] : null;
+      const prevDateStr = prevDate ? format(prevDate, "yyyy-MM-dd") : null;
+      const nextDateStr = nextDate ? format(nextDate, "yyyy-MM-dd") : null;
+      const prevDayShifts = prevDateStr
+        ? accumulatedShifts.filter((s) => format(new Date(s.start), "yyyy-MM-dd") === prevDateStr)
+        : [];
+      const nextDayShifts = nextDateStr
+        ? (dayResults.find((d) => d.date === nextDateStr)?.assignments ?? []).map((a) =>
+            assignmentToSyntheticShift(a, weekDays[dayIdx + 1], context.orgId, context.locationId, context.schedule.id),
+          )
+        : [];
+      const adjShifts: AdjacentDayShifts = { previousDay: prevDayShifts, nextDay: nextDayShifts };
+
+      for (let u = dayResult.unfilledSlots.length - 1; u >= 0; u--) {
+        const unfilled = dayResult.unfilledSlots[u];
+
+        const matchingSlot = dayCandidate.slots.find(
+          (sc) => sc.slot.station === unfilled.station &&
+            sc.slot.startTime === unfilled.startTime &&
+            sc.slot.endTime === unfilled.endTime,
+        );
+        if (!matchingSlot) continue;
+
+        const slotDur = getSlotDurationHours(unfilled.startTime, unfilled.endTime);
+
+        for (const candidate of matchingSlot.candidates) {
+          if (dayAssignedIds.has(candidate.staffId)) continue;
+
+          const currentHours = weekHoursAccumulator.get(candidate.staffId) ?? 0;
+          if (currentHours + slotDur > candidate.maxHoursPerWeek) continue;
+
+          if (wouldSwapCreateClopening(candidate.staffId, unfilled.startTime, unfilled.endTime, adjShifts)) continue;
+
+          dayResult.assignments.push({
+            staffId: candidate.staffId,
+            staffName: candidate.staffName,
+            station: unfilled.station,
+            startTime: unfilled.startTime,
+            endTime: unfilled.endTime,
+            reasoning: `Post-AI fill: ${candidate.staffName} available for ${unfilled.station}`,
+          });
+          dayAssignedIds.add(candidate.staffId);
+          weekHoursAccumulator.set(candidate.staffId, currentHours + slotDur);
+
+          unfilled.assigned++;
+          if (unfilled.assigned >= unfilled.needed) {
+            dayResult.unfilledSlots.splice(u, 1);
+            phase4Fills++;
+          }
+          runningShiftCount++;
+
+          const syntheticShift = assignmentToSyntheticShift(
+            dayResult.assignments[dayResult.assignments.length - 1],
+            weekDays[dayIdx],
+            context.orgId,
+            context.locationId,
+            context.schedule.id,
+          );
+          accumulatedShifts = [...accumulatedShifts, syntheticShift];
+          break;
+        }
+      }
+    }
+
+    if (phase4Fills > 0) {
+      console.log(
+        `${LOG_PREFIX} Phase 4 post-AI pass: filled ${phase4Fills} previously unfilled slot(s)`,
       );
     }
 
@@ -823,13 +1470,23 @@ export const SchedulingAgentService = {
       0,
     );
 
+    const weekScore = ScheduleValidatorService.scoreWeek(
+      dayResults,
+      dayContexts,
+      weekHoursAccumulator,
+    );
+
     const totalElapsed = Date.now() - startTime;
+    const optimizerDaysRun = optimizerStats.aiImproved + optimizerStats.usedBase;
     const metadata: GenerationMetadata = {
       totalShiftsCreated,
       totalUnfilledSlots,
       usedFallback: usedFallbackAnyDay,
+      aiImprovedDays: optimizerStats.aiImproved,
+      totalOptimizerDays: optimizerDaysRun,
       generationTimeMs: totalElapsed,
       tokenUsage: totalTokenUsage,
+      weekScore,
     };
 
     const summaryParts: string[] = [];
@@ -841,21 +1498,85 @@ export const SchedulingAgentService = {
         `${totalUnfilledSlots} slot(s) could not be fully staffed.`,
       );
     }
+    if (optimizerStats.aiImproved > 0) {
+      summaryParts.push(
+        `AI optimizer improved ${optimizerStats.aiImproved}/${optimizerDaysRun} day(s).`,
+      );
+    }
     if (usedFallbackAnyDay) {
       summaryParts.push(
-        "Some days used deterministic base (AI could not improve).",
+        "AI was unavailable for some days — used deterministic schedule.",
       );
     }
     if (allWarnings.length > 0) {
       summaryParts.push(`${allWarnings.length} warning(s) noted.`);
     }
+    const avgScoreDelta =
+      optimizerStats.scoreDeltas.length > 0
+        ? (
+            optimizerStats.scoreDeltas.reduce((a, b) => a + b, 0) /
+            optimizerStats.scoreDeltas.length
+          ).toFixed(1)
+        : "0";
 
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Week generation complete in ${fmtMs(totalElapsed)}\n` +
-        `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Warnings: ${allWarnings.length}\n` +
-        `  Tokens: ${fmtTokens(totalTokenUsage)} | Fallback: ${usedFallbackAnyDay ? "yes" : "no"}\n` +
-        `${"═".repeat(60)}\n`,
+        `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Week Score: ${weekScore} | Warnings: ${allWarnings.length}\n` +
+        `  Week-level solve: ${totalWeekAssignments} assignments, ${totalWeekUnfilled} unfilled (${fmtMs(solverElapsed)})\n` +
+        `  Tokens: ${fmtTokens(totalTokenUsage)} | AI unavailable: ${usedFallbackAnyDay ? "yes" : "no"}\n` +
+        `\n  AI Optimizer outcomes:\n` +
+        `    AI improved:  ${optimizerStats.aiImproved}/${optimizerDaysRun} days (avg +${avgScoreDelta} score)\n` +
+        `    Used base:    ${optimizerStats.usedBase}/${optimizerDaysRun} days\n` +
+        `    Total attempts: ${optimizerStats.totalAttempts} (${optimizerDaysRun} initial + ${optimizerStats.totalAttempts - optimizerDaysRun} retries)`,
     );
+
+    if (optimizerStats.allErrors.length > 0) {
+      const byType = new Map<string, number>();
+      for (const e of optimizerStats.allErrors) {
+        byType.set(e.type, (byType.get(e.type) ?? 0) + 1);
+      }
+      const typeLines = [...byType.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([type, count]) =>
+            `    ${type}: ${count} (${Math.round((count / optimizerStats.allErrors.length) * 100)}%)`,
+        )
+        .join("\n");
+
+      const byStaff = new Map<string, Map<string, number>>();
+      for (const e of optimizerStats.allErrors) {
+        if (!byStaff.has(e.staffName)) {
+          byStaff.set(e.staffName, new Map());
+        }
+        const staffTypes = byStaff.get(e.staffName)!;
+        staffTypes.set(e.type, (staffTypes.get(e.type) ?? 0) + 1);
+      }
+      const staffLines = [...byStaff.entries()]
+        .filter(([, types]) => [...types.values()].reduce((a, b) => a + b, 0) >= 2)
+        .sort(
+          (a, b) =>
+            [...b[1].values()].reduce((x, y) => x + y, 0) -
+            [...a[1].values()].reduce((x, y) => x + y, 0),
+        )
+        .slice(0, 5)
+        .map(([name, types]) => {
+          const parts = [...types.entries()].map(
+            ([t, c]) => `${c}x ${t}`,
+          );
+          return `    "${name}": ${[...types.values()].reduce((a, b) => a + b, 0)} errors (${parts.join(", ")})`;
+        })
+        .join("\n");
+
+      console.log(
+        `\n  Validation failures across all attempts (${optimizerStats.allErrors.length} total):\n` +
+          typeLines,
+      );
+      if (staffLines) {
+        console.log(`\n  Recurring staff in errors:\n` + staffLines);
+      }
+    }
+
+    console.log(`${"═".repeat(60)}\n`);
 
     return {
       days: dayResults,
