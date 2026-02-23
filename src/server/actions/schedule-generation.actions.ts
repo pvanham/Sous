@@ -7,7 +7,7 @@ import {
   acceptGeneratedScheduleSchema,
 } from "@/lib/validations/schedule-generation.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
-import { combineDateTime } from "@/lib/utils/date";
+import { combineDateTime, parseDateString } from "@/lib/utils/date";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
 import { AIUsageService } from "@/server/services/ai-usage.service";
 import { ScheduleService } from "@/server/services/schedule.service";
@@ -131,11 +131,13 @@ export async function checkGenerationReadiness(
       (s) => !s.hourlyRate || s.hourlyRate <= 0
     );
     if (missingHourlyRate.length > 0) {
+      const names = missingHourlyRate.map((s) => s.name);
       issues.push({
         severity: "warning",
         category: "missing_hourly_rate",
         message: `${missingHourlyRate.length} staff missing hourly rate`,
         count: missingHourlyRate.length,
+        details: names,
       });
     }
 
@@ -153,11 +155,15 @@ export async function checkGenerationReadiness(
         : 0;
 
     if (availabilityCompleteness < 50) {
+      const staffWithoutAvailability = activeStaff.filter(
+        (s) => !staffIdsWithAvailability.has(s.id)
+      );
       issues.push({
         severity: "warning",
         category: "low_availability",
-        message: `Availability completeness: ${availabilityCompleteness}%`,
+        message: `Only ${availabilityCompleteness}% of staff have availability set (${staffWithoutAvailability.length} missing)`,
         count: availabilityCompleteness,
+        details: staffWithoutAvailability.map((s) => s.name),
       });
     }
 
@@ -202,16 +208,17 @@ export async function checkGenerationReadiness(
       }
 
       // Check for skill coverage gaps
-      const skillGaps = findSkillCoverageGaps(
+      const uncoveredStations = findUncoveredStations(
         laborRequirements,
         activeStaff
       );
-      if (skillGaps > 0) {
+      if (uncoveredStations.length > 0) {
         issues.push({
           severity: "warning",
           category: "no_qualified_candidates",
-          message: `${skillGaps} shift slots have no qualified candidates`,
-          count: skillGaps,
+          message: `${uncoveredStations.length} station(s) have no qualified staff`,
+          count: uncoveredStations.length,
+          details: uncoveredStations,
         });
       }
     }
@@ -395,7 +402,7 @@ export async function acceptGeneratedSchedule(
 
     // Convert accepted shifts to CreateShiftInput format
     const createInputs = shifts.map((shift) => {
-      const date = new Date(shift.date);
+      const date = parseDateString(shift.date);
       const start = combineDateTime(date, shift.startTime);
       const end = combineDateTime(date, shift.endTime);
 
@@ -504,24 +511,23 @@ function findRequirementsOutsideHours(
 }
 
 /**
- * Count labor requirements where no active staff have the required station skill.
+ * Find stations from labor requirements where no active staff have the required skill.
  */
-function findSkillCoverageGaps(
+function findUncoveredStations(
   requirements: LaborRequirementDTO[],
   activeStaff: Array<{ skills: Array<{ station: string; proficiency: number }> }>
-): number {
-  // Get unique station requirements
+): string[] {
   const requiredStations = new Set(requirements.map((r) => r.station));
-  let gaps = 0;
+  const uncovered: string[] = [];
 
   for (const station of requiredStations) {
     const hasQualifiedStaff = activeStaff.some((staff) =>
       staff.skills.some((skill) => skill.station === station)
     );
     if (!hasQualifiedStaff) {
-      gaps++;
+      uncovered.push(station);
     }
   }
 
-  return gaps;
+  return uncovered;
 }

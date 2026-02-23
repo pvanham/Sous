@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import type { CandidateDTO, SlotCandidates } from "@/types/candidate";
 import type { LaborPriority } from "@/types/labor-requirement";
 import type {
@@ -40,6 +41,9 @@ const WEIGHT_PREFERRED_STATION = 6;
 const WEIGHT_PREFERRED_TIME = 4;
 const WEIGHT_HOURS_BALANCE = 8;
 const WEIGHT_PROFICIENCY = 0.5;
+const WEIGHT_MIN_HOURS_DEFICIT = 5;
+const VARIANCE_WEIGHT = 0.3;
+const MIN_HOURS_SHORTFALL_WEIGHT = 0.5;
 
 /**
  * Score a candidate for a specific slot. Higher = better fit.
@@ -50,7 +54,8 @@ const WEIGHT_PROFICIENCY = 0.5;
  * Factors:
  * - Preferred station match (+6)
  * - Availability preference "preferred" (+4)
- * - Hours balance: remaining capacity ratio (+0 to +8)
+ * - Hours balance: utilization-based ratio (+0 to +8)
+ * - Min-hours deficit bonus (+0 to +5 for staff below minHoursPerWeek)
  * - Proficiency for the target station (+0.5 per level, tiebreaker)
  *
  * @param actualWeekHours - When provided (week-level solve), overrides
@@ -73,12 +78,17 @@ function scoreCandidate(
   }
 
   const weekHours = actualWeekHours ?? candidate.currentWeekHours;
-  const remaining = candidate.maxHoursPerWeek - weekHours;
-  const capacityRatio =
-    candidate.maxHoursPerWeek > 0
-      ? remaining / candidate.maxHoursPerWeek
-      : 0;
-  score += WEIGHT_HOURS_BALANCE * capacityRatio;
+  const minH = candidate.minHoursPerWeek ?? 0;
+  const maxH = candidate.maxHoursPerWeek;
+  const targetHours = maxH > 0 ? (minH + maxH) / 2 : 0;
+  const utilizationGap = targetHours - weekHours;
+  const utilizationRatio =
+    targetHours > 0 ? Math.max(0, utilizationGap / targetHours) : 0;
+  score += WEIGHT_HOURS_BALANCE * utilizationRatio;
+
+  if (minH > 0 && weekHours < minH) {
+    score += WEIGHT_MIN_HOURS_DEFICIT * ((minH - weekHours) / minH);
+  }
 
   const proficiency =
     candidate.skills.find((s) => s.station === station)?.proficiency ?? 0;
@@ -143,7 +153,7 @@ function sortSlotsByTightness(
  * Kept in sync manually to avoid a cross-service dependency.
  *
  * Formula: +3 per preferred station match, +2 per preferred time match,
- * -0.1 * variance(remaining hours), -10 per unfilled slot.
+ * -VARIANCE_WEIGHT * variance(remaining hours), -10 per unfilled slot.
  */
 function scoreAssignments(
   assignments: GeneratedShiftAssignment[],
@@ -174,7 +184,7 @@ function scoreAssignments(
     const variance =
       remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
       remainingHours.length;
-    score -= variance * 0.1;
+    score -= variance * VARIANCE_WEIGHT;
   }
 
   score -= unfilledCount * 10;
@@ -379,7 +389,13 @@ function wouldCreateClopening(
  * week as a single unit.
  *
  * Formula: +3 per preferred station, +2 per preferred time,
- * -0.1 * variance(remaining hours across ALL staff), -10 per unfilled.
+ * -VARIANCE_WEIGHT * variance(remaining hours across ALL staff),
+ * -MIN_HOURS_SHORTFALL_WEIGHT per hour below minHoursPerWeek,
+ * -10 per unfilled.
+ *
+ * The variance is calculated over ALL staff in maxHoursLookup (not just
+ * those with assignments) so that completely unscheduled staff contribute
+ * their full remaining capacity, making omission costly.
  */
 function scoreWeekAssignments(
   assignments: WeekTaggedAssignment[],
@@ -387,6 +403,7 @@ function scoreWeekAssignments(
   totalUnfilledCount: number,
   weekHoursUsed: Map<string, number>,
   maxHoursLookup: Map<string, number>,
+  minHoursLookup: Map<string, number>,
 ): number {
   let score = 0;
 
@@ -403,9 +420,9 @@ function scoreWeekAssignments(
   }
 
   const remainingHours: number[] = [];
-  for (const [staffId, used] of weekHoursUsed) {
-    const max = maxHoursLookup.get(staffId) ?? 40;
-    remainingHours.push(max - used);
+  for (const [staffId, maxH] of maxHoursLookup) {
+    const used = weekHoursUsed.get(staffId) ?? 0;
+    remainingHours.push(maxH - used);
   }
 
   if (remainingHours.length > 1) {
@@ -414,7 +431,15 @@ function scoreWeekAssignments(
     const variance =
       remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
       remainingHours.length;
-    score -= variance * 0.1;
+    score -= variance * VARIANCE_WEIGHT;
+  }
+
+  for (const [staffId, minH] of minHoursLookup) {
+    if (minH <= 0) continue;
+    const used = weekHoursUsed.get(staffId) ?? 0;
+    if (used < minH) {
+      score -= (minH - used) * MIN_HOURS_SHORTFALL_WEIGHT;
+    }
   }
 
   score -= totalUnfilledCount * 10;
@@ -473,6 +498,7 @@ function buildWeekSlotValidCandidates(
  * Phase 1: Within-day pairwise swaps (same day only)
  * Phase 2: Within-day candidate replacements (swap assigned with unassigned)
  * Phase 3: Cross-day redistribution (steal candidates from other days to fill unfilled slots)
+ * Phase 4: Min-hours redistribution (replace over-minimum staff with under-minimum staff)
  */
 function weekHillClimbOptimize(
   allAssignments: WeekTaggedAssignment[],
@@ -490,9 +516,10 @@ function weekHillClimbOptimize(
   phase2Swaps: number;
   phase3Swaps: number;
   phase3dSwaps: number;
+  phase4Swaps: number;
 } {
   if (allAssignments.length < 2 && unfilledSlots.length === 0) {
-    return { assignments: allAssignments, unfilled: unfilledSlots, swapCount: 0, phase1Swaps: 0, phase2Swaps: 0, phase3Swaps: 0, phase3dSwaps: 0 };
+    return { assignments: allAssignments, unfilled: unfilledSlots, swapCount: 0, phase1Swaps: 0, phase2Swaps: 0, phase3Swaps: 0, phase3dSwaps: 0, phase4Swaps: 0 };
   }
 
   const working = allAssignments.map((ta) => ({
@@ -520,13 +547,14 @@ function weekHillClimbOptimize(
 
   let totalUnfilled = workingUnfilled.length;
   let currentScore = scoreWeekAssignments(
-    working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup,
+    working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
   );
   let totalSwaps = 0;
   let phase1Swaps = 0;
   let phase2Swaps = 0;
   let phase3Swaps = 0;
   let phase3dSwaps = 0;
+  let phase4Swaps = 0;
 
   for (let pass = 0; pass < MAX_HILL_CLIMB_PASSES; pass++) {
     let improved = false;
@@ -562,7 +590,7 @@ function weekHillClimbOptimize(
           aj.staffName = savedI.staffName;
 
           const newScore = scoreWeekAssignments(
-            working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup,
+            working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
           );
           if (newScore > currentScore) {
             ai.reasoning = buildReasoning(candidateMap.get(ai.staffId)!, ai.station);
@@ -618,7 +646,7 @@ function weekHillClimbOptimize(
           workingWeekHours.set(candidateId, candidateCurrentHours + slotDur);
 
           const newScore = scoreWeekAssignments(
-            working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup,
+            working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
           );
           if (newScore > currentScore) {
             a.reasoning = buildReasoning(candidate, a.station);
@@ -771,7 +799,7 @@ function weekHillClimbOptimize(
           workingWeekHours.set(candidateId, candidateCurrentHours + hourDelta);
 
           const newScore = scoreWeekAssignments(
-            working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup,
+            working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
           );
 
           if (newScore > scoreBefore) {
@@ -876,7 +904,7 @@ function weekHillClimbOptimize(
             workingWeekHours.set(candidateId, candidateHoursBefore + slotDur);
 
             const newScore = scoreWeekAssignments(
-              working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup,
+              working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
             );
 
             if (newScore > scoreBefore) {
@@ -1037,7 +1065,7 @@ function weekHillClimbOptimize(
                 workingWeekHours.set(r2Id, r2HoursBefore + r1SlotDur);
 
                 const newScore = scoreWeekAssignments(
-                  working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup,
+                  working, candidateMap, totalUnfilled - 1, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
                 );
 
                 if (newScore > scoreBefore) {
@@ -1098,6 +1126,82 @@ function weekHillClimbOptimize(
     if (!improved) break;
   }
 
+  // Phase 4: Min-hours redistribution -- replace over-minimum staff with
+  // under-minimum staff to improve minimum-hours fulfillment.
+  const underMinStaff: Array<{ staffId: string; deficit: number }> = [];
+  for (const [staffId, minH] of input.minHoursLookup) {
+    if (minH <= 0) continue;
+    const used = workingWeekHours.get(staffId) ?? 0;
+    if (used < minH) {
+      underMinStaff.push({ staffId, deficit: minH - used });
+    }
+  }
+  underMinStaff.sort((a, b) => b.deficit - a.deficit);
+
+  for (const { staffId: underStaffId } of underMinStaff) {
+    const dayIndices = [...dayAssignmentIndex.keys()];
+
+    for (const dayIdx of dayIndices) {
+      const dayAssigned = workingAssignedPerDay.get(dayIdx);
+      if (!dayAssigned || dayAssigned.has(underStaffId)) continue;
+
+      const dayValidMap = weekSlotValidCandidates.get(dayIdx);
+      if (!dayValidMap) continue;
+
+      const dayAssigns = dayAssignmentIndex.get(dayIdx) ?? [];
+
+      for (const ta of dayAssigns) {
+        const a = ta.assignment;
+        const slotKey = `${a.station}|${a.startTime}|${a.endTime}`;
+        const validForSlot = dayValidMap.get(slotKey);
+        if (!validForSlot?.has(underStaffId)) continue;
+
+        const slotDur = getSlotDurationHours(a.startTime, a.endTime);
+        const underHours = workingWeekHours.get(underStaffId) ?? 0;
+        const underMax = input.maxHoursLookup.get(underStaffId) ?? 40;
+        if (underHours + slotDur > underMax) continue;
+
+        const currentStaffId = a.staffId;
+        const currentMinH = input.minHoursLookup.get(currentStaffId) ?? 0;
+        const currentUsed = workingWeekHours.get(currentStaffId) ?? 0;
+        if (currentUsed - slotDur < currentMinH) continue;
+
+        if (wouldCreateClopening(underStaffId, dayIdx, a.startTime, a.endTime, dayAssignmentIndex)) continue;
+
+        const savedStaffId = a.staffId;
+        const savedStaffName = a.staffName;
+        const savedReasoning = a.reasoning;
+
+        const underCandidate = candidateMap.get(underStaffId);
+        if (!underCandidate) continue;
+
+        a.staffId = underStaffId;
+        a.staffName = underCandidate.staffName;
+        workingWeekHours.set(savedStaffId, currentUsed - slotDur);
+        workingWeekHours.set(underStaffId, underHours + slotDur);
+
+        const newScore = scoreWeekAssignments(
+          working, candidateMap, totalUnfilled, workingWeekHours, input.maxHoursLookup, input.minHoursLookup,
+        );
+
+        if (newScore > currentScore) {
+          a.reasoning = buildReasoning(underCandidate, a.station);
+          dayAssigned.delete(savedStaffId);
+          dayAssigned.add(underStaffId);
+          currentScore = newScore;
+          totalSwaps++;
+          phase4Swaps++;
+        } else {
+          a.staffId = savedStaffId;
+          a.staffName = savedStaffName;
+          a.reasoning = savedReasoning;
+          workingWeekHours.set(savedStaffId, currentUsed);
+          workingWeekHours.set(underStaffId, underHours);
+        }
+      }
+    }
+  }
+
   return {
     assignments: working,
     unfilled: workingUnfilled,
@@ -1106,6 +1210,7 @@ function weekHillClimbOptimize(
     phase2Swaps,
     phase3Swaps,
     phase3dSwaps,
+    phase4Swaps,
   };
 }
 
@@ -1133,7 +1238,7 @@ export const DeterministicSolverService = {
   solve(
     context: DaySchedulingContext,
   ): GeneratedDaySchedule {
-    const dateStr = context.date.toISOString().split("T")[0];
+    const dateStr = format(context.date, "yyyy-MM-dd");
     const assignments: GeneratedShiftAssignment[] = [];
     const unfilledSlots: UnfilledSlot[] = [];
 
@@ -1354,6 +1459,7 @@ export const DeterministicSolverService = {
       phase2Swaps: hcPhase2,
       phase3Swaps: hcPhase3,
       phase3dSwaps: hcPhase3d,
+      phase4Swaps: hcPhase4,
     } = weekHillClimbOptimize(
         allAssignments,
         allUnfilled,
@@ -1364,7 +1470,7 @@ export const DeterministicSolverService = {
         assignedPerDay,
       );
 
-    // ── Phase 4: Group results by day ────────────────────────
+    // ── Group results by day ─────────────────────────────────
     const dayScheduleMap = new Map<number, {
       assignments: GeneratedShiftAssignment[];
       unfilled: UnfilledSlot[];
@@ -1392,7 +1498,7 @@ export const DeterministicSolverService = {
       ];
       if (swapCount > 0 && day.dayIndex === sortedDays[0].dayIndex) {
         noteParts.push(
-          `Week-level hill climbing: ${swapCount} swap(s) (pairwise: ${hcPhase1}, replacements: ${hcPhase2}, redistribution: ${hcPhase3}, depth-2: ${hcPhase3d}).`,
+          `Week-level hill climbing: ${swapCount} swap(s) (pairwise: ${hcPhase1}, replacements: ${hcPhase2}, redistribution: ${hcPhase3}, depth-2: ${hcPhase3d}, min-hrs: ${hcPhase4}).`,
         );
       }
 

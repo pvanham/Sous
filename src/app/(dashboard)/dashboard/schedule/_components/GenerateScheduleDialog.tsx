@@ -639,28 +639,52 @@ function StatCard({
 
 function ReadinessIssueRow({ issue }: { issue: ReadinessIssue }) {
   const isBlocker = issue.severity === "blocker";
+  const [expanded, setExpanded] = useState(false);
+  const hasDetails = issue.details && issue.details.length > 0;
 
   return (
     <div
-      className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${
+      className={`rounded-lg border p-3 text-sm ${
         isBlocker
           ? "border-destructive/50 bg-destructive/5"
           : "border-amber-500/30 bg-amber-500/5"
       }`}
     >
-      {isBlocker ? (
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-      ) : (
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-      )}
-      <div className="flex-1">
-        <span className={isBlocker ? "text-destructive" : "text-amber-700 dark:text-amber-300"}>
-          {issue.message}
-        </span>
+      <div className="flex items-start gap-2">
+        {isBlocker ? (
+          <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        ) : (
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        )}
+        <div className="flex-1">
+          <span className={isBlocker ? "text-destructive" : "text-amber-700 dark:text-amber-300"}>
+            {issue.message}
+          </span>
+          {hasDetails && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="ml-2 text-xs underline underline-offset-2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {expanded ? "Hide names" : "Show names"}
+            </button>
+          )}
+        </div>
+        <Badge variant={isBlocker ? "destructive" : "warning"} className="shrink-0">
+          {isBlocker ? "Required" : "Warning"}
+        </Badge>
       </div>
-      <Badge variant={isBlocker ? "destructive" : "warning"} className="shrink-0">
-        {isBlocker ? "Required" : "Warning"}
-      </Badge>
+      {hasDetails && expanded && (
+        <ul className="mt-2 ml-6 space-y-0.5">
+          {issue.details!.map((detail, i) => (
+            <li
+              key={i}
+              className={`text-xs ${isBlocker ? "text-destructive/80" : "text-amber-600 dark:text-amber-400"}`}
+            >
+              {detail}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

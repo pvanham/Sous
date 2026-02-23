@@ -348,6 +348,7 @@ export const CandidateService = {
         preference,
         currentWeekHours,
         maxHoursPerWeek: s.maxHoursPerWeek,
+        minHoursPerWeek: s.minHoursPerWeek,
         overtimeWarning,
         preferredStations: s.preferredStations,
       };
@@ -445,9 +446,8 @@ export const CandidateService = {
       const proposedEnd = combineDateTime(date, req.endTime);
       const slotDuration = getSlotDurationHours(req.startTime, req.endTime);
 
-      // Filter 1: Availability -- find staff whose availability covers this slot's times
-      // dayAvailability contains ALL availability records for this day (all staff, all preferences)
-      // We need to filter to: preference != "unavailable" AND availableFrom <= startTime AND availableTo >= endTime
+      // Filter 1: Availability -- find staff whose single daily availability window covers this slot
+      // Each staff member has at most one availability record per day with a continuous time range
       const slotAvailability = dayAvailability.filter(
         (avail) =>
           avail.preference !== "unavailable" &&
@@ -501,6 +501,7 @@ export const CandidateService = {
           preference,
           currentWeekHours,
           maxHoursPerWeek: s.maxHoursPerWeek,
+          minHoursPerWeek: s.minHoursPerWeek,
           overtimeWarning,
           preferredStations: s.preferredStations,
         };

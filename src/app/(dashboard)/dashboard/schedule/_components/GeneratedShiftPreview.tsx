@@ -8,10 +8,12 @@ import {
   AlertTriangle,
   Clock,
   User,
+  UserMinus,
   MessageSquare,
   ChevronDown,
   ChevronUp,
   XCircle,
+  Star,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -55,10 +57,7 @@ const WARNING_CONFIG: Record<
 > = {
   overtime_risk: { label: "Overtime Risk", icon: Clock },
   clopening_risk: { label: "Clopening Risk", icon: AlertTriangle },
-  non_preferred_station: {
-    label: "Non-Preferred Station",
-    icon: User,
-  },
+  under_scheduled: { label: "Under-Scheduled", icon: UserMinus },
 };
 
 // ────────────────────────────────────────────────────────────
@@ -145,6 +144,19 @@ export function GeneratedShiftPreview({
           {metadata.tokenUsage.totalTokens.toLocaleString()} tokens used
         </span>
       </div>
+
+      {/* Preferred station matches (positive stat) */}
+      {metadata.totalAssignmentsWithPreference > 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3">
+          <Star className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+          <span className="text-sm text-emerald-700 dark:text-emerald-300">
+            <span className="font-medium">
+              {metadata.preferredStationMatches}/{metadata.totalAssignmentsWithPreference}
+            </span>
+            {" "}shifts matched staff preferred stations
+          </span>
+        </div>
+      )}
 
       {/* Warnings section */}
       {warnings.length > 0 && (

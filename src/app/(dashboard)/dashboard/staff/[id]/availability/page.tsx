@@ -5,7 +5,7 @@ import { getStaffById } from "@/server/actions/staff.actions";
 import { getStaffAvailability } from "@/server/actions/staff-availability.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { Button } from "@/components/ui/button";
-import { AvailabilityGrid } from "./_components/AvailabilityGrid";
+import { AvailabilityEditor } from "./_components/AvailabilityEditor";
 
 interface AvailabilityPageProps {
   params: Promise<{ id: string }>;
@@ -53,8 +53,8 @@ export default async function AvailabilityPage({
         </div>
       </div>
 
-      {/* Main availability grid component */}
-      <AvailabilityGrid
+      {/* Main availability editor component */}
+      <AvailabilityEditor
         staff={staff}
         initialAvailability={availability}
         stations={stations}

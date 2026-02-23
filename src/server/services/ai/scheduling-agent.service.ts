@@ -179,8 +179,9 @@ function formatScoreBreakdown(
   const prefStn = `${b.preferredStationCount}x(+${b.preferredStationMatches})`;
   const prefTime = `${b.timePreferenceCount}x(+${b.timePreferenceMatches})`;
   const hrsBal = b.hourBalancePenalty.toFixed(1);
+  const minHrs = b.minHoursShortfallPenalty.toFixed(1);
   const unfilled = `${b.unfilledCount}(-${b.unfilledPenalty})`;
-  return `  ${label.padEnd(4)}: pref_stn: ${prefStn} | pref_time: ${prefTime} | hrs_bal: -${hrsBal} | unfilled: ${unfilled} = ${b.total}`;
+  return `  ${label.padEnd(4)}: pref_stn: ${prefStn} | pref_time: ${prefTime} | hrs_bal: -${hrsBal} | min_hrs: -${minHrs} | unfilled: ${unfilled} = ${b.total}`;
 }
 
 /**
@@ -195,11 +196,13 @@ function formatScoreDelta(
   const hrsBalDelta = (base.hourBalancePenalty - ai.hourBalancePenalty).toFixed(
     1,
   );
+  const minHrsDelta = (base.minHoursShortfallPenalty - ai.minHoursShortfallPenalty).toFixed(1);
   const netDelta = (ai.total - base.total).toFixed(1);
   const parts: string[] = [];
   if (prefStnDelta !== 0) parts.push(`pref_stn: ${prefStnDelta > 0 ? "+" : ""}${prefStnDelta}`);
   if (prefTimeDelta !== 0) parts.push(`pref_time: ${prefTimeDelta > 0 ? "+" : ""}${prefTimeDelta}`);
   parts.push(`hrs_bal: ${Number(hrsBalDelta) >= 0 ? "+" : ""}${hrsBalDelta}`);
+  if (Number(minHrsDelta) !== 0) parts.push(`min_hrs: ${Number(minHrsDelta) >= 0 ? "+" : ""}${minHrsDelta}`);
   parts.push(`net: ${Number(netDelta) >= 0 ? "+" : ""}${netDelta}`);
   return `  Delta: ${parts.join(" | ")}`;
 }
@@ -728,9 +731,11 @@ export const SchedulingAgentService = {
     usedFallback: boolean;
     aiImproved: boolean;
     warnings: ValidationWarning[];
+    preferredStationMatches: number;
+    totalAssignmentsWithPreference: number;
     optimizerOutcome: string;
   }> {
-    const dateStr = context.date.toISOString().split("T")[0];
+    const dateStr = format(context.date, "yyyy-MM-dd");
     const dayName = context.dayName;
 
     if (context.slots.length === 0) {
@@ -746,6 +751,8 @@ export const SchedulingAgentService = {
         usedFallback: false,
         aiImproved: false,
         warnings: [],
+        preferredStationMatches: 0,
+        totalAssignmentsWithPreference: 0,
         optimizerOutcome: "",
       };
     }
@@ -776,6 +783,8 @@ export const SchedulingAgentService = {
         usedFallback: false,
         aiImproved: false,
         warnings: [],
+        preferredStationMatches: 0,
+        totalAssignmentsWithPreference: 0,
         optimizerOutcome: "",
       };
     }
@@ -1073,6 +1082,8 @@ export const SchedulingAgentService = {
       usedFallback: aiUnavailable,
       aiImproved,
       warnings: finalValidation.warnings,
+      preferredStationMatches: finalValidation.preferredStationMatches,
+      totalAssignmentsWithPreference: finalValidation.totalAssignmentsWithPreference,
       optimizerOutcome,
     };
   },
@@ -1115,6 +1126,8 @@ export const SchedulingAgentService = {
     let totalTokenUsage = emptyTokenUsage();
     let usedFallbackAnyDay = false;
     const allWarnings: ValidationWarning[] = [];
+    let totalPreferredStationMatches = 0;
+    let totalAssignmentsWithPreference = 0;
     const optimizerStats: OptimizerStatsAccumulator = {
       aiImproved: 0,
       usedBase: 0,
@@ -1236,6 +1249,7 @@ export const SchedulingAgentService = {
     const weekSolverInput: WeekSolverInput = {
       days: allDayCandidates,
       maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
+      minHoursLookup: new Map(context.staff.map((s) => [s.id, s.minHoursPerWeek])),
       existingWeekHours: new Map(weekHoursAccumulator),
     };
 
@@ -1324,7 +1338,7 @@ export const SchedulingAgentService = {
         },
       };
 
-      const { daySchedule, tokenUsage, usedFallback, warnings, optimizerOutcome } =
+      const { daySchedule, tokenUsage, usedFallback, warnings, preferredStationMatches, totalAssignmentsWithPreference: dayAssignmentsWithPref, optimizerOutcome } =
         await this.generateDaySchedule(
           dayContext,
           tracking,
@@ -1338,6 +1352,8 @@ export const SchedulingAgentService = {
       dayResults.push(daySchedule);
       dayContexts.push(dayContext);
       allWarnings.push(...warnings);
+      totalPreferredStationMatches += preferredStationMatches;
+      totalAssignmentsWithPreference += dayAssignmentsWithPref;
       totalTokenUsage = mergeTokenUsage(totalTokenUsage, tokenUsage);
       if (usedFallback) usedFallbackAnyDay = true;
       runningShiftCount += daySchedule.assignments.length;
@@ -1487,6 +1503,8 @@ export const SchedulingAgentService = {
       generationTimeMs: totalElapsed,
       tokenUsage: totalTokenUsage,
       weekScore,
+      preferredStationMatches: totalPreferredStationMatches,
+      totalAssignmentsWithPreference,
     };
 
     const summaryParts: string[] = [];
@@ -1577,6 +1595,13 @@ export const SchedulingAgentService = {
     }
 
     console.log(`${"═".repeat(60)}\n`);
+
+    // Week-level under-scheduled check (runs once with final hours)
+    const underScheduledWarnings = ScheduleValidatorService.checkUnderScheduled(
+      weekHoursAccumulator,
+      context.staff,
+    );
+    allWarnings.push(...underScheduledWarnings);
 
     return {
       days: dayResults,

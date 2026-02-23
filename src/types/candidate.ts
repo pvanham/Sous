@@ -38,6 +38,8 @@ export interface CandidateDTO {
   currentWeekHours: number;
   /** Staff member's configured maximum hours per week */
   maxHoursPerWeek: number;
+  /** Staff member's configured minimum hours per week */
+  minHoursPerWeek: number;
   /** True if assigning this shift would push the staff member over their maxHoursPerWeek */
   overtimeWarning: boolean;
   /** Stations the staff member prefers to work at */

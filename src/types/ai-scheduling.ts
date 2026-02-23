@@ -117,6 +117,8 @@ export interface WeekSolverInput {
   days: WeekDayCandidates[];
   /** staffId -> maxHoursPerWeek (from StaffDTO) */
   maxHoursLookup: Map<string, number>;
+  /** staffId -> minHoursPerWeek (from StaffDTO) */
+  minHoursLookup: Map<string, number>;
   /** staffId -> hours already committed from existing DB shifts */
   existingWeekHours: Map<string, number>;
 }
@@ -265,6 +267,10 @@ export interface GenerationMetadata {
   tokenUsage: TokenUsage;
   /** Aggregate quality score across all days of the week */
   weekScore: number;
+  /** Number of assignments placed on a staff member's preferred station */
+  preferredStationMatches: number;
+  /** Number of assignments where staff had at least one preferred station set */
+  totalAssignmentsWithPreference: number;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -324,8 +330,8 @@ export interface ValidationError {
 /** All possible soft warning types */
 export type ValidationWarningType =
   | "overtime_risk"
-  | "non_preferred_station"
-  | "clopening_risk";
+  | "clopening_risk"
+  | "under_scheduled";
 
 /**
  * A soft issue found during schedule validation.
@@ -355,6 +361,10 @@ export interface ValidationResult {
   errors: ValidationError[];
   /** Soft issues (surfaced to user but don't block) */
   warnings: ValidationWarning[];
+  /** Assignments placed on a staff member's preferred station */
+  preferredStationMatches: number;
+  /** Assignments where staff had at least one preferred station set */
+  totalAssignmentsWithPreference: number;
 }
 
 /**
@@ -402,6 +412,8 @@ export interface ReadinessIssue {
   message: string;
   /** Count of affected items (e.g., number of staff missing hourly rate) */
   count?: number;
+  /** Specific item names for display (e.g., staff names, station names) */
+  details?: string[];
 }
 
 /**

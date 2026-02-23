@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import type {
   DaySchedulingContext,
   GeneratedDaySchedule,
@@ -186,7 +187,7 @@ export function buildOptimizerUserPrompt(
   idToAlias: Map<string, string>,
   scoreBreakdown?: ScoreBreakdownInput,
 ): string {
-  const dateStr = context.date.toISOString().split("T")[0];
+  const dateStr = format(context.date, "yyyy-MM-dd");
   const lines: string[] = [];
   const assignmentMap = buildAssignmentMap(baseSchedule.assignments);
   const assignedStaffIds = new Set(baseSchedule.assignments.map((a) => a.staffId));
@@ -383,7 +384,7 @@ export function buildSwapCorrectionPrompt(
   context: DaySchedulingContext,
   idToAlias: Map<string, string>,
 ): string {
-  const dateStr = context.date.toISOString().split("T")[0];
+  const dateStr = format(context.date, "yyyy-MM-dd");
   const lines: string[] = [];
   const assignmentMap = buildAssignmentMap(baseSchedule.assignments);
   const assignedStaffIds = new Set(baseSchedule.assignments.map((a) => a.staffId));

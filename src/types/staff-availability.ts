@@ -40,7 +40,7 @@ export interface StaffAvailabilityInput {
   notes?: string;
 }
 
-// Bulk input for setting weekly availability
+// Bulk input for setting weekly availability (one entry per day, max 7)
 export interface BulkAvailabilityInput {
   staffId: string;
   availabilities: Array<Omit<StaffAvailabilityInput, "staffId">>;

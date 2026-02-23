@@ -1,3 +1,4 @@
+import { format } from "date-fns";
 import { generateJSON } from "@/lib/ai/openai-client";
 import {
   AILimitExceededError,
@@ -42,6 +43,12 @@ import type {
 /** Maximum number of self-correction retry attempts */
 const MAX_RETRY_ATTEMPTS = 1;
 
+/** Variance weight for hour balance penalty -- kept in sync with deterministic-solver */
+const VARIANCE_WEIGHT = 0.3;
+
+/** Per-hour penalty for staff below their minHoursPerWeek */
+const MIN_HOURS_SHORTFALL_WEIGHT = 0.5;
+
 /** Quality score breakdown for debugging and comparison logging */
 export interface QualityScoreBreakdown {
   total: number;
@@ -50,12 +57,13 @@ export interface QualityScoreBreakdown {
   timePreferenceMatches: number;
   timePreferenceCount: number;
   hourBalancePenalty: number;
+  minHoursShortfallPenalty: number;
   unfilledPenalty: number;
   unfilledCount: number;
 }
 
 /** Threshold for overtime risk warning (percentage of maxHoursPerWeek) */
-const OVERTIME_RISK_THRESHOLD = 0.8;
+const OVERTIME_RISK_THRESHOLD = 0.9;
 
 /** Minimum hours between closing and opening shifts to avoid clopening */
 const CLOPENING_THRESHOLD_HOURS = 10;
@@ -220,8 +228,8 @@ export const ScheduleValidatorService = {
    * 6. overlap: assignment overlaps with an existing shift in context
    *
    * Warnings (soft issues):
-   * - overtime_risk: staff would be above 80% of maxHoursPerWeek
-   * - non_preferred_station: assigned to a non-preferred station
+   * - overtime_risk: staff would be above 90% of maxHoursPerWeek
+   * - under_scheduled: staff total hours below their minHoursPerWeek
    * - clopening_risk: staff closed previous day and opens early (gap < 10h)
    *
    * @param generated - The AI-generated day schedule to validate
@@ -422,7 +430,7 @@ export const ScheduleValidatorService = {
       // Find existing shifts for this staff member on this day
       const staffExistingShifts = existingShifts.filter((s) => {
         if (s.staffId !== assignment.staffId) return false;
-        const shiftDate = new Date(s.start).toISOString().split("T")[0];
+        const shiftDate = format(new Date(s.start), "yyyy-MM-dd");
         return shiftDate === dateStr;
       });
 
@@ -487,25 +495,20 @@ export const ScheduleValidatorService = {
       }
     }
 
-    // Warning: Non-preferred station
-    for (let i = 0; i < assignments.length; i++) {
-      const assignment = assignments[i];
+    // Stat: Preferred station matches (positive metric, not a warning)
+    let preferredStationMatches = 0;
+    let totalAssignmentsWithPreference = 0;
+    for (const assignment of assignments) {
       const staffInfo = staffMap.get(assignment.staffId);
       const fullStaff = fullStaffMap.get(assignment.staffId);
       const preferredStations =
         staffInfo?.preferredStations ?? fullStaff?.preferredStations ?? [];
 
-      if (
-        preferredStations.length > 0 &&
-        !preferredStations.includes(assignment.station)
-      ) {
-        warnings.push({
-          type: "non_preferred_station",
-          staffId: assignment.staffId,
-          staffName: assignment.staffName,
-          shiftIndex: i,
-          message: `Staff "${assignment.staffName}" is assigned to "${assignment.station}" but prefers: ${preferredStations.join(", ")}.`,
-        });
+      if (preferredStations.length > 0) {
+        totalAssignmentsWithPreference++;
+        if (preferredStations.includes(assignment.station)) {
+          preferredStationMatches++;
+        }
       }
     }
 
@@ -549,6 +552,8 @@ export const ScheduleValidatorService = {
       valid: errors.length === 0,
       errors,
       warnings,
+      preferredStationMatches,
+      totalAssignmentsWithPreference,
     };
   },
 
@@ -608,7 +613,21 @@ export const ScheduleValidatorService = {
       const variance =
         remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
         remainingHours.length;
-      score -= variance * 0.1;
+      score -= variance * VARIANCE_WEIGHT;
+    }
+
+    // Min-hours shortfall: penalise staff below their minimum
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (!candidate) continue;
+      const minH = candidate.minHoursPerWeek ?? 0;
+      if (minH <= 0) continue;
+      const actualWeekHours = weekHoursOverride?.get(a.staffId) ?? candidate.currentWeekHours;
+      const slotDur = getShiftDurationHours(a.startTime, a.endTime);
+      const totalHours = actualWeekHours + slotDur;
+      if (totalHours < minH) {
+        score -= (minH - totalHours) * MIN_HOURS_SHORTFALL_WEIGHT;
+      }
     }
 
     score -= generated.unfilledSlots.length * 10;
@@ -672,7 +691,21 @@ export const ScheduleValidatorService = {
       const variance =
         remainingHours.reduce((s, v) => s + (v - mean) ** 2, 0) /
         remainingHours.length;
-      hourBalancePenalty = variance * 0.1;
+      hourBalancePenalty = variance * VARIANCE_WEIGHT;
+    }
+
+    let minHoursShortfallPenalty = 0;
+    for (const a of generated.assignments) {
+      const candidate = candidateMap.get(a.staffId);
+      if (!candidate) continue;
+      const minH = candidate.minHoursPerWeek ?? 0;
+      if (minH <= 0) continue;
+      const actualWeekHours = weekHoursOverride?.get(a.staffId) ?? candidate.currentWeekHours;
+      const slotDur = getShiftDurationHours(a.startTime, a.endTime);
+      const totalHours = actualWeekHours + slotDur;
+      if (totalHours < minH) {
+        minHoursShortfallPenalty += (minH - totalHours) * MIN_HOURS_SHORTFALL_WEIGHT;
+      }
     }
 
     const unfilledCount = generated.unfilledSlots.length;
@@ -682,6 +715,7 @@ export const ScheduleValidatorService = {
       preferredStationMatches +
       timePreferenceMatches -
       hourBalancePenalty -
+      minHoursShortfallPenalty -
       unfilledPenalty;
 
     return {
@@ -691,6 +725,7 @@ export const ScheduleValidatorService = {
       timePreferenceMatches,
       timePreferenceCount,
       hourBalancePenalty: Math.round(hourBalancePenalty * 100) / 100,
+      minHoursShortfallPenalty: Math.round(minHoursShortfallPenalty * 100) / 100,
       unfilledPenalty,
       unfilledCount,
     };
@@ -884,6 +919,43 @@ export const ScheduleValidatorService = {
     }
 
     return result;
+  },
+
+  /**
+   * Check for under-scheduled staff across the full generated week.
+   * Should be called once after all days are finalized, using the
+   * final week-hours accumulator for accurate totals.
+   *
+   * @param weekHours - Final staffId -> total hours for the week (existing + generated)
+   * @param staff - All active staff DTOs (for minHoursPerWeek lookup)
+   * @returns ValidationWarning[] for staff below their minimum hours
+   */
+  checkUnderScheduled(
+    weekHours: Map<string, number>,
+    staff: StaffDTO[],
+  ): ValidationWarning[] {
+    const warnings: ValidationWarning[] = [];
+
+    for (const member of staff) {
+      const minHours = member.minHoursPerWeek;
+      if (!minHours || minHours <= 0) continue;
+
+      const totalHours = weekHours.get(member.id) ?? 0;
+      if (totalHours < minHours) {
+        const msg = totalHours === 0
+          ? `"${member.name}" has no shifts scheduled (${minHours}h minimum).`
+          : `"${member.name}" is scheduled for ${totalHours.toFixed(1)}h but has a ${minHours}h minimum.`;
+        warnings.push({
+          type: "under_scheduled",
+          staffId: member.id,
+          staffName: member.name,
+          shiftIndex: -1,
+          message: msg,
+        });
+      }
+    }
+
+    return warnings;
   },
 
   /** Maximum optimizer retry attempts */

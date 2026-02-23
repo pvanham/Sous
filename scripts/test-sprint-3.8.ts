@@ -422,6 +422,7 @@ function buildMockDayContext(overrides?: {
           preference: "preferred",
           currentWeekHours: 0,
           maxHoursPerWeek: 40,
+          minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: ["Grill"],
         },
@@ -436,6 +437,7 @@ function buildMockDayContext(overrides?: {
           preference: "available",
           currentWeekHours: 0,
           maxHoursPerWeek: 40,
+          minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: [],
         },
@@ -462,6 +464,7 @@ function buildMockDayContext(overrides?: {
           preference: "available",
           currentWeekHours: 0,
           maxHoursPerWeek: 40,
+          minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: ["Prep"],
         },
@@ -476,6 +479,7 @@ function buildMockDayContext(overrides?: {
           preference: "available",
           currentWeekHours: 0,
           maxHoursPerWeek: 40,
+          minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: [],
         },
@@ -502,6 +506,7 @@ function buildMockDayContext(overrides?: {
           preference: "preferred",
           currentWeekHours: 0,
           maxHoursPerWeek: 40,
+          minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: ["Assembly"],
         },
@@ -784,6 +789,7 @@ async function testMaxHoursExceeded(): Promise<void> {
             preference: "available",
             currentWeekHours: 16,
             maxHoursPerWeek: 20,
+            minHoursPerWeek: 0,
             overtimeWarning: true,
             preferredStations: ["Prep"],
           },
@@ -902,8 +908,9 @@ async function testWarnings(): Promise<void> {
   const annaId = staffIds.get("Anna Grill")!;
   const benId = staffIds.get("Ben Prep")!;
 
-  // -- Warning 8a: Non-preferred station --
-  // Ben prefers Prep but is assigned to Grill
+  // -- Warning 8a: Preferred station stats --
+  // Ben prefers "Prep" but we assign him to "Grill" -- validator returns
+  // preferred station match stats instead of non_preferred_station warnings
   const dayContext = buildMockDayContext();
 
   const nonPreferred: GeneratedDaySchedule = {
@@ -917,24 +924,23 @@ async function testWarnings(): Promise<void> {
   };
 
   const nonPrefResult = ScheduleValidatorService.validate(nonPreferred, dayContext, allStaffDTOs);
-  // Ben has Grill skill, so no skill_mismatch error; but it's non-preferred
-  const nonPrefWarning = nonPrefResult.warnings.find(
-    (w) => w.type === "non_preferred_station" && w.staffId === benId
+  assert(
+    nonPrefResult.totalAssignmentsWithPreference === 1,
+    "Ben has preferred stations so totalAssignmentsWithPreference should be 1"
   );
   assert(
-    nonPrefWarning !== undefined,
-    "Non-preferred station warning detected for Ben on Grill"
+    nonPrefResult.preferredStationMatches === 0,
+    "Ben is on non-preferred station so preferredStationMatches should be 0"
   );
 
   // -- Warning 8b: Overtime risk --
-  // Anna has maxHoursPerWeek: 40. Give her 34 existing hours so 34+8=42... wait, that's an error.
-  // For a WARNING (not error), she should be above 80% (32h) but under max (40h).
-  // Give her 26 existing hours, propose 8 more = 34, which is 85% of 40 = warning
+  // Anna has maxHoursPerWeek: 40. Threshold is now 90% (36h).
+  // Give her 30 existing hours, propose 8 more = 38, which is 95% of 40 = warning
   const overtimeExisting: ShiftDTO[] = [];
-  // Create synthetic existing shifts: 26 hours total for Anna
-  // Mon: 9-17 (8h), Tue: 9-17 (8h), Wed: 9-19 (10h) = 26h
-  for (let d = 0; d < 3; d++) {
-    const h = d === 2 ? 10 : 8;
+  // Create synthetic existing shifts: 30 hours total for Anna
+  // Mon: 9-17 (8h), Tue: 9-17 (8h), Wed: 9-17 (8h), Thu: 9-15 (6h) = 30h
+  for (let d = 0; d < 4; d++) {
+    const h = d === 3 ? 6 : 8;
     overtimeExisting.push({
       id: `ot-shift-${d}`,
       orgId,
@@ -952,10 +958,10 @@ async function testWarnings(): Promise<void> {
 
   const overtimeContext = buildMockDayContext({ existingShifts: overtimeExisting });
 
-  // Assign Anna 8 more hours on Thursday (total: 34/40 = 85%)
+  // Assign Anna 8 more hours on Friday (total: 38/40 = 95%)
   const overtimeSchedule: GeneratedDaySchedule = {
-    date: "2026-03-12",  // Thursday
-    dayOfWeek: "Thursday",
+    date: "2026-03-13",  // Friday
+    dayOfWeek: "Friday",
     assignments: [
       { staffId: annaId, staffName: "Anna Grill", station: "Grill", startTime: "09:00", endTime: "17:00", reasoning: "Grill shift" },
     ],
@@ -969,7 +975,7 @@ async function testWarnings(): Promise<void> {
   );
   assert(
     otWarning !== undefined,
-    "Overtime risk warning detected for Anna at 85% of max hours"
+    "Overtime risk warning detected for Anna at 95% of max hours"
   );
   if (otWarning) {
     log(`  Overtime warning: ${otWarning.message}`);

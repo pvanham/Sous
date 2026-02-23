@@ -104,15 +104,15 @@ export const dayAvailabilitySchema = z
 
 /**
  * Bulk availability schema for setting a staff member's weekly availability.
- * Allows setting multiple time periods per day (morning/afternoon/evening).
- * Empty array = staff is unavailable for all time periods.
- * Max 21 entries = 7 days × 3 time periods.
+ * One availability window per day (continuous time range).
+ * Empty array = staff is unavailable for all days.
+ * Max 7 entries = one per day of the week.
  */
 export const bulkAvailabilitySchema = z.object({
   staffId: z.string().min(1, "Staff ID is required"),
   availabilities: z
     .array(dayAvailabilitySchema)
-    .max(21, "Cannot have more than 21 entries (7 days × 3 time periods)"),
+    .max(7, "Cannot have more than 7 entries (one per day)"),
 });
 
 /**

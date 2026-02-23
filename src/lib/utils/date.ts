@@ -157,6 +157,19 @@ export function normalizeToStartOfDay(date: Date): Date {
 }
 
 /**
+ * Parse a "YYYY-MM-DD" date string as local midnight.
+ * Unlike `new Date("YYYY-MM-DD")` which parses as UTC midnight,
+ * this uses the `Date(year, month, day)` constructor so the
+ * result is always midnight in the local (server/browser) timezone.
+ * @param dateStr - Date in "YYYY-MM-DD" format
+ * @returns Date at local midnight
+ */
+export function parseDateString(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+/**
  * Combine a date and a time string into a Date object.
  * @param date - The date portion
  * @param timeString - Time in "HH:mm" format

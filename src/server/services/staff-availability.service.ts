@@ -35,6 +35,7 @@ export const StaffAvailabilityService = {
 
   /**
    * Get all availability entries for a specific staff member.
+   * One entry per day of the week (max 7).
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param staffId - Staff document ID
@@ -217,11 +218,11 @@ export const StaffAvailabilityService = {
   /**
    * Bulk upsert weekly availability for a staff member.
    * Replaces all existing availability entries with the new set.
-   * First deletes all existing entries, then inserts the new ones.
+   * One entry per day of the week (max 7).
    * @param orgId - Organization ID
    * @param locationId - Location ID
    * @param staffId - Staff document ID
-   * @param availabilities - Array of day availability entries
+   * @param availabilities - Array of day availability entries (one per day)
    * @returns Array of upserted StaffAvailabilityDTO
    */
   async bulkUpsert(
