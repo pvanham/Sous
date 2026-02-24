@@ -107,12 +107,12 @@ export async function checkGenerationReadiness(
       };
     }
 
-    // --- Check: AI usage limit ---
+    // --- Check: AI usage limit (informational — deterministic generation works without AI) ---
     if (!usageCheck.allowed) {
       issues.push({
-        severity: "blocker",
+        severity: "warning",
         category: "usage_limit",
-        message: "Monthly generation limit reached. Resets next month.",
+        message: "Monthly AI optimization limit reached. You can still generate a base schedule. Resets next month.",
       });
     }
 
@@ -344,6 +344,151 @@ export async function generateSchedule(
       success: false,
       error:
         error instanceof Error ? error.message : "Schedule generation failed",
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// generateBaseSchedule (deterministic only, no AI)
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Generate a week's schedule using ONLY the deterministic solver.
+ * No AI optimizer calls, no AI usage check, no token logging.
+ * Returns a base schedule for preview that can later be optimized with AI.
+ *
+ * @param input - Object with scheduleId
+ * @returns GeneratedSchedule with aiOptimized = false
+ */
+export async function generateBaseSchedule(
+  input: unknown
+): Promise<ActionResponse<GeneratedSchedule>> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const parsed = generateScheduleSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues.map((e) => e.message).join(", "),
+    };
+  }
+
+  const ctx = await getLocationContext(userId);
+
+  try {
+    const schedule = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.scheduleId
+    );
+    if (!schedule) {
+      return { success: false, error: "Schedule not found" };
+    }
+
+    const context = await SchedulingAgentService.buildSchedulingContext(
+      ctx.orgId,
+      ctx.locationId,
+      userId,
+      schedule.weekStartDate
+    );
+
+    const generatedSchedule =
+      await SchedulingAgentService.generateBaseWeekSchedule(context);
+
+    return { success: true, data: generatedSchedule };
+  } catch (error) {
+    console.error("generateBaseSchedule error:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "Base schedule generation failed",
+    };
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// optimizeScheduleWithAI
+// ────────────────────────────────────────────────────────────
+
+/**
+ * Run the full pipeline (deterministic solver + AI swap optimizer) and
+ * return an AI-optimized schedule. Checks AI usage limits and logs tokens.
+ *
+ * @param input - Object with scheduleId
+ * @returns GeneratedSchedule with aiOptimized = true
+ */
+export async function optimizeScheduleWithAI(
+  input: unknown
+): Promise<ActionResponse<GeneratedSchedule>> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const parsed = generateScheduleSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues.map((e) => e.message).join(", "),
+    };
+  }
+
+  const ctx = await getLocationContext(userId);
+
+  try {
+    const usageCheck = await AIUsageService.canGenerate(
+      ctx.orgId,
+      ctx.locationId
+    );
+    if (!usageCheck.allowed) {
+      return {
+        success: false,
+        error: `Monthly AI generation limit reached (${usageCheck.remaining} remaining). Resets next month.`,
+      };
+    }
+
+    const schedule = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.scheduleId
+    );
+    if (!schedule) {
+      return { success: false, error: "Schedule not found" };
+    }
+
+    const context = await SchedulingAgentService.buildSchedulingContext(
+      ctx.orgId,
+      ctx.locationId,
+      userId,
+      schedule.weekStartDate
+    );
+
+    const generatedSchedule =
+      await SchedulingAgentService.generateWeekSchedule(context);
+
+    await AIUsageService.logUsage(
+      ctx.orgId,
+      ctx.locationId,
+      userId,
+      "schedule_generation",
+      generatedSchedule.metadata.tokenUsage,
+      {
+        modelName: "gpt-4o",
+        durationMs: generatedSchedule.metadata.generationTimeMs,
+        success: true,
+      }
+    );
+
+    return { success: true, data: generatedSchedule };
+  } catch (error) {
+    console.error("optimizeScheduleWithAI error:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error ? error.message : "AI optimization failed",
     };
   }
 }

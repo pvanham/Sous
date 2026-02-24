@@ -271,6 +271,8 @@ export interface GenerationMetadata {
   preferredStationMatches: number;
   /** Number of assignments where staff had at least one preferred station set */
   totalAssignmentsWithPreference: number;
+  /** Whether the schedule has been through the AI swap optimizer */
+  aiOptimized: boolean;
 }
 
 // ────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ import {
   Settings,
   Users,
   ArrowRight,
+  Cpu,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -28,7 +29,8 @@ import {
 } from "@/components/ui/dialog";
 import {
   checkGenerationReadiness,
-  generateSchedule,
+  generateBaseSchedule,
+  optimizeScheduleWithAI,
   acceptGeneratedSchedule,
 } from "@/server/actions/schedule-generation.actions";
 import { formatWeekLabel } from "@/lib/utils/date";
@@ -45,7 +47,12 @@ import { GeneratedShiftPreview } from "./GeneratedShiftPreview";
 // Dialog step type
 // ────────────────────────────────────────────────────────────
 
-type DialogStep = "readiness" | "generating" | "preview" | "failure";
+type DialogStep =
+  | "readiness"
+  | "generating"
+  | "preview"
+  | "optimizing"
+  | "failure";
 
 // ────────────────────────────────────────────────────────────
 // Query keys
@@ -74,13 +81,14 @@ interface GenerateScheduleDialogProps {
 // ────────────────────────────────────────────────────────────
 
 /**
- * GenerateScheduleDialog - Multi-step dialog for AI schedule generation.
+ * GenerateScheduleDialog - Multi-step dialog for schedule generation.
  *
- * Steps:
- * 1. Readiness Check - verifies data completeness before generation
- * 2. Generating - shows progress while AI generates the schedule
- * 3. Preview - displays generated shifts for review (uses GeneratedShiftPreview)
- * 4. Failure - graceful failure with partial results and recovery options
+ * Two-phase approach:
+ * 1. Readiness Check -> Generate (deterministic only, fast) -> Preview base schedule
+ * 2. Optional: Optimize with AI -> Preview AI-optimized schedule
+ *
+ * The deterministic solver always produces the same output, so "Regenerate"
+ * only appears after AI optimization (which is non-deterministic).
  *
  * Follows UI Layer rules: no DB imports, calls server actions only via
  * TanStack Query mutations. All data passed as DTOs.
@@ -96,21 +104,21 @@ export function GenerateScheduleDialog({
   const [step, setStep] = useState<DialogStep>("readiness");
   const [generatedSchedule, setGeneratedSchedule] =
     useState<GeneratedSchedule | null>(null);
+  const [isAIOptimized, setIsAIOptimized] = useState(false);
 
-  // Reset state when dialog opens/closes
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
-        // Reset on close
         setStep("readiness");
         setGeneratedSchedule(null);
+        setIsAIOptimized(false);
       }
       onOpenChange(isOpen);
     },
     [onOpenChange]
   );
 
-  // ── Step 1: Readiness check query ──
+  // ── Readiness check query ──
   const {
     data: readiness,
     isLoading: isCheckingReadiness,
@@ -126,20 +134,20 @@ export function GenerateScheduleDialog({
       return result.data;
     },
     enabled: open && step === "readiness",
-    staleTime: 30_000, // Cache for 30 seconds
+    staleTime: 30_000,
   });
 
-  // ── Step 2: Generate mutation ──
+  // ── Base generation mutation (deterministic only) ──
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const result = await generateSchedule({ scheduleId: schedule.id });
+      const result = await generateBaseSchedule({ scheduleId: schedule.id });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
     onSuccess: (data) => {
       setGeneratedSchedule(data);
+      setIsAIOptimized(false);
 
-      // Check if generation was mostly successful
       const totalRequired =
         data.days.reduce(
           (sum, day) =>
@@ -151,10 +159,7 @@ export function GenerateScheduleDialog({
       const totalFilled = data.metadata.totalShiftsCreated;
       const fillRate = totalFilled / totalRequired;
 
-      if (totalFilled === 0) {
-        setStep("failure");
-      } else if (fillRate < 0.5) {
-        // Less than 50% filled -- show as failure with partial results
+      if (totalFilled === 0 || fillRate < 0.5) {
         setStep("failure");
       } else {
         setStep("preview");
@@ -165,7 +170,43 @@ export function GenerateScheduleDialog({
     },
   });
 
-  // ── Step 3: Accept mutation ──
+  // ── AI optimization mutation ──
+  const optimizeMutation = useMutation({
+    mutationFn: async () => {
+      const result = await optimizeScheduleWithAI({
+        scheduleId: schedule.id,
+      });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: (data) => {
+      setGeneratedSchedule(data);
+      setIsAIOptimized(true);
+
+      const totalRequired =
+        data.days.reduce(
+          (sum, day) =>
+            sum +
+            day.assignments.length +
+            day.unfilledSlots.reduce((s, slot) => s + slot.needed, 0),
+          0
+        ) || 1;
+      const totalFilled = data.metadata.totalShiftsCreated;
+      const fillRate = totalFilled / totalRequired;
+
+      if (totalFilled === 0 || fillRate < 0.5) {
+        setStep("failure");
+      } else {
+        setStep("preview");
+      }
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+      setStep("preview");
+    },
+  });
+
+  // ── Accept mutation ──
   const acceptMutation = useMutation({
     mutationFn: async (shifts: AcceptedShift[]) => {
       const result = await acceptGeneratedSchedule({
@@ -184,7 +225,6 @@ export function GenerateScheduleDialog({
         toast.success(`Created ${data.created} shifts`);
       }
 
-      // Invalidate shift cache to refresh the schedule grid
       queryClient.invalidateQueries({
         queryKey: shiftKeys.bySchedule(schedule.id),
       });
@@ -204,10 +244,20 @@ export function GenerateScheduleDialog({
     generateMutation.mutate();
   };
 
+  const handleOptimize = () => {
+    setStep("optimizing");
+    optimizeMutation.mutate();
+  };
+
+  const handleRegenerate = () => {
+    setGeneratedSchedule(null);
+    setStep("optimizing");
+    optimizeMutation.mutate();
+  };
+
   const handleAcceptAll = () => {
     if (!generatedSchedule) return;
 
-    // Flatten all day assignments into AcceptedShift format
     const shifts: AcceptedShift[] = generatedSchedule.days.flatMap((day) =>
       day.assignments.map((assignment) => ({
         staffId: assignment.staffId,
@@ -226,18 +276,13 @@ export function GenerateScheduleDialog({
     acceptMutation.mutate(shifts);
   };
 
-  const handleRegenerate = () => {
-    setGeneratedSchedule(null);
-    setStep("generating");
-    generateMutation.mutate();
-  };
-
   const handleSavePartial = () => {
-    // Same as accept all -- save whatever was generated
     handleAcceptAll();
   };
 
   // ── Render ──
+
+  const weekLabel = formatWeekLabel(weekStart);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -247,7 +292,7 @@ export function GenerateScheduleDialog({
             readiness={readiness ?? null}
             isLoading={isCheckingReadiness}
             error={readinessError}
-            weekLabel={formatWeekLabel(weekStart)}
+            weekLabel={weekLabel}
             onGenerate={handleGenerate}
             onRefresh={() => refetchReadiness()}
             onCancel={() => handleOpenChange(false)}
@@ -255,27 +300,39 @@ export function GenerateScheduleDialog({
         )}
 
         {step === "generating" && (
-          <GeneratingStep weekLabel={formatWeekLabel(weekStart)} />
+          <GeneratingStep weekLabel={weekLabel} />
+        )}
+
+        {step === "optimizing" && (
+          <OptimizingStep weekLabel={weekLabel} />
         )}
 
         {step === "preview" && generatedSchedule && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-amber-500" />
-                Generated Schedule
+                {isAIOptimized ? (
+                  <Sparkles className="h-5 w-5 text-amber-500" />
+                ) : (
+                  <Cpu className="h-5 w-5 text-blue-500" />
+                )}
+                {isAIOptimized ? "AI-Optimized Schedule" : "Generated Schedule"}
               </DialogTitle>
               <DialogDescription>
-                Review the AI-generated schedule for{" "}
-                {formatWeekLabel(weekStart)}. Accept all shifts to save them.
+                {isAIOptimized
+                  ? `Review the AI-optimized schedule for ${weekLabel}. Accept all shifts to save them.`
+                  : `Review the generated schedule for ${weekLabel}. You can accept it or optimize with AI.`}
               </DialogDescription>
             </DialogHeader>
 
             <GeneratedShiftPreview
               generatedSchedule={generatedSchedule}
               isAccepting={acceptMutation.isPending}
+              isAIOptimized={isAIOptimized}
+              aiUsageRemaining={readiness?.usageRemaining}
               onAcceptAll={handleAcceptAll}
               onRegenerate={handleRegenerate}
+              onOptimize={handleOptimize}
               onCancel={() => handleOpenChange(false)}
             />
           </>
@@ -284,11 +341,13 @@ export function GenerateScheduleDialog({
         {step === "failure" && (
           <FailureStep
             generatedSchedule={generatedSchedule}
-            error={generateMutation.error}
-            weekLabel={formatWeekLabel(weekStart)}
+            error={
+              generateMutation.error ?? optimizeMutation.error ?? null
+            }
+            weekLabel={weekLabel}
             isAccepting={acceptMutation.isPending}
             onSavePartial={handleSavePartial}
-            onRegenerate={handleRegenerate}
+            onRegenerate={handleGenerate}
             onCancel={() => handleOpenChange(false)}
           />
         )}
@@ -324,7 +383,7 @@ function ReadinessStep({
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-amber-500" />
+          <Cpu className="h-5 w-5 text-blue-500" />
           Generate Schedule
         </DialogTitle>
         <DialogDescription>
@@ -359,16 +418,21 @@ function ReadinessStep({
 
         {readiness && (
           <>
-            {/* Usage summary */}
+            {/* AI usage summary */}
             <div className="rounded-lg border bg-muted/50 p-3">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">AI Generations</span>
+                <span className="text-sm font-medium">AI Optimizations</span>
                 <Badge
-                  variant={readiness.usageRemaining > 0 ? "info" : "destructive"}
+                  variant={readiness.usageRemaining > 0 ? "info" : "secondary"}
                 >
                   {readiness.usageRemaining} of {readiness.usageLimit} remaining
                 </Badge>
               </div>
+              {readiness.usageRemaining === 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  You can still generate a base schedule without AI.
+                </p>
+              )}
             </div>
 
             {/* Stats row */}
@@ -419,7 +483,7 @@ function ReadinessStep({
           onClick={onGenerate}
           disabled={isLoading || !readiness?.canProceed}
         >
-          <Sparkles className="mr-2 h-4 w-4" />
+          <Cpu className="mr-2 h-4 w-4" />
           Generate Schedule
           <ArrowRight className="ml-2 h-4 w-4" />
         </Button>
@@ -429,7 +493,7 @@ function ReadinessStep({
 }
 
 // ────────────────────────────────────────────────────────────
-// Step 2: Generating
+// Step 2: Generating (deterministic)
 // ────────────────────────────────────────────────────────────
 
 interface GeneratingStepProps {
@@ -441,11 +505,50 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-amber-500" />
+          <Cpu className="h-5 w-5 text-blue-500" />
           Generating Schedule
         </DialogTitle>
         <DialogDescription>
-          Creating an optimized schedule for {weekLabel}
+          Building schedule for {weekLabel}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="flex flex-col items-center justify-center py-12 space-y-4">
+        <div className="relative">
+          <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+        </div>
+        <div className="text-center space-y-1">
+          <p className="text-sm font-medium">
+            Building schedule using availability, preferences, and
+            constraints...
+          </p>
+          <p className="text-xs text-muted-foreground">
+            This typically takes a few seconds.
+          </p>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ────────────────────────────────────────────────────────────
+// Step 3b: Optimizing with AI
+// ────────────────────────────────────────────────────────────
+
+interface OptimizingStepProps {
+  weekLabel: string;
+}
+
+function OptimizingStep({ weekLabel }: OptimizingStepProps) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-amber-500" />
+          Optimizing with AI
+        </DialogTitle>
+        <DialogDescription>
+          Running AI swap optimizer to improve the schedule for {weekLabel}
         </DialogDescription>
       </DialogHeader>
 
@@ -455,7 +558,7 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
         </div>
         <div className="text-center space-y-1">
           <p className="text-sm font-medium">
-            Analyzing staff, shift slots, and availability...
+            AI is analyzing assignments and suggesting improvements...
           </p>
           <p className="text-xs text-muted-foreground">
             This typically takes 30-90 seconds depending on schedule complexity.
@@ -467,7 +570,7 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
 }
 
 // ────────────────────────────────────────────────────────────
-// Step 4: Failure with partial results
+// Failure Step
 // ────────────────────────────────────────────────────────────
 
 interface FailureStepProps {
@@ -495,7 +598,6 @@ function FailureStep({
   const fillRate = totalRequired > 0 ? totalShifts / totalRequired : 0;
   const canSavePartial = fillRate >= 0.8 && totalShifts > 0;
 
-  // Collect all unfilled slots across all days
   const allUnfilledSlots =
     generatedSchedule?.days.flatMap((day) =>
       day.unfilledSlots.map((slot) => ({
@@ -518,14 +620,12 @@ function FailureStep({
       </DialogHeader>
 
       <div className="space-y-4 py-2">
-        {/* Error message if complete failure */}
         {error && !generatedSchedule && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
             <p className="text-sm text-destructive">{error.message}</p>
           </div>
         )}
 
-        {/* Partial results summary */}
         {generatedSchedule && (
           <>
             <div className="rounded-lg border bg-muted/50 p-4">
@@ -543,7 +643,6 @@ function FailureStep({
               )}
             </div>
 
-            {/* Unfilled slots list */}
             {allUnfilledSlots.length > 0 && (
               <div className="space-y-2">
                 <h4 className="text-sm font-medium">Unfilled Slots</h4>
@@ -573,7 +672,6 @@ function FailureStep({
           </>
         )}
 
-        {/* Recovery options */}
         <div className="space-y-2">
           <h4 className="text-sm font-medium">What you can do</h4>
           <div className="grid gap-2">

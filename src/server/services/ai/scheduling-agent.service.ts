@@ -466,6 +466,30 @@ interface OptimizerStatsAccumulator {
   scoreDeltas: number[];
 }
 
+/** Metadata for a single active day, built during candidate pre-fetching. */
+interface DayContextInfo {
+  date: Date;
+  dayOfWeek: number;
+  dayName: string;
+  dateStr: string;
+  operatingHours: { open: string; close: string } | null;
+  slotCandidates: SlotCandidates[];
+}
+
+/** Result of Phase 1 (candidate pre-fetching) + Phase 2 (deterministic solve). */
+interface PrefetchAndSolveResult {
+  weekDays: Date[];
+  skippedDayResults: GeneratedDaySchedule[];
+  allDayCandidates: WeekDayCandidates[];
+  dayContextMap: Map<number, DayContextInfo>;
+  weekDaySchedules: GeneratedDaySchedule[];
+  weekBaseMap: Map<string, GeneratedDaySchedule>;
+  weekHoursAccumulator: Map<string, number>;
+  solverElapsed: number;
+  totalWeekAssignments: number;
+  totalWeekUnfilled: number;
+}
+
 // ────────────────────────────────────────────────────────────
 // Internal Helpers
 // ────────────────────────────────────────────────────────────
@@ -548,6 +572,152 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
     totalTokens: a.totalTokens + b.totalTokens,
     estimatedCostCents:
       Math.round((a.estimatedCostCents + b.estimatedCostCents) * 100) / 100,
+  };
+}
+
+/**
+ * Phase 1 + Phase 2: Pre-fetch candidates for all days, then run the
+ * week-level deterministic solver. Shared by both generateBaseWeekSchedule
+ * and generateWeekSchedule to avoid code duplication.
+ */
+async function prefetchAndSolve(
+  context: SchedulingContext,
+): Promise<PrefetchAndSolveResult> {
+  const weekDays = getWeekDays(context.weekStart);
+  const weekHoursAccumulator = initWeekHoursFromShifts(
+    context.existingShifts,
+    context.weekStart,
+  );
+
+  // ── Phase 1: Pre-fetch candidates for ALL days ──
+  const prefetchStart = Date.now();
+  const allDayCandidates: WeekDayCandidates[] = [];
+  const dayContextMap = new Map<number, DayContextInfo>();
+  const skippedDayResults: GeneratedDaySchedule[] = [];
+
+  for (let i = 0; i < weekDays.length; i++) {
+    const date = weekDays[i];
+    const dayOfWeek = getDayOfWeek(date);
+    const dayName = DAY_NAMES[dayOfWeek];
+    const dateStr = format(date, "yyyy-MM-dd");
+
+    const operatingHours = getStoreHoursForDay(
+      context.config.operatingHours,
+      date,
+    );
+
+    const dayRequirements = context.laborRequirements.filter(
+      (req) => req.dayOfWeek === dayOfWeek,
+    );
+
+    if (!operatingHours || dayRequirements.length === 0) {
+      const reason = !operatingHours ? "closed" : "no shift slots";
+      console.log(
+        `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — skipped (${reason})`,
+      );
+      skippedDayResults.push({
+        date: dateStr,
+        dayOfWeek: dayName,
+        assignments: [],
+        unfilledSlots: [],
+        notes: !operatingHours
+          ? "Kitchen is closed on this day."
+          : "No shift slots defined for this day.",
+      });
+      continue;
+    }
+
+    let previousDayClosingShifts: ShiftDTO[] = [];
+    if (i > 0) {
+      const previousDay = weekDays[i - 1];
+      previousDayClosingShifts = getClosingShifts(
+        context.existingShifts,
+        previousDay,
+      );
+    }
+
+    const slotCandidates = await CandidateService.getCandidatesForDay(
+      context.orgId,
+      context.locationId,
+      date,
+      dayRequirements,
+      context.existingShifts,
+      weekHoursAccumulator,
+      previousDayClosingShifts,
+    );
+
+    const totalCandidates = slotCandidates.reduce(
+      (sum, s) => sum + s.candidates.length, 0,
+    );
+    console.log(
+      `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — ${totalCandidates} candidates across ${slotCandidates.length} slot(s)`,
+    );
+
+    allDayCandidates.push({
+      dayIndex: i,
+      date,
+      dateStr,
+      dayOfWeek,
+      dayName,
+      slots: slotCandidates,
+    });
+
+    dayContextMap.set(i, {
+      date,
+      dayOfWeek,
+      dayName,
+      dateStr,
+      operatingHours,
+      slotCandidates,
+    });
+  }
+
+  console.log(
+    `${LOG_PREFIX} Pre-fetch complete: ${allDayCandidates.length} active day(s) (${fmtMs(Date.now() - prefetchStart)})`,
+  );
+
+  // ── Phase 2: Week-level deterministic solve ──
+  const weekSolverInput: WeekSolverInput = {
+    days: allDayCandidates,
+    maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
+    minHoursLookup: new Map(context.staff.map((s) => [s.id, s.minHoursPerWeek])),
+    existingWeekHours: new Map(weekHoursAccumulator),
+  };
+
+  const solverStart = Date.now();
+  const weekDaySchedules = DeterministicSolverService.solveWeek(weekSolverInput);
+  const solverElapsed = Date.now() - solverStart;
+
+  const totalWeekAssignments = weekDaySchedules.reduce(
+    (sum, d) => sum + d.assignments.length, 0,
+  );
+  const totalWeekUnfilled = weekDaySchedules.reduce(
+    (sum, d) => sum + d.unfilledSlots.length, 0,
+  );
+
+  const weekSolveBreakdown = weekDaySchedules
+    .map((ds) => `    ${ds.dayOfWeek} ${ds.date}: ${ds.assignments.length} assigned, ${ds.unfilledSlots.length} unfilled`)
+    .join("\n");
+  console.log(
+    `${LOG_PREFIX} Week-level solve: ${totalWeekAssignments} assignments, ${totalWeekUnfilled} unfilled (${fmtMs(solverElapsed)})\n${weekSolveBreakdown}`,
+  );
+
+  const weekBaseMap = new Map<string, GeneratedDaySchedule>();
+  for (const ds of weekDaySchedules) {
+    weekBaseMap.set(ds.date, ds);
+  }
+
+  return {
+    weekDays,
+    skippedDayResults,
+    allDayCandidates,
+    dayContextMap,
+    weekDaySchedules,
+    weekBaseMap,
+    weekHoursAccumulator,
+    solverElapsed,
+    totalWeekAssignments,
+    totalWeekUnfilled,
   };
 }
 
@@ -1089,6 +1259,146 @@ export const SchedulingAgentService = {
   },
 
   /**
+   * Generate a base week schedule using ONLY the deterministic solver.
+   * Runs Phase 1 (candidate pre-fetching) + Phase 2 (week-level greedy +
+   * hill climbing) without any AI optimizer calls. Produces a guaranteed-valid
+   * schedule that can be previewed immediately, then optionally optimized
+   * with AI via generateWeekSchedule().
+   *
+   * @param context - Full week scheduling context
+   * @returns GeneratedSchedule with aiOptimized = false
+   */
+  async generateBaseWeekSchedule(
+    context: SchedulingContext,
+  ): Promise<GeneratedSchedule> {
+    const startTime = Date.now();
+
+    console.log(
+      `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting BASE week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
+        `  Staff: ${context.staff.length} active | Shift slots: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
+        `${"═".repeat(60)}`,
+    );
+
+    const base = await prefetchAndSolve(context);
+
+    // Combine skipped days + solver results
+    const dayResults: GeneratedDaySchedule[] = [
+      ...base.skippedDayResults,
+      ...base.weekDaySchedules,
+    ];
+    dayResults.sort((a, b) => a.date.localeCompare(b.date));
+
+    // Build DaySchedulingContexts for scoring & validation
+    const dayContexts: DaySchedulingContext[] = [];
+    const allWarnings: ValidationWarning[] = [];
+    let totalPreferredStationMatches = 0;
+    let totalAssignmentsWithPreference = 0;
+
+    for (const dayCandidate of base.allDayCandidates) {
+      const dayInfo = base.dayContextMap.get(dayCandidate.dayIndex)!;
+      const daySchedule = base.weekBaseMap.get(dayCandidate.dateStr);
+      if (!daySchedule) continue;
+
+      const dayContext: DaySchedulingContext = {
+        date: dayCandidate.date,
+        dayOfWeek: dayCandidate.dayOfWeek,
+        dayName: dayCandidate.dayName,
+        slots: dayInfo.slotCandidates,
+        existingShifts: context.existingShifts,
+        previousDayClosingShifts: [],
+        kitchenContext: {
+          operatingHours: dayInfo.operatingHours
+            ? { open: dayInfo.operatingHours.open, close: dayInfo.operatingHours.close }
+            : null,
+          totalStaffCount: context.staff.length,
+        },
+      };
+      dayContexts.push(dayContext);
+
+      // Validate for warnings
+      const validation = ScheduleValidatorService.validate(
+        daySchedule,
+        dayContext,
+        context.staff,
+      );
+      allWarnings.push(...validation.warnings);
+      totalPreferredStationMatches += validation.preferredStationMatches;
+      totalAssignmentsWithPreference += validation.totalAssignmentsWithPreference;
+
+      // Update hours accumulator with solver assignments
+      for (const assignment of daySchedule.assignments) {
+        const duration = getSlotDurationHours(
+          assignment.startTime,
+          assignment.endTime,
+        );
+        const current = base.weekHoursAccumulator.get(assignment.staffId) ?? 0;
+        base.weekHoursAccumulator.set(assignment.staffId, current + duration);
+      }
+    }
+
+    const totalShiftsCreated = dayResults.reduce(
+      (sum, d) => sum + d.assignments.length, 0,
+    );
+    const totalUnfilledSlots = dayResults.reduce(
+      (sum, d) => sum + d.unfilledSlots.length, 0,
+    );
+
+    const weekScore = ScheduleValidatorService.scoreWeek(
+      dayResults,
+      dayContexts,
+      base.weekHoursAccumulator,
+    );
+
+    const underScheduledWarnings = ScheduleValidatorService.checkUnderScheduled(
+      base.weekHoursAccumulator,
+      context.staff,
+    );
+    allWarnings.push(...underScheduledWarnings);
+
+    const totalElapsed = Date.now() - startTime;
+    const metadata: GenerationMetadata = {
+      totalShiftsCreated,
+      totalUnfilledSlots,
+      usedFallback: false,
+      aiImprovedDays: 0,
+      totalOptimizerDays: 0,
+      generationTimeMs: totalElapsed,
+      tokenUsage: emptyTokenUsage(),
+      weekScore,
+      preferredStationMatches: totalPreferredStationMatches,
+      totalAssignmentsWithPreference,
+      aiOptimized: false,
+    };
+
+    const summaryParts: string[] = [];
+    summaryParts.push(
+      `Generated ${totalShiftsCreated} shift(s) across ${dayResults.filter((d) => d.assignments.length > 0).length} day(s) using deterministic scheduling.`,
+    );
+    if (totalUnfilledSlots > 0) {
+      summaryParts.push(
+        `${totalUnfilledSlots} slot(s) could not be fully staffed.`,
+      );
+    }
+    if (allWarnings.length > 0) {
+      summaryParts.push(`${allWarnings.length} warning(s) noted.`);
+    }
+
+    console.log(
+      `\n${"═".repeat(60)}\n${LOG_PREFIX} BASE week generation complete in ${fmtMs(totalElapsed)}\n` +
+        `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Week Score: ${weekScore} | Warnings: ${allWarnings.length}\n` +
+        `  Solver: ${base.totalWeekAssignments} assignments (${fmtMs(base.solverElapsed)})\n` +
+        `${"═".repeat(60)}\n`,
+    );
+
+    return {
+      days: dayResults,
+      summary: summaryParts.join(" "),
+      metadata,
+      warnings: allWarnings,
+    };
+  },
+
+  /**
    * Generate a full week's schedule using week-level deterministic solving
    * followed by per-day AI optimization.
    *
@@ -1101,16 +1411,15 @@ export const SchedulingAgentService = {
    * considering all slots across all days simultaneously.
    *
    * @param context - Full week scheduling context
-   * @returns GeneratedSchedule with all days and metadata
+   * @returns GeneratedSchedule with aiOptimized = true and metadata
    */
   async generateWeekSchedule(
     context: SchedulingContext,
   ): Promise<GeneratedSchedule> {
     const startTime = Date.now();
-    const weekDays = getWeekDays(context.weekStart);
 
     console.log(
-      `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
+      `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting AI-optimized week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
         `  Staff: ${context.staff.length} active | Shift slots: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
         `${"═".repeat(60)}`,
     );
@@ -1121,6 +1430,9 @@ export const SchedulingAgentService = {
       clerkUserId: context.clerkUserId,
       action: "schedule_generation",
     };
+
+    const base = await prefetchAndSolve(context);
+    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator } = base;
 
     let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
     let totalTokenUsage = emptyTokenUsage();
@@ -1136,146 +1448,9 @@ export const SchedulingAgentService = {
       scoreDeltas: [],
     };
 
-    const dayResults: GeneratedDaySchedule[] = [];
+    const dayResults: GeneratedDaySchedule[] = [...base.skippedDayResults];
     const dayContexts: DaySchedulingContext[] = [];
     let runningShiftCount = 0;
-
-    const weekHoursAccumulator = initWeekHoursFromShifts(
-      context.existingShifts,
-      context.weekStart,
-    );
-
-    // ══════════════════════════════════════════════════════════
-    // Phase 1: Pre-fetch candidates for ALL days
-    // ══════════════════════════════════════════════════════════
-    // Candidates are fetched using only existing DB shifts (no synthetic).
-    // The week-level solver handles cross-day hour distribution and
-    // clopening from generated shifts internally.
-    const prefetchStart = Date.now();
-    const allDayCandidates: WeekDayCandidates[] = [];
-    const dayContextMap = new Map<number, {
-      date: Date;
-      dayOfWeek: number;
-      dayName: string;
-      dateStr: string;
-      operatingHours: { open: string; close: string } | null;
-      slotCandidates: SlotCandidates[];
-    }>();
-
-    for (let i = 0; i < weekDays.length; i++) {
-      const date = weekDays[i];
-      const dayOfWeek = getDayOfWeek(date);
-      const dayName = DAY_NAMES[dayOfWeek];
-      const dateStr = format(date, "yyyy-MM-dd");
-
-      const operatingHours = getStoreHoursForDay(
-        context.config.operatingHours,
-        date,
-      );
-
-      const dayRequirements = context.laborRequirements.filter(
-        (req) => req.dayOfWeek === dayOfWeek,
-      );
-
-      if (!operatingHours || dayRequirements.length === 0) {
-        const reason = !operatingHours ? "closed" : "no shift slots";
-        console.log(
-          `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — skipped (${reason})`,
-        );
-        dayResults.push({
-          date: dateStr,
-          dayOfWeek: dayName,
-          assignments: [],
-          unfilledSlots: [],
-          notes: !operatingHours
-            ? "Kitchen is closed on this day."
-            : "No shift slots defined for this day.",
-        });
-        continue;
-      }
-
-      let previousDayClosingShifts: ShiftDTO[] = [];
-      if (i > 0) {
-        const previousDay = weekDays[i - 1];
-        previousDayClosingShifts = getClosingShifts(
-          context.existingShifts,
-          previousDay,
-        );
-      }
-
-      const slotCandidates = await CandidateService.getCandidatesForDay(
-        context.orgId,
-        context.locationId,
-        date,
-        dayRequirements,
-        context.existingShifts,
-        weekHoursAccumulator,
-        previousDayClosingShifts,
-      );
-
-      const totalCandidates = slotCandidates.reduce(
-        (sum, s) => sum + s.candidates.length, 0,
-      );
-      console.log(
-        `${LOG_PREFIX} Pre-fetch [${i + 1}/7] ${dayName} ${dateStr} — ${totalCandidates} candidates across ${slotCandidates.length} slot(s)`,
-      );
-
-      allDayCandidates.push({
-        dayIndex: i,
-        date,
-        dateStr,
-        dayOfWeek,
-        dayName,
-        slots: slotCandidates,
-      });
-
-      dayContextMap.set(i, {
-        date,
-        dayOfWeek,
-        dayName,
-        dateStr,
-        operatingHours,
-        slotCandidates,
-      });
-    }
-
-    console.log(
-      `${LOG_PREFIX} Pre-fetch complete: ${allDayCandidates.length} active day(s) (${fmtMs(Date.now() - prefetchStart)})`,
-    );
-
-    // ══════════════════════════════════════════════════════════
-    // Phase 2: Week-level deterministic solve
-    // ══════════════════════════════════════════════════════════
-    const weekSolverInput: WeekSolverInput = {
-      days: allDayCandidates,
-      maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
-      minHoursLookup: new Map(context.staff.map((s) => [s.id, s.minHoursPerWeek])),
-      existingWeekHours: new Map(weekHoursAccumulator),
-    };
-
-    const solverStart = Date.now();
-    const weekDaySchedules = DeterministicSolverService.solveWeek(weekSolverInput);
-    const solverElapsed = Date.now() - solverStart;
-
-    const totalWeekAssignments = weekDaySchedules.reduce(
-      (sum, d) => sum + d.assignments.length, 0,
-    );
-    const totalWeekUnfilled = weekDaySchedules.reduce(
-      (sum, d) => sum + d.unfilledSlots.length, 0,
-    );
-
-    const weekSolveBreakdown = weekDaySchedules
-      .map((ds) => `    ${ds.dayOfWeek} ${ds.date}: ${ds.assignments.length} assigned, ${ds.unfilledSlots.length} unfilled`)
-      .join("\n");
-    console.log(
-      `${LOG_PREFIX} Week-level solve: ${totalWeekAssignments} assignments, ${totalWeekUnfilled} unfilled (${fmtMs(solverElapsed)})\n${weekSolveBreakdown}`,
-    );
-
-    // Build a lookup from dateStr -> week-level base schedule
-    const weekBaseMap = new Map<string, GeneratedDaySchedule>();
-    for (const ds of weekDaySchedules) {
-      weekBaseMap.set(ds.date, ds);
-    }
 
     // ══════════════════════════════════════════════════════════
     // Phase 3: Per-day AI optimizer on top of week-level base
@@ -1505,6 +1680,7 @@ export const SchedulingAgentService = {
       weekScore,
       preferredStationMatches: totalPreferredStationMatches,
       totalAssignmentsWithPreference,
+      aiOptimized: true,
     };
 
     const summaryParts: string[] = [];
@@ -1540,7 +1716,7 @@ export const SchedulingAgentService = {
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Week generation complete in ${fmtMs(totalElapsed)}\n` +
         `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Week Score: ${weekScore} | Warnings: ${allWarnings.length}\n` +
-        `  Week-level solve: ${totalWeekAssignments} assignments, ${totalWeekUnfilled} unfilled (${fmtMs(solverElapsed)})\n` +
+        `  Week-level solve: ${base.totalWeekAssignments} assignments, ${base.totalWeekUnfilled} unfilled (${fmtMs(base.solverElapsed)})\n` +
         `  Tokens: ${fmtTokens(totalTokenUsage)} | AI unavailable: ${usedFallbackAnyDay ? "yes" : "no"}\n` +
         `\n  AI Optimizer outcomes:\n` +
         `    AI improved:  ${optimizerStats.aiImproved}/${optimizerDaysRun} days (avg +${avgScoreDelta} score)\n` +

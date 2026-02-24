@@ -7,6 +7,8 @@ import {
   Loader2,
   AlertTriangle,
   Clock,
+  Cpu,
+  Sparkles,
   User,
   UserMinus,
   MessageSquare,
@@ -42,8 +44,11 @@ import type {
 interface GeneratedShiftPreviewProps {
   generatedSchedule: GeneratedSchedule;
   isAccepting: boolean;
+  isAIOptimized: boolean;
+  aiUsageRemaining?: number;
   onAcceptAll: () => void;
   onRegenerate: () => void;
+  onOptimize: () => void;
   onCancel: () => void;
 }
 
@@ -65,19 +70,22 @@ const WARNING_CONFIG: Record<
 // ────────────────────────────────────────────────────────────
 
 /**
- * GeneratedShiftPreview - Displays AI-generated schedule for review.
+ * GeneratedShiftPreview - Displays a generated schedule for review.
  *
- * Shows day-by-day shift assignments with AI reasoning, warnings,
- * unfilled slots, and summary statistics. User can accept all shifts,
- * regenerate, or cancel.
+ * Shows day-by-day shift assignments with reasoning, warnings,
+ * unfilled slots, and summary statistics. Conditionally renders
+ * "Optimize with AI" (base schedule) or "Regenerate" (AI-optimized).
  *
  * UI Layer only: no database imports, no business logic.
  */
 export function GeneratedShiftPreview({
   generatedSchedule,
   isAccepting,
+  isAIOptimized,
+  aiUsageRemaining,
   onAcceptAll,
   onRegenerate,
+  onOptimize,
   onCancel,
 }: GeneratedShiftPreviewProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(
@@ -128,21 +136,32 @@ export function GeneratedShiftPreview({
       </div>
 
       {/* Generation metadata */}
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+      <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
         <span>
           Generated in {(metadata.generationTimeMs / 1000).toFixed(1)}s
         </span>
-        {metadata.usedFallback && (
-          <Badge variant="warning">AI unavailable — used deterministic schedule</Badge>
-        )}
-        {!metadata.usedFallback && metadata.aiImprovedDays > 0 && (
-          <Badge variant="default">
-            AI optimized {metadata.aiImprovedDays}/{metadata.totalOptimizerDays} days
+        {isAIOptimized ? (
+          <>
+            {metadata.usedFallback && (
+              <Badge variant="warning">AI unavailable — used deterministic schedule</Badge>
+            )}
+            {!metadata.usedFallback && metadata.aiImprovedDays > 0 && (
+              <Badge variant="default">
+                AI optimized {metadata.aiImprovedDays}/{metadata.totalOptimizerDays} days
+              </Badge>
+            )}
+            {metadata.tokenUsage.totalTokens > 0 && (
+              <span>
+                {metadata.tokenUsage.totalTokens.toLocaleString()} tokens used
+              </span>
+            )}
+          </>
+        ) : (
+          <Badge variant="secondary">
+            <Cpu className="mr-1 h-3 w-3" />
+            Deterministic schedule
           </Badge>
         )}
-        <span>
-          {metadata.tokenUsage.totalTokens.toLocaleString()} tokens used
-        </span>
       </div>
 
       {/* Preferred station matches (positive stat) */}
@@ -175,14 +194,14 @@ export function GeneratedShiftPreview({
         ))}
       </div>
 
-      {/* AI Summary */}
+      {/* Summary */}
       {generatedSchedule.summary && (
         <div className="rounded-lg border bg-muted/30 p-3">
           <div className="flex items-start gap-2">
             <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">
-                AI Summary
+                {isAIOptimized ? "AI Summary" : "Summary"}
               </p>
               <p className="text-sm">{generatedSchedule.summary}</p>
             </div>
@@ -195,10 +214,21 @@ export function GeneratedShiftPreview({
         <Button variant="outline" onClick={onCancel} disabled={isAccepting}>
           Cancel
         </Button>
-        <Button variant="outline" onClick={onRegenerate} disabled={isAccepting}>
-          <RefreshCw className="mr-2 h-4 w-4" />
-          Regenerate
-        </Button>
+        {isAIOptimized ? (
+          <Button variant="outline" onClick={onRegenerate} disabled={isAccepting}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Regenerate
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            onClick={onOptimize}
+            disabled={isAccepting || aiUsageRemaining === 0}
+          >
+            <Sparkles className="mr-2 h-4 w-4" />
+            Optimize with AI
+          </Button>
+        )}
         <Button
           onClick={onAcceptAll}
           disabled={isAccepting || metadata.totalShiftsCreated === 0}
