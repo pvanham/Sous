@@ -29,6 +29,8 @@ const defaultValues: ScheduleGenerationSettingsInput = {
   allowClopening: false,
   minHoursBetweenShifts: 10,
   clopeningWarningThresholdHours: 10,
+  overtimeThresholdHours: 40,
+  overtimeTolerance: 0,
 };
 
 interface ScheduleGenerationSettingsFormProps {
@@ -159,6 +161,73 @@ export function ScheduleGenerationSettingsForm({
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>6h</span>
                 <span>16h</span>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="overtimeThresholdHours"
+          render={({ field }) => (
+            <FormItem className="space-y-4">
+              <div className="space-y-0.5">
+                <FormLabel>
+                  Overtime Threshold:{" "}
+                  <span className="font-mono text-primary">{field.value}h</span>
+                </FormLabel>
+                <FormDescription>
+                  The global number of scheduled hours per week after which an
+                  employee is considered to be working overtime (e.g., 40 hours).
+                </FormDescription>
+              </div>
+              <FormControl>
+                <Slider
+                  min={0}
+                  max={80}
+                  step={1}
+                  value={[field.value]}
+                  onValueChange={([value]) => field.onChange(value)}
+                />
+              </FormControl>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0h</span>
+                <span>80h</span>
+              </div>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="overtimeTolerance"
+          render={({ field }) => (
+            <FormItem className="space-y-4">
+              <div className="space-y-0.5">
+                <FormLabel>
+                  Overtime Tolerance:{" "}
+                  <span className="font-mono text-primary">{field.value} / 10</span>
+                </FormLabel>
+                <FormDescription>
+                  How willing the solver is to schedule overtime. 0 means it will try
+                  very hard to avoid overtime. 10 means it will largely ignore overtime
+                  when making efficient assignments.
+                </FormDescription>
+              </div>
+              <FormControl>
+                <Slider
+                  min={0}
+                  max={10}
+                  step={1}
+                  value={[field.value]}
+                  onValueChange={([value]) => field.onChange(value)}
+                />
+              </FormControl>
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>0 (Strict)</span>
+                <span>10 (Lenient)</span>
               </div>
               <FormMessage />
             </FormItem>

@@ -20,12 +20,18 @@ export interface ScheduleGenerationSettingsDTO {
   allowClopening: boolean;
   minHoursBetweenShifts: number;
   clopeningWarningThresholdHours: number;
+  overtimeThresholdHours: number;
+  overtimeTolerance: number;
+  costOptimizationWeight: number;
 }
 
 const DEFAULT_SCHEDULE_GENERATION_SETTINGS: ScheduleGenerationSettingsDTO = {
   allowClopening: false,
   minHoursBetweenShifts: 10,
   clopeningWarningThresholdHours: 10,
+  overtimeThresholdHours: 40,
+  overtimeTolerance: 0,
+  costOptimizationWeight: 0,
 };
 
 // DTO returned from service layer (without Mongoose internals)
@@ -63,9 +69,12 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
       : { ...DEFAULT_AI_SETTINGS },
     scheduleGenerationSettings: doc.scheduleGenerationSettings
       ? {
-          allowClopening: doc.scheduleGenerationSettings.allowClopening ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.allowClopening,
+        allowClopening: doc.scheduleGenerationSettings.allowClopening ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.allowClopening,
           minHoursBetweenShifts: doc.scheduleGenerationSettings.minHoursBetweenShifts ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.minHoursBetweenShifts,
           clopeningWarningThresholdHours: doc.scheduleGenerationSettings.clopeningWarningThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.clopeningWarningThresholdHours,
+          overtimeThresholdHours: doc.scheduleGenerationSettings.overtimeThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimeThresholdHours,
+          overtimeTolerance: doc.scheduleGenerationSettings.overtimeTolerance ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimeTolerance,
+          costOptimizationWeight: doc.scheduleGenerationSettings.costOptimizationWeight ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.costOptimizationWeight,
         }
       : { ...DEFAULT_SCHEDULE_GENERATION_SETTINGS },
     createdAt: doc.createdAt,

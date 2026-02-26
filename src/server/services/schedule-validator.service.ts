@@ -958,6 +958,37 @@ export const ScheduleValidatorService = {
     return warnings;
   },
 
+  /**
+   * Check for scheduled overtime across the full generated week.
+   * Should be called once after all days are finalized, using the solver's
+   * returned overtime summary.
+   *
+   * @param overtimeSummary - Dictionary of staffId -> generated overtime in minutes
+   * @param staff - All active staff DTOs
+   * @returns ValidationWarning[] for staff scheduled for overtime
+   */
+  checkOvertimeScheduled(
+    overtimeSummary: Record<string, number>,
+    staff: StaffDTO[],
+  ): ValidationWarning[] {
+    const warnings: ValidationWarning[] = [];
+
+    for (const member of staff) {
+      if (member.id in overtimeSummary && overtimeSummary[member.id] > 0) {
+        const overtimeHours = (overtimeSummary[member.id] / 60).toFixed(1);
+        warnings.push({
+          type: "scheduled_overtime",
+          staffId: member.id,
+          staffName: member.name,
+          shiftIndex: -1,
+          message: `"${member.name}" is scheduled for ${overtimeHours} hours of overtime.`,
+        });
+      }
+    }
+
+    return warnings;
+  },
+
   /** Maximum optimizer retry attempts */
   MAX_RETRY_ATTEMPTS,
 };

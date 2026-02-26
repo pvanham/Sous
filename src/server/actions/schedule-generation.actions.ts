@@ -301,6 +301,11 @@ export async function generateBaseSchedule(
       schedule.weekStartDate
     );
 
+    if (parsed.data.costOptimizationWeight !== undefined) {
+      context.config.scheduleGenerationSettings.costOptimizationWeight =
+        parsed.data.costOptimizationWeight;
+    }
+
     const generatedSchedule =
       await SchedulingAgentService.generateBaseWeekSchedule(context);
 

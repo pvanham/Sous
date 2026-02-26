@@ -34,8 +34,8 @@ SOLVER_TIME_LIMIT_SECONDS = 30
 SCALE = 60
 W_PREFERRED_STATION = 3 * SCALE  # 180
 W_PREFERRED_TIME = 2 * SCALE  # 120
-W_MIN_SHORTFALL = 1000 * SCALE  # 60 000
-W_PREF_SHORTFALL = 10 * SCALE  # 600
+W_MIN_SHORTFALL = 100000000  # 100,000,000
+W_PREF_SHORTFALL = 10000000  # 10,000,000
 W_FAIRNESS = 1  # per minute of max-min hours spread
 
 
@@ -59,6 +59,8 @@ class Candidate(BaseModel):
     minHoursPerWeek: float
     overtimeWarning: bool
     preferredStations: list[str]
+    roles: list[str] = []
+    hourlyRate: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -89,6 +91,9 @@ class DayInput(BaseModel):
 class ScheduleSettings(BaseModel):
     allowClopening: bool = False
     clopeningThresholdMinutes: int = 600
+    overtimeThresholdHours: int = 40
+    overtimeTolerance: int = 0
+    costOptimizationWeight: int = 0
 
 class SolveRequest(BaseModel):
     days: list[DayInput]
@@ -134,6 +139,9 @@ class SolveResponse(BaseModel):
     days: list[DayResult]
     objectiveValue: int
     solveTimeMs: int
+    overtimeSummary: dict[str, int] = {}
+    totalCostCents: int = 0
+    fallbackRatesUsed: bool = False
 
 
 # ────────────────────────────────────────────────────────────
@@ -202,7 +210,7 @@ class _FlatSlot:
 
 
 class _StaffEntry:
-    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "existing_minutes")
+    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "existing_minutes", "resolved_rate")
 
     def __init__(
         self,
@@ -211,12 +219,14 @@ class _StaffEntry:
         staff_name: str,
         max_minutes: int,
         existing_minutes: int,
+        resolved_rate: float,
     ):
         self.idx = idx
         self.staff_id = staff_id
         self.staff_name = staff_name
         self.max_minutes = max_minutes
         self.existing_minutes = existing_minutes
+        self.resolved_rate = resolved_rate
 
 
 class _CandidateMeta:
@@ -241,6 +251,7 @@ def _transform_input(
     dict[int, list[int]],
     dict[tuple[int, int], list[int]],
     list[tuple[int, int]],
+    bool,
 ]:
     flat_slots: list[_FlatSlot] = []
     staff_id_to_idx: dict[str, int] = {}
@@ -248,6 +259,49 @@ def _transform_input(
     candidate_meta: dict[tuple[int, int], _CandidateMeta] = {}
     staff_to_slots: dict[int, list[int]] = {}
     staff_slots_per_day: dict[tuple[int, int], list[int]] = {}
+    fallback_rates_used = False
+
+    # Pre-process rates
+    role_totals: dict[str, dict[str, float]] = {}
+    global_sum = 0.0
+    global_count = 0
+    
+    unique_candidates: dict[str, Candidate] = {}
+    for day in req.days:
+        for sc in day.slots:
+            for cand in sc.candidates:
+                if cand.staffId not in unique_candidates:
+                    unique_candidates[cand.staffId] = cand
+                    if cand.hourlyRate is not None and cand.hourlyRate > 0:
+                        global_sum += cand.hourlyRate
+                        global_count += 1
+                        for role in cand.roles:
+                            if role not in role_totals:
+                                role_totals[role] = {"sum": 0.0, "count": 0}
+                            role_totals[role]["sum"] += cand.hourlyRate
+                            role_totals[role]["count"] += 1
+
+    global_avg = global_sum / global_count if global_count > 0 else 15.00
+
+    resolved_rates: dict[str, float] = {}
+    for cand_id, cand in unique_candidates.items():
+        if cand.hourlyRate is None or cand.hourlyRate <= 0:
+            fallback_rates_used = True
+            rate_to_use = 0.0
+            
+            # Try to grab highest average role
+            role_avgs = []
+            for role in cand.roles:
+                if role in role_totals and role_totals[role]["count"] > 0:
+                    role_avgs.append(role_totals[role]["sum"] / role_totals[role]["count"])
+            
+            if role_avgs:
+                rate_to_use = max(role_avgs)
+            else:
+                rate_to_use = global_avg
+            resolved_rates[cand_id] = rate_to_use
+        else:
+            resolved_rates[cand_id] = cand.hourlyRate
 
     for day in req.days:
         for sc in day.slots:
@@ -270,6 +324,7 @@ def _transform_input(
                             existing_minutes=int(
                                 req.existingWeekHours.get(cand.staffId, 0) * 60
                             ),
+                            resolved_rate=resolved_rates[cand.staffId],
                         )
                     )
                     staff_to_slots[s_idx] = []
@@ -341,6 +396,7 @@ def _transform_input(
         staff_to_slots,
         staff_slots_per_day,
         conflicting_pairs,
+        fallback_rates_used,
     )
 
 
@@ -387,6 +443,7 @@ def _build_empty_response(
         days=days,
         objectiveValue=0,
         solveTimeMs=elapsed_ms,
+        overtimeSummary={},
     )
 
 
@@ -400,6 +457,7 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         staff_to_slots,
         staff_slots_per_day,
         conflicting_pairs,
+        fallback_rates_used,
     ) = _transform_input(req)
 
     elapsed = lambda: int((time.time() - t0) * 1000)
@@ -429,6 +487,18 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     h: dict[int, cp_model.IntVar] = {}
     for staff in staff_entries:
         h[staff.idx] = model.new_int_var(0, staff.max_minutes, f"h_{staff.idx}")
+
+    # Overtime slack variables (only needed if tolerance > 0)
+    ot: dict[int, cp_model.IntVar] = {}
+    tolerance = req.settings.overtimeTolerance if req.settings else 0
+    threshold_minutes = (req.settings.overtimeThresholdHours * 60) if req.settings else (40 * 60)
+    # Invert tolerance: 0 (strict) -> weight=100*SCALE, 10 (lenient) -> weight=0
+    weight = (10 - tolerance) * 10 * SCALE
+
+    if weight > 0:
+        for staff in staff_entries:
+            ot[staff.idx] = model.new_int_var(0, staff.max_minutes, f"ot_{staff.idx}")
+            model.add(ot[staff.idx] >= h[staff.idx] - threshold_minutes)
 
     # ── Constraints ───────────────────────────────────────────
 
@@ -493,6 +563,28 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     if staff_entries:
         obj_terms.append(-W_FAIRNESS * h_max)
         obj_terms.append(W_FAIRNESS * h_min)
+
+    if weight > 0:
+        for staff in staff_entries:
+            obj_terms.append(-weight * ot[staff.idx])
+
+    cost_weight = req.settings.costOptimizationWeight if req.settings else 0
+    if cost_weight > 0:
+        for staff in staff_entries:
+            # Scale up cost math for integer CP-SAT variables, divide by 60 for minutes
+            # Rate * 100 = cents per hour. Cents / 60 = cents per minute.
+            # Using integer division to keep CP-SAT math clean
+            cents_per_hour = int(staff.resolved_rate * 100)
+            
+            # Since CP-SAT requires int coefficients, we can calculate per-minute rate
+            # Or multiply the variable and THEN divide. However, ortools requires linear expressions.
+            # So we must use a constant coefficient:
+            # obj_terms.append( x * coefficient )
+            
+            # The coefficient per minute of work is (cents_per_hour // 60)
+            cents_per_minute = cents_per_hour // 60
+            employee_cost_term = h[staff.idx] * cents_per_minute
+            obj_terms.append(-cost_weight * employee_cost_term)
 
     model.maximize(sum(obj_terms))
 
@@ -574,6 +666,15 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     obj_value = int(solver.objective_value)
     sorted_days = sorted(req.days, key=lambda d: d.dayIndex)
 
+    overtime_summary: dict[str, int] = {}
+    total_cost_cents = 0
+
+    for staff in staff_entries:
+        val = solver.value(h[staff.idx])
+        overtime_summary[staff.staff_id] = max(0, val - threshold_minutes)
+        # Calculate final cost
+        total_cost_cents += int((val / 60) * staff.resolved_rate * 100)
+
     return SolveResponse(
         status=status_label,
         days=[
@@ -593,6 +694,9 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         ],
         objectiveValue=obj_value,
         solveTimeMs=elapsed(),
+        overtimeSummary=overtime_summary,
+        totalCostCents=total_cost_cents,
+        fallbackRatesUsed=fallback_rates_used,
     )
 
 

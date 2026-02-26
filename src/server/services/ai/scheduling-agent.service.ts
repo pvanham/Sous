@@ -496,6 +496,9 @@ interface PrefetchAndSolveResult {
   solverElapsed: number;
   totalWeekAssignments: number;
   totalWeekUnfilled: number;
+  overtimeSummary: Record<string, number>;
+  totalCostCents: number;
+  fallbackRatesUsed: boolean;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -695,7 +698,7 @@ async function prefetchAndSolve(
   };
 
   const solverStart = Date.now();
-  const weekDaySchedules = await CPSolverService.solveWeek(weekSolverInput);
+  const { days: weekDaySchedules, overtimeSummary, totalCostCents, fallbackRatesUsed } = await CPSolverService.solveWeek(weekSolverInput);
   const solverElapsed = Date.now() - solverStart;
 
   const totalWeekAssignments = weekDaySchedules.reduce(
@@ -728,6 +731,9 @@ async function prefetchAndSolve(
     solverElapsed,
     totalWeekAssignments,
     totalWeekUnfilled,
+    overtimeSummary,
+    totalCostCents,
+    fallbackRatesUsed,
   };
 }
 
@@ -1380,6 +1386,12 @@ export const SchedulingAgentService = {
       context.staff,
     );
     allWarnings.push(...underScheduledWarnings);
+    
+    const overtimeWarnings = ScheduleValidatorService.checkOvertimeScheduled(
+      base.overtimeSummary,
+      context.staff,
+    );
+    allWarnings.push(...overtimeWarnings);
 
     const totalElapsed = Date.now() - startTime;
     const metadata: GenerationMetadata = {
@@ -1394,6 +1406,8 @@ export const SchedulingAgentService = {
       preferredStationMatches: totalPreferredStationMatches,
       totalAssignmentsWithPreference,
       aiOptimized: false,
+      totalEstimatedCost: base.totalCostCents / 100,
+      fallbackRatesUsed: base.fallbackRatesUsed,
     };
 
     const summaryParts: string[] = [];
@@ -1459,7 +1473,7 @@ export const SchedulingAgentService = {
     };
 
     const base = await prefetchAndSolve(context);
-    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator } = base;
+    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator, overtimeSummary, totalCostCents, fallbackRatesUsed } = base;
 
     let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
     let totalTokenUsage = emptyTokenUsage();
@@ -1709,6 +1723,8 @@ export const SchedulingAgentService = {
       preferredStationMatches: totalPreferredStationMatches,
       totalAssignmentsWithPreference,
       aiOptimized: true,
+      totalEstimatedCost: totalCostCents / 100,
+      fallbackRatesUsed: fallbackRatesUsed || usedFallbackAnyDay,
     };
 
     const summaryParts: string[] = [];
@@ -1806,6 +1822,13 @@ export const SchedulingAgentService = {
       context.staff,
     );
     allWarnings.push(...underScheduledWarnings);
+    
+    // Week-level overtime check from solver's overtimeSummary
+    const overtimeWarnings = ScheduleValidatorService.checkOvertimeScheduled(
+      base.overtimeSummary,
+      context.staff,
+    );
+    allWarnings.push(...overtimeWarnings);
 
     return {
       days: dayResults,

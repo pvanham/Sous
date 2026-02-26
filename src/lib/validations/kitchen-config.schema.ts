@@ -65,6 +65,13 @@ export const scheduleGenerationSettingsSchema = z.object({
     .number()
     .min(6, "Warning threshold must be at least 6 hours")
     .max(16, "Warning threshold must be at most 16 hours"),
+  overtimeThresholdHours: z
+    .number()
+    .min(0, "Overtime threshold must be at least 0"),
+  overtimeTolerance: z
+    .number()
+    .min(0, "Overtime tolerance must be at least 0")
+    .max(10, "Overtime tolerance must be at most 10"),
 });
 
 export type ScheduleGenerationSettingsInput = z.infer<typeof scheduleGenerationSettingsSchema>;

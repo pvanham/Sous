@@ -351,6 +351,8 @@ export const CandidateService = {
         minHoursPerWeek: s.minHoursPerWeek,
         overtimeWarning,
         preferredStations: s.preferredStations,
+        hourlyRate: s.hourlyRate,
+        roles: s.roles,
       };
     });
 
@@ -507,6 +509,8 @@ export const CandidateService = {
           minHoursPerWeek: s.minHoursPerWeek,
           overtimeWarning,
           preferredStations: s.preferredStations,
+          hourlyRate: s.hourlyRate,
+          roles: s.roles,
         };
       });
 

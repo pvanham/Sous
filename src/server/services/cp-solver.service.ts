@@ -58,6 +58,9 @@ interface SolverResponse {
   days: SolverDayResult[];
   objectiveValue: number;
   solveTimeMs: number;
+  overtimeSummary: Record<string, number>;
+  totalCostCents: number;
+  fallbackRatesUsed: boolean;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -92,6 +95,9 @@ function serializeInput(input: WeekSolverInput): string {
       ? {
           allowClopening: input.scheduleGenerationSettings.allowClopening,
           clopeningThresholdMinutes: input.scheduleGenerationSettings.minHoursBetweenShifts * 60,
+          overtimeThresholdHours: input.scheduleGenerationSettings.overtimeThresholdHours,
+          overtimeTolerance: input.scheduleGenerationSettings.overtimeTolerance,
+          costOptimizationWeight: input.scheduleGenerationSettings.costOptimizationWeight ?? 0,
         }
       : undefined,
   };
@@ -105,7 +111,7 @@ function serializeInput(input: WeekSolverInput): string {
 export const CPSolverService = {
   async solveWeek(
     input: WeekSolverInput,
-  ): Promise<GeneratedDaySchedule[]> {
+  ): Promise<{ days: GeneratedDaySchedule[]; overtimeSummary: Record<string, number>; totalCostCents: number; fallbackRatesUsed: boolean }> {
     const t0 = Date.now();
     const url = `${CP_SOLVER_URL}/solve`;
 
@@ -172,15 +178,20 @@ export const CPSolverService = {
         `(solver: ${result.solveTimeMs}ms, total: ${elapsed}ms)`,
     );
 
-    return result.days;
+    return {
+      days: result.days,
+      overtimeSummary: result.overtimeSummary,
+      totalCostCents: result.totalCostCents,
+      fallbackRatesUsed: result.fallbackRatesUsed,
+    };
   },
 };
 
 function buildFallbackResponse(
   input: WeekSolverInput,
   reason: string,
-): GeneratedDaySchedule[] {
-  return [...input.days]
+): { days: GeneratedDaySchedule[]; overtimeSummary: Record<string, number>; totalCostCents: number; fallbackRatesUsed: boolean } {
+  const days = [...input.days]
     .sort((a, b) => a.dayIndex - b.dayIndex)
     .map((day) => ({
       date: day.dateStr,
@@ -196,4 +207,6 @@ function buildFallbackResponse(
       })),
       notes: `CP-SAT solver: ${reason}. Returning all slots as unfilled.`,
     }));
+
+  return { days, overtimeSummary: {}, totalCostCents: 0, fallbackRatesUsed: false };
 }

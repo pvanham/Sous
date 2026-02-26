@@ -15,6 +15,8 @@ import {
   ChevronUp,
   XCircle,
   Star,
+  DollarSign,
+  Info,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -59,6 +61,7 @@ const WARNING_CONFIG: Record<
   overtime_risk: { label: "Overtime Risk", icon: Clock },
   clopening_risk: { label: "Clopening Risk", icon: AlertTriangle },
   under_scheduled: { label: "Under-Scheduled", icon: UserMinus },
+  scheduled_overtime: { label: "Scheduled Overtime", icon: Clock },
 };
 
 // ────────────────────────────────────────────────────────────
@@ -115,15 +118,24 @@ export function GeneratedShiftPreview({
           value={`${totalHours.toFixed(1)}h`}
         />
         <SummaryStatCard
+          label="Est. Cost"
+          value={metadata.totalEstimatedCost ? `$${metadata.totalEstimatedCost.toFixed(2)}` : "—"}
+        />
+        <SummaryStatCard
           label="Unfilled Slots"
           value={metadata.totalUnfilledSlots}
           variant={metadata.totalUnfilledSlots > 0 ? "warning" : "default"}
         />
-        <SummaryStatCard
-          label="Week Score"
-          value={metadata.weekScore}
-        />
       </div>
+
+      {metadata.fallbackRatesUsed && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mt-2">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <p className="text-sm text-amber-700 dark:text-amber-300">
+            <span className="font-medium">Missing hourly rates detected.</span> Estimated costs are using fallback average rates for some staff.
+          </p>
+        </div>
+      )}
 
       {/* Generation metadata */}
       <div className="flex items-center gap-3 text-xs text-muted-foreground flex-wrap">

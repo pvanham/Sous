@@ -44,6 +44,10 @@ export interface CandidateDTO {
   overtimeWarning: boolean;
   /** Stations the staff member prefers to work at */
   preferredStations: string[];
+  /** Expected hourly cost of staff member */
+  hourlyRate?: number;
+  /** Role titles held by the staff member */
+  roles: string[];
   /** Optional notes (e.g., availability notes) */
   notes?: string;
 }
