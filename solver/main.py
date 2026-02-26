@@ -86,11 +86,16 @@ class DayInput(BaseModel):
     slots: list[SlotCandidatesInput]
 
 
+class ScheduleSettings(BaseModel):
+    allowClopening: bool = False
+    clopeningThresholdMinutes: int = 600
+
 class SolveRequest(BaseModel):
     days: list[DayInput]
     maxHoursLookup: dict[str, float]
     minHoursLookup: dict[str, float]
     existingWeekHours: dict[str, float]
+    settings: Optional[ScheduleSettings] = None
 
 
 # ────────────────────────────────────────────────────────────
@@ -300,26 +305,34 @@ def _transform_input(
                 )
             )
 
-    # Build clopening conflict pairs
+    # Build clopening conflict pairs (skip entirely when clopening is allowed)
     conflicting_pairs: list[tuple[int, int]] = []
-    for i in range(len(flat_slots)):
-        for j in range(i + 1, len(flat_slots)):
-            a = flat_slots[i]
-            b = flat_slots[j]
+    allow_clopening = req.settings.allowClopening if req.settings else False
+    threshold_minutes = (
+        req.settings.clopeningThresholdMinutes
+        if req.settings
+        else CLOPENING_THRESHOLD_MINUTES
+    )
 
-            end_a = _absolute_minutes(a.day_index, a.end_time)
-            start_a = _absolute_minutes(a.day_index, a.start_time)
-            end_b = _absolute_minutes(b.day_index, b.end_time)
-            start_b = _absolute_minutes(b.day_index, b.start_time)
+    if not allow_clopening:
+        for i in range(len(flat_slots)):
+            for j in range(i + 1, len(flat_slots)):
+                a = flat_slots[i]
+                b = flat_slots[j]
 
-            gap_ab = (start_b - end_a) if start_b > end_a else float("inf")
-            gap_ba = (start_a - end_b) if start_a > end_b else float("inf")
+                end_a = _absolute_minutes(a.day_index, a.end_time)
+                start_a = _absolute_minutes(a.day_index, a.start_time)
+                end_b = _absolute_minutes(b.day_index, b.end_time)
+                start_b = _absolute_minutes(b.day_index, b.start_time)
 
-            if (
-                gap_ab < CLOPENING_THRESHOLD_MINUTES
-                or gap_ba < CLOPENING_THRESHOLD_MINUTES
-            ):
-                conflicting_pairs.append((i, j))
+                gap_ab = (start_b - end_a) if start_b > end_a else float("inf")
+                gap_ba = (start_a - end_b) if start_a > end_b else float("inf")
+
+                if (
+                    gap_ab < threshold_minutes
+                    or gap_ba < threshold_minutes
+                ):
+                    conflicting_pairs.append((i, j))
 
     return (
         flat_slots,

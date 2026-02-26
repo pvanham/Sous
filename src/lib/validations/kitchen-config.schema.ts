@@ -55,6 +55,20 @@ export const aiSettingsSchema = z.object({
 
 export type AISettingsInput = z.infer<typeof aiSettingsSchema>;
 
+export const scheduleGenerationSettingsSchema = z.object({
+  allowClopening: z.boolean(),
+  minHoursBetweenShifts: z
+    .number()
+    .min(6, "Minimum hours between shifts must be at least 6")
+    .max(16, "Minimum hours between shifts must be at most 16"),
+  clopeningWarningThresholdHours: z
+    .number()
+    .min(6, "Warning threshold must be at least 6 hours")
+    .max(16, "Warning threshold must be at most 16 hours"),
+});
+
+export type ScheduleGenerationSettingsInput = z.infer<typeof scheduleGenerationSettingsSchema>;
+
 // Main kitchen config schema - shared between frontend form and backend validation
 export const kitchenConfigSchema = z.object({
   name: z

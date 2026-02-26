@@ -17,13 +17,6 @@ import type { TokenUsage } from "@/types/ai-usage";
 // ============================================================
 
 // ────────────────────────────────────────────────────────────
-// Solver Engine Selection
-// ────────────────────────────────────────────────────────────
-
-/** Which solver engine to use for base schedule generation. */
-export type SolverEngine = "legacy" | "cp";
-
-// ────────────────────────────────────────────────────────────
 // Scheduling Context (Full Week)
 // ────────────────────────────────────────────────────────────
 
@@ -94,7 +87,7 @@ export interface DaySchedulingContext {
 
 /**
  * Pre-fetched candidate data for a single day, used as input to
- * `DeterministicSolverService.solveWeek()`. Contains the same
+ * `CPSolverService.solveWeek()`. Contains the same
  * `SlotCandidates` as `DaySchedulingContext.slots` but without
  * cross-day dependencies (shifts accumulate inside the solver).
  */
@@ -114,7 +107,7 @@ export interface WeekDayCandidates {
 }
 
 /**
- * Input to `DeterministicSolverService.solveWeek()`.
+ * Input to `CPSolverService.solveWeek()`.
  * Aggregates all 7 days' candidate pools plus staff hour limits,
  * allowing the solver to distribute assignments optimally across
  * the entire week and avoid late-week candidate starvation.
@@ -128,6 +121,12 @@ export interface WeekSolverInput {
   minHoursLookup: Map<string, number>;
   /** staffId -> hours already committed from existing DB shifts */
   existingWeekHours: Map<string, number>;
+  /** Optional schedule generation settings (clopening policy) */
+  scheduleGenerationSettings?: {
+    allowClopening: boolean;
+    minHoursBetweenShifts: number;
+    clopeningWarningThresholdHours: number;
+  };
 }
 
 // ────────────────────────────────────────────────────────────
@@ -166,7 +165,7 @@ export interface AIRawDayOutput {
 /**
  * Raw JSON structure expected from the LLM in swap-based mode.
  * Instead of regenerating the full schedule, the AI suggests
- * specific swaps to improve the hill-climbed base.
+ * specific swaps to improve the CP solver base.
  */
 export interface AISwapOutput {
   swaps: Array<{

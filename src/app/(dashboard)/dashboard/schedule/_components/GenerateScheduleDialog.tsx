@@ -3,7 +3,6 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Sparkles,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -30,24 +29,15 @@ import {
 import {
   checkGenerationReadiness,
   generateBaseSchedule,
-  optimizeScheduleWithAI,
   acceptGeneratedSchedule,
 } from "@/server/actions/schedule-generation.actions";
 import { formatWeekLabel } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type {
   GeneratedSchedule,
   ReadinessCheckResult,
   ReadinessIssue,
   AcceptedShift,
-  SolverEngine,
 } from "@/types/ai-scheduling";
 import { GeneratedShiftPreview } from "./GeneratedShiftPreview";
 
@@ -59,7 +49,6 @@ type DialogStep =
   | "readiness"
   | "generating"
   | "preview"
-  | "optimizing"
   | "failure";
 
 // ────────────────────────────────────────────────────────────
@@ -91,12 +80,7 @@ interface GenerateScheduleDialogProps {
 /**
  * GenerateScheduleDialog - Multi-step dialog for schedule generation.
  *
- * Two-phase approach:
- * 1. Readiness Check -> Generate (deterministic only, fast) -> Preview base schedule
- * 2. Optional: Optimize with AI -> Preview AI-optimized schedule
- *
- * The deterministic solver always produces the same output, so "Regenerate"
- * only appears after AI optimization (which is non-deterministic).
+ * Flow: Readiness Check -> Generate (CP Solver) -> Preview -> Accept
  *
  * Follows UI Layer rules: no DB imports, calls server actions only via
  * TanStack Query mutations. All data passed as DTOs.
@@ -112,16 +96,12 @@ export function GenerateScheduleDialog({
   const [step, setStep] = useState<DialogStep>("readiness");
   const [generatedSchedule, setGeneratedSchedule] =
     useState<GeneratedSchedule | null>(null);
-  const [isAIOptimized, setIsAIOptimized] = useState(false);
-  const [solverEngine, setSolverEngine] = useState<SolverEngine>("legacy");
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
         setStep("readiness");
         setGeneratedSchedule(null);
-        setIsAIOptimized(false);
-        setSolverEngine("legacy");
       }
       onOpenChange(isOpen);
     },
@@ -149,17 +129,15 @@ export function GenerateScheduleDialog({
 
   // ── Base generation mutation ──
   const generateMutation = useMutation({
-    mutationFn: async (engine: SolverEngine) => {
+    mutationFn: async () => {
       const result = await generateBaseSchedule({
         scheduleId: schedule.id,
-        solverEngine: engine,
       });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
     onSuccess: (data) => {
       setGeneratedSchedule(data);
-      setIsAIOptimized(false);
 
       const totalRequired =
         data.days.reduce(
@@ -180,42 +158,6 @@ export function GenerateScheduleDialog({
     },
     onError: () => {
       setStep("failure");
-    },
-  });
-
-  // ── AI optimization mutation ──
-  const optimizeMutation = useMutation({
-    mutationFn: async () => {
-      const result = await optimizeScheduleWithAI({
-        scheduleId: schedule.id,
-      });
-      if (!result.success) throw new Error(result.error);
-      return result.data;
-    },
-    onSuccess: (data) => {
-      setGeneratedSchedule(data);
-      setIsAIOptimized(true);
-
-      const totalRequired =
-        data.days.reduce(
-          (sum, day) =>
-            sum +
-            day.assignments.length +
-            day.unfilledSlots.reduce((s, slot) => s + slot.needed, 0),
-          0
-        ) || 1;
-      const totalFilled = data.metadata.totalShiftsCreated;
-      const fillRate = totalFilled / totalRequired;
-
-      if (totalFilled === 0 || fillRate < 0.5) {
-        setStep("failure");
-      } else {
-        setStep("preview");
-      }
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-      setStep("preview");
     },
   });
 
@@ -254,18 +196,13 @@ export function GenerateScheduleDialog({
 
   const handleGenerate = () => {
     setStep("generating");
-    generateMutation.mutate(solverEngine);
-  };
-
-  const handleOptimize = () => {
-    setStep("optimizing");
-    optimizeMutation.mutate();
+    generateMutation.mutate();
   };
 
   const handleRegenerate = () => {
     setGeneratedSchedule(null);
-    setStep("optimizing");
-    optimizeMutation.mutate();
+    setStep("generating");
+    generateMutation.mutate();
   };
 
   const handleAcceptAll = () => {
@@ -306,8 +243,6 @@ export function GenerateScheduleDialog({
             isLoading={isCheckingReadiness}
             error={readinessError}
             weekLabel={weekLabel}
-            solverEngine={solverEngine}
-            onSolverEngineChange={setSolverEngine}
             onGenerate={handleGenerate}
             onRefresh={() => refetchReadiness()}
             onCancel={() => handleOpenChange(false)}
@@ -318,36 +253,23 @@ export function GenerateScheduleDialog({
           <GeneratingStep weekLabel={weekLabel} />
         )}
 
-        {step === "optimizing" && (
-          <OptimizingStep weekLabel={weekLabel} />
-        )}
-
         {step === "preview" && generatedSchedule && (
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                {isAIOptimized ? (
-                  <Sparkles className="h-5 w-5 text-amber-500" />
-                ) : (
-                  <Cpu className="h-5 w-5 text-blue-500" />
-                )}
-                {isAIOptimized ? "AI-Optimized Schedule" : "Generated Schedule"}
+                <Cpu className="h-5 w-5 text-blue-500" />
+                Generated Schedule
               </DialogTitle>
               <DialogDescription>
-                {isAIOptimized
-                  ? `Review the AI-optimized schedule for ${weekLabel}. Accept all shifts to save them.`
-                  : `Review the generated schedule for ${weekLabel}. You can accept it or optimize with AI.`}
+                Review the generated schedule for {weekLabel}. Accept all shifts to save them.
               </DialogDescription>
             </DialogHeader>
 
             <GeneratedShiftPreview
               generatedSchedule={generatedSchedule}
               isAccepting={acceptMutation.isPending}
-              isAIOptimized={isAIOptimized}
-              aiUsageRemaining={readiness?.usageRemaining}
               onAcceptAll={handleAcceptAll}
               onRegenerate={handleRegenerate}
-              onOptimize={handleOptimize}
               onCancel={() => handleOpenChange(false)}
             />
           </>
@@ -356,9 +278,7 @@ export function GenerateScheduleDialog({
         {step === "failure" && (
           <FailureStep
             generatedSchedule={generatedSchedule}
-            error={
-              generateMutation.error ?? optimizeMutation.error ?? null
-            }
+            error={generateMutation.error ?? null}
             weekLabel={weekLabel}
             isAccepting={acceptMutation.isPending}
             onSavePartial={handleSavePartial}
@@ -380,8 +300,6 @@ interface ReadinessStepProps {
   isLoading: boolean;
   error: Error | null;
   weekLabel: string;
-  solverEngine: SolverEngine;
-  onSolverEngineChange: (engine: SolverEngine) => void;
   onGenerate: () => void;
   onRefresh: () => void;
   onCancel: () => void;
@@ -392,8 +310,6 @@ function ReadinessStep({
   isLoading,
   error,
   weekLabel,
-  solverEngine,
-  onSolverEngineChange,
   onGenerate,
   onRefresh,
   onCancel,
@@ -437,23 +353,6 @@ function ReadinessStep({
 
         {readiness && (
           <>
-            {/* AI usage summary */}
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">AI Optimizations</span>
-                <Badge
-                  variant={readiness.usageRemaining > 0 ? "info" : "secondary"}
-                >
-                  {readiness.usageRemaining} of {readiness.usageLimit} remaining
-                </Badge>
-              </div>
-              {readiness.usageRemaining === 0 && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  You can still generate a base schedule without AI.
-                </p>
-              )}
-            </div>
-
             {/* Stats row */}
             <div className="grid grid-cols-3 gap-3">
               <StatCard
@@ -468,32 +367,6 @@ function ReadinessStep({
                 label="Shift Slots"
                 value={readiness.totalRequirements}
               />
-            </div>
-
-            {/* Solver engine selector */}
-            <div className="rounded-lg border bg-muted/50 p-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-sm font-medium">Solver Engine</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {solverEngine === "cp"
-                      ? "ILP solver finds globally optimal assignments"
-                      : "Fast greedy solver with hill-climbing optimization"}
-                  </p>
-                </div>
-                <Select
-                  value={solverEngine}
-                  onValueChange={(v) => onSolverEngineChange(v as SolverEngine)}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="legacy">Legacy Solver</SelectItem>
-                    <SelectItem value="cp">CP Solver (Optimal)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
             {/* Issues list */}
@@ -538,7 +411,7 @@ function ReadinessStep({
 }
 
 // ────────────────────────────────────────────────────────────
-// Step 2: Generating (deterministic)
+// Step 2: Generating
 // ────────────────────────────────────────────────────────────
 
 interface GeneratingStepProps {
@@ -569,44 +442,6 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
           </p>
           <p className="text-xs text-muted-foreground">
             This typically takes a few seconds.
-          </p>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ────────────────────────────────────────────────────────────
-// Step 3b: Optimizing with AI
-// ────────────────────────────────────────────────────────────
-
-interface OptimizingStepProps {
-  weekLabel: string;
-}
-
-function OptimizingStep({ weekLabel }: OptimizingStepProps) {
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-amber-500" />
-          Optimizing with AI
-        </DialogTitle>
-        <DialogDescription>
-          Running AI swap optimizer to improve the schedule for {weekLabel}
-        </DialogDescription>
-      </DialogHeader>
-
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <div className="relative">
-          <Loader2 className="h-10 w-10 animate-spin text-amber-500" />
-        </div>
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">
-            AI is analyzing assignments and suggesting improvements...
-          </p>
-          <p className="text-xs text-muted-foreground">
-            This typically takes 30-90 seconds depending on schedule complexity.
           </p>
         </div>
       </div>

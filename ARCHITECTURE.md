@@ -182,7 +182,7 @@ src/
 │   │   ├── staff-availability.service.ts
 │   │   ├── time-off-request.service.ts
 │   │   ├── coverage-analyzer.service.ts
-│   │   ├── deterministic-solver.service.ts  # Greedy constraint solver (Phase 1 of hybrid)
+│   │   ├── cp-solver.service.ts             # HTTP client for OR-Tools CP-SAT solver
 │   │   ├── schedule-validator.service.ts    # Validation + quality scoring
 │   │   ├── message.service.ts
 │   │   ├── notification.service.ts
@@ -803,9 +803,9 @@ _components/
 
 ## 8. AI/LLM Integration
 
-### Hybrid Schedule Architecture (Deterministic + AI Optimizer)
+### Schedule Generation Architecture (CP Solver)
 
-Schedule generation uses a two-phase approach: a fast deterministic solver produces a guaranteed-valid base schedule, then the AI acts as an optimizer that attempts to improve preference alignment and hour fairness.
+Schedule generation uses the Google OR-Tools CP-SAT constraint programming solver via a Python FastAPI microservice. The solver finds globally optimal staff assignments across the entire week, respecting availability, skills, hour limits, and clopening constraints.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -820,66 +820,53 @@ Schedule generation uses a two-phase approach: a fast deterministic solver produ
 │                                                              │
 │   SchedulingAgentService (orchestrator)                      │
 │     │                                                        │
-│     ├─ Phase 1: DeterministicSolverService.solve()           │
-│     │    └─ Weighted greedy assignment (~5ms, always valid)   │
+│     ├─ Phase 1: CandidateService pre-fetch (all 7 days)     │
+│     │    └─ Hard-filters candidates per slot                 │
 │     │                                                        │
-│     ├─ Phase 2: AI Optimizer (up to 3 attempts)              │
-│     │    ├─ buildOptimizerSystemPrompt()                     │
-│     │    ├─ buildOptimizerUserPrompt(baseSchedule)           │
-│     │    ├─ generateJSON<AIRawDayOutput>()                   │
-│     │    └─ If invalid or lower quality → retry with         │
-│     │       buildOptimizerCorrectionPrompt()                 │
+│     ├─ Phase 2: CPSolverService.solveWeek()                  │
+│     │    └─ OR-Tools CP-SAT via Python microservice          │
+│     │       (globally optimal, ~2-10s)                       │
 │     │                                                        │
 │     └─ ScheduleValidatorService                              │
 │          ├─ validate() — hard constraint checks              │
-│          ├─ scoreQuality() — compare base vs optimized       │
-│          └─ recalculateUnfilledSlots() — accuracy fix        │
+│          ├─ scoreQuality() — quality scoring                 │
+│          └─ checkUnderScheduled() — min-hours warnings       │
 │                                                              │
 │   CandidateService (hard filter layer)                       │
 │     └─ Filters: availability, time-off, skills, overlap,    │
 │        clopening (10h gap), overtime                         │
 │                                                              │
-│   Cross-Day Hour Budgeting                                   │
-│     └─ Per-day soft budgets prevent late-week collapse       │
+│   CP Solver Microservice (solver/main.py)                    │
+│     └─ FastAPI + OR-Tools CP-SAT, runs in Docker             │
 └─────────────────────────────────────────────────────────────┘
-
-Fallback: If AI is unavailable or cannot beat the base after 3
-attempts, the deterministic base schedule is used — no degraded output.
 ```
 
 ### Key Services
 
 | Service | Purpose |
 |---------|---------|
-| `DeterministicSolverService` | Weighted greedy solver, pure TypeScript, no DB/AI calls |
-| `SchedulingAgentService` | Orchestrates Phase 1 + Phase 2, manages week generation |
-| `ScheduleValidatorService` | Hard validation, quality scoring, optimizer retry loop |
+| `CPSolverService` | HTTP client for the OR-Tools CP-SAT solver microservice |
+| `SchedulingAgentService` | Orchestrates candidate pre-fetch, solver call, and validation |
+| `ScheduleValidatorService` | Hard validation, quality scoring, warnings |
 | `CandidateService` | Hard-filters candidates (availability, skills, clopening, etc.) |
 
-### AI Service Pattern
+### Schedule Generation Flow
 
 ```typescript
 // src/server/services/ai/scheduling-agent.service.ts
 export const SchedulingAgentService = {
-  async generateDaySchedule(context, tracking, allStaff, dayHourBudget?) {
-    // Phase 1: Deterministic base (instant, always valid)
-    const baseSchedule = DeterministicSolverService.solve(context, dayHourBudget);
-    const baseScore = ScheduleValidatorService.scoreQuality(baseSchedule, context);
+  async generateBaseWeekSchedule(context) {
+    // Phase 1: Pre-fetch candidates for all 7 days
+    const allDayCandidates = await prefetchCandidates(context);
 
-    // Phase 2: AI optimizer (up to 3 attempts)
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      const aiSchedule = /* AI call with optimizer prompt */;
-      const validation = ScheduleValidatorService.validate(aiSchedule, context, allStaff);
+    // Phase 2: CP solver finds optimal assignments across the week
+    const weekSchedule = await CPSolverService.solveWeek(weekSolverInput);
 
-      if (!validation.valid) continue;  // Invalid → retry
+    // Validate and score
+    const warnings = ScheduleValidatorService.validate(weekSchedule, ...);
+    const weekScore = ScheduleValidatorService.scoreWeek(weekSchedule, ...);
 
-      const aiScore = ScheduleValidatorService.scoreQuality(aiSchedule, context);
-      if (aiScore > baseScore) return aiSchedule;  // AI improved it
-
-      // Lower quality → retry with correction prompt
-    }
-
-    return baseSchedule;  // Fallback: deterministic base
+    return { days: weekSchedule, metadata, warnings };
   },
 };
 ```

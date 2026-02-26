@@ -13,7 +13,6 @@ import {
   calculateShiftDuration,
 } from "@/lib/utils/date";
 import { CandidateService } from "@/server/services/candidate.service";
-import { DeterministicSolverService } from "@/server/services/deterministic-solver.service";
 import { CPSolverService } from "@/server/services/cp-solver.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -47,24 +46,23 @@ import type {
   ValidationWarning,
   WeekDayCandidates,
   WeekSolverInput,
-  SolverEngine,
 } from "@/types/ai-scheduling";
 import type { OptimizerRejectionReason } from "./prompts/schedule-generation";
 
 // ============================================================
 // SchedulingAgentService -- Hybrid Architecture
 // ============================================================
-// Two-phase schedule generation:
-//   Phase 1: DeterministicSolverService produces a guaranteed-valid
-//            base schedule in milliseconds.
-//   Phase 2: AI optimizer attempts to improve the base by reassigning
+// Schedule generation:
+//   Phase 1: CandidateService pre-fetches candidates for all days.
+//   Phase 2: CPSolverService finds globally optimal assignments
+//            using OR-Tools CP-SAT via Python microservice.
 //            staff for better preference/fairness alignment. Gets up
 //            to 3 total attempts (1 initial + 2 retries). Falls back
 //            to the deterministic base if AI fails or scores lower.
 //
 // Architecture: Service Layer (per ARCHITECTURE.md)
 // - Does NOT import Mongoose models directly
-// - Calls other services (CandidateService, DeterministicSolverService, etc.)
+// - Calls other services (CandidateService, CPSolverService, etc.)
 // - Returns DTOs (plain objects)
 // - Multi-tenancy via (orgId, locationId) scoping
 // ============================================================
@@ -72,8 +70,7 @@ import type { OptimizerRejectionReason } from "./prompts/schedule-generation";
 /** Closing shift threshold hour -- shifts ending at or after this are "closing shifts" */
 const CLOSING_SHIFT_HOUR = 20;
 
-/** Minimum hours between a closing shift end and the next day's opening shift start */
-const CLOPENING_THRESHOLD_HOURS = 10;
+const DEFAULT_CLOPENING_THRESHOLD_HOURS = 10;
 
 /** Adjacent-day shift data for cross-day clopening validation */
 interface AdjacentDayShifts {
@@ -89,13 +86,19 @@ function timeToMinutesSwap(time: string): number {
 /**
  * Check whether assigning a staff member to a slot would create a clopening
  * violation with their shifts on adjacent days.
+ *
+ * Returns false immediately when `allowClopening` is true.
  */
 function wouldSwapCreateClopening(
   staffId: string,
   slotStartTime: string,
   slotEndTime: string,
   adjacentDayShifts: AdjacentDayShifts,
+  clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
 ): boolean {
+  if (clopeningSettings?.allowClopening) return false;
+
+  const thresholdHours = clopeningSettings?.minHoursBetweenShifts ?? DEFAULT_CLOPENING_THRESHOLD_HOURS;
   const startMin = timeToMinutesSwap(slotStartTime);
   const endMin = timeToMinutesSwap(slotEndTime);
 
@@ -104,7 +107,7 @@ function wouldSwapCreateClopening(
     const prevEnd = new Date(shift.end);
     const prevEndMin = prevEnd.getHours() * 60 + prevEnd.getMinutes();
     const gapMinutes = (24 * 60 - prevEndMin) + startMin;
-    if (gapMinutes / 60 < CLOPENING_THRESHOLD_HOURS) return true;
+    if (gapMinutes / 60 < thresholdHours) return true;
   }
 
   for (const shift of adjacentDayShifts.nextDay) {
@@ -112,7 +115,7 @@ function wouldSwapCreateClopening(
     const nextStart = new Date(shift.start);
     const nextStartMin = nextStart.getHours() * 60 + nextStart.getMinutes();
     const gapMinutes = (24 * 60 - endMin) + nextStartMin;
-    if (gapMinutes / 60 < CLOPENING_THRESHOLD_HOURS) return true;
+    if (gapMinutes / 60 < thresholdHours) return true;
   }
 
   return false;
@@ -228,6 +231,7 @@ function applySwaps(
   slots: SlotCandidates[],
   aliasToId: Map<string, string>,
   adjacentDayShifts?: AdjacentDayShifts,
+  clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
 ): SwapApplicationResult {
   if (swaps.length === 0) {
     return { schedule: baseSchedule, appliedCount: 0, skippedSwaps: [] };
@@ -306,7 +310,7 @@ function applySwaps(
       const slotParts = swap.slot.match(/(\d{2}:\d{2})-(\d{2}:\d{2})$/);
       if (slotParts) {
         const [, slotStart, slotEnd] = slotParts;
-        if (wouldSwapCreateClopening(resolvedAssignId, slotStart, slotEnd, adjacentDayShifts)) {
+        if (wouldSwapCreateClopening(resolvedAssignId, slotStart, slotEnd, adjacentDayShifts, clopeningSettings)) {
           skippedSwaps.push({
             slot: swap.slot,
             reason: `"${swap.assignStaffId}" would create clopening with adjacent day shift`,
@@ -356,6 +360,7 @@ function greedySwapSelection(
   context: DaySchedulingContext,
   adjacentDayShifts?: AdjacentDayShifts,
   weekHoursAccumulator?: Map<string, number>,
+  clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
 ): SwapApplicationResult {
   let currentSchedule: GeneratedDaySchedule = {
     ...baseSchedule,
@@ -376,6 +381,7 @@ function greedySwapSelection(
       slots,
       aliasToId,
       adjacentDayShifts,
+      clopeningSettings,
     );
 
     if (appliedCount === 0) {
@@ -579,12 +585,11 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 
 /**
  * Phase 1 + Phase 2: Pre-fetch candidates for all days, then run the
- * week-level deterministic solver. Shared by both generateBaseWeekSchedule
+ * week-level CP solver. Shared by both generateBaseWeekSchedule
  * and generateWeekSchedule to avoid code duplication.
  */
 async function prefetchAndSolve(
   context: SchedulingContext,
-  solverEngine: SolverEngine = "legacy",
 ): Promise<PrefetchAndSolveResult> {
   const weekDays = getWeekDays(context.weekStart);
   const weekHoursAccumulator = initWeekHoursFromShifts(
@@ -647,6 +652,7 @@ async function prefetchAndSolve(
       context.existingShifts,
       weekHoursAccumulator,
       previousDayClosingShifts,
+      context.config.scheduleGenerationSettings,
     );
 
     const totalCandidates = slotCandidates.reduce(
@@ -685,13 +691,11 @@ async function prefetchAndSolve(
     maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
     minHoursLookup: new Map(context.staff.map((s) => [s.id, s.minHoursPerWeek])),
     existingWeekHours: new Map(weekHoursAccumulator),
+    scheduleGenerationSettings: context.config.scheduleGenerationSettings,
   };
 
   const solverStart = Date.now();
-  const weekDaySchedules =
-    solverEngine === "cp"
-      ? await CPSolverService.solveWeek(weekSolverInput)
-      : DeterministicSolverService.solveWeek(weekSolverInput);
+  const weekDaySchedules = await CPSolverService.solveWeek(weekSolverInput);
   const solverElapsed = Date.now() - solverStart;
 
   const totalWeekAssignments = weekDaySchedules.reduce(
@@ -877,13 +881,13 @@ export const SchedulingAgentService = {
   /**
    * Generate a schedule for ONE day using the hybrid approach:
    *
-   * Phase 1: DeterministicSolverService produces a guaranteed-valid base
-   *          schedule using greedy assignment + hill-climbing local search.
+   * Phase 1: CPSolverService produces a globally optimal base schedule
+   *          (requires presolvedBase from week-level solve).
    * Phase 2: AI swap optimizer suggests specific staff swaps to improve
    *          the base. Each swap is independently validated; invalid swaps
    *          are skipped (partial success). If batch swaps lower the score,
    *          greedy swap selection salvages individually improving swaps.
-   *          Falls back to the hill-climbed base if AI cannot improve.
+   *          Falls back to the CP solver base if AI cannot improve.
    *
    * @param context - Day scheduling context with pre-filtered candidates
    * @param tracking - Usage tracking options
@@ -901,6 +905,7 @@ export const SchedulingAgentService = {
     stats?: OptimizerStatsAccumulator,
     adjacentDayShifts?: AdjacentDayShifts,
     weekHoursAccumulator?: Map<string, number>,
+    clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
   ): Promise<{
     daySchedule: GeneratedDaySchedule;
     tokenUsage: TokenUsage;
@@ -965,19 +970,14 @@ export const SchedulingAgentService = {
       };
     }
 
-    // ── Phase 1: Deterministic Base Schedule ──────────────────
+    // ── Phase 1: Base Schedule (must be pre-solved via CP solver) ──
     let baseSchedule: GeneratedDaySchedule;
 
     if (presolvedBase) {
       baseSchedule = presolvedBase;
     } else {
-      const solverStart = Date.now();
-      baseSchedule = DeterministicSolverService.solve(context);
-      const solverElapsed = Date.now() - solverStart;
-      console.log(
-        `${LOG_PREFIX} ${dateStr} Solver: ${baseSchedule.assignments.length} assignments, ` +
-          `${baseSchedule.unfilledSlots.length} unfilled (${fmtMs(solverElapsed)})`,
-      );
+      // TODO: Wire up single-day CP solver support when reworking into AI editing assistant
+      throw new Error("generateDaySchedule requires a presolvedBase from the week-level CP solver");
     }
 
     const baseScore = ScheduleValidatorService.scoreQuality(
@@ -1080,7 +1080,7 @@ export const SchedulingAgentService = {
 
         // Apply swaps sequentially with validation (includes cross-day clopening check)
         const { schedule: swappedSchedule, appliedCount, skippedSwaps } =
-          applySwaps(baseSchedule, receivedSwaps, context.slots, aliasToId, adjacentDayShifts);
+          applySwaps(baseSchedule, receivedSwaps, context.slots, aliasToId, adjacentDayShifts, clopeningSettings);
 
         logSwapResults(dateStr, receivedSwaps, appliedCount, skippedSwaps, aliasToId);
 
@@ -1155,6 +1155,7 @@ export const SchedulingAgentService = {
           context,
           adjacentDayShifts,
           weekHoursAccumulator,
+          clopeningSettings,
         );
 
         if (greedy.appliedCount > 0) {
@@ -1250,6 +1251,7 @@ export const SchedulingAgentService = {
       bestSchedule,
       context,
       allStaff,
+      clopeningSettings?.clopeningWarningThresholdHours,
     );
 
     return {
@@ -1268,28 +1270,24 @@ export const SchedulingAgentService = {
    * Generate a base week schedule using the selected solver engine.
    * Runs Phase 1 (candidate pre-fetching) + Phase 2 (solver) without
    * any AI optimizer calls. Produces a guaranteed-valid schedule that
-   * can be previewed immediately, then optionally optimized with AI
-   * via generateWeekSchedule().
+   * can be previewed immediately.
    *
    * @param context - Full week scheduling context
-   * @param solverEngine - Which solver to use ("legacy" or "cp")
    * @returns GeneratedSchedule with aiOptimized = false
    */
   async generateBaseWeekSchedule(
     context: SchedulingContext,
-    solverEngine: SolverEngine = "legacy",
   ): Promise<GeneratedSchedule> {
     const startTime = Date.now();
 
-    const engineLabel = solverEngine === "cp" ? "CP (OR-Tools CP-SAT)" : "Legacy (Greedy + Hill-Climbing)";
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting BASE week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
-        `  Engine: ${engineLabel}\n` +
+        `  Engine: CP Solver (OR-Tools CP-SAT)\n` +
         `  Staff: ${context.staff.length} active | Shift slots: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
         `${"═".repeat(60)}`,
     );
 
-    const base = await prefetchAndSolve(context, solverEngine);
+    const base = await prefetchAndSolve(context);
 
     // Combine skipped days + solver results
     const dayResults: GeneratedDaySchedule[] = [
@@ -1304,10 +1302,20 @@ export const SchedulingAgentService = {
     let totalPreferredStationMatches = 0;
     let totalAssignmentsWithPreference = 0;
 
+    // Accumulate synthetic shifts so we can derive previousDayClosingShifts
+    let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
+
     for (const dayCandidate of base.allDayCandidates) {
       const dayInfo = base.dayContextMap.get(dayCandidate.dayIndex)!;
       const daySchedule = base.weekBaseMap.get(dayCandidate.dateStr);
       if (!daySchedule) continue;
+
+      // Compute closing shifts from the previous day (existing + already-processed solver results)
+      let previousDayClosingShifts: ShiftDTO[] = [];
+      if (dayCandidate.dayIndex > 0) {
+        const previousDay = base.weekDays[dayCandidate.dayIndex - 1];
+        previousDayClosingShifts = getClosingShifts(accumulatedShifts, previousDay);
+      }
 
       const dayContext: DaySchedulingContext = {
         date: dayCandidate.date,
@@ -1315,7 +1323,7 @@ export const SchedulingAgentService = {
         dayName: dayCandidate.dayName,
         slots: dayInfo.slotCandidates,
         existingShifts: context.existingShifts,
-        previousDayClosingShifts: [],
+        previousDayClosingShifts,
         kitchenContext: {
           operatingHours: dayInfo.operatingHours
             ? { open: dayInfo.operatingHours.open, close: dayInfo.operatingHours.close }
@@ -1330,6 +1338,7 @@ export const SchedulingAgentService = {
         daySchedule,
         dayContext,
         context.staff,
+        context.config.scheduleGenerationSettings.clopeningWarningThresholdHours,
       );
       allWarnings.push(...validation.warnings);
       totalPreferredStationMatches += validation.preferredStationMatches;
@@ -1343,6 +1352,13 @@ export const SchedulingAgentService = {
         );
         const current = base.weekHoursAccumulator.get(assignment.staffId) ?? 0;
         base.weekHoursAccumulator.set(assignment.staffId, current + duration);
+      }
+
+      // Accumulate synthetic shifts from this day's solver results for subsequent days
+      for (const assignment of daySchedule.assignments) {
+        accumulatedShifts.push(
+          assignmentToSyntheticShift(assignment, dayCandidate.date, context.orgId, context.locationId, context.schedule.id),
+        );
       }
     }
 
@@ -1395,7 +1411,7 @@ export const SchedulingAgentService = {
 
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} BASE week generation complete in ${fmtMs(totalElapsed)}\n` +
-        `  Engine: ${engineLabel}\n` +
+        `  Engine: CP Solver (OR-Tools CP-SAT)\n` +
         `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Week Score: ${weekScore} | Warnings: ${allWarnings.length}\n` +
         `  Solver: ${base.totalWeekAssignments} assignments (${fmtMs(base.solverElapsed)})\n` +
         `${"═".repeat(60)}\n`,
@@ -1415,7 +1431,7 @@ export const SchedulingAgentService = {
    *
    * Three-phase approach:
    * 1. Pre-fetch candidates for ALL 7 days (using only existing DB shifts)
-   * 2. Week-level deterministic solve (global tightness sort + hill climbing)
+   * 2. Week-level CP solver (OR-Tools CP-SAT, globally optimal)
    * 3. Per-day AI optimizer attempts on top of the week-level base
    *
    * The week-level solve prevents late-week candidate starvation by
@@ -1533,6 +1549,7 @@ export const SchedulingAgentService = {
           optimizerStats,
           adjacentShifts,
           weekHoursAccumulator,
+          context.config.scheduleGenerationSettings,
         );
 
       dayResults.push(daySchedule);
@@ -1622,7 +1639,7 @@ export const SchedulingAgentService = {
           const currentHours = weekHoursAccumulator.get(candidate.staffId) ?? 0;
           if (currentHours + slotDur > candidate.maxHoursPerWeek) continue;
 
-          if (wouldSwapCreateClopening(candidate.staffId, unfilled.startTime, unfilled.endTime, adjShifts)) continue;
+          if (wouldSwapCreateClopening(candidate.staffId, unfilled.startTime, unfilled.endTime, adjShifts, context.config.scheduleGenerationSettings)) continue;
 
           dayResult.assignments.push({
             staffId: candidate.staffId,

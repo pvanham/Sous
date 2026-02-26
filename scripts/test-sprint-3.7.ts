@@ -47,7 +47,7 @@ import {
   buildOptimizerSystemPrompt,
   buildOptimizerUserPrompt,
 } from "../src/server/services/ai/prompts/schedule-generation";
-import { DeterministicSolverService } from "../src/server/services/deterministic-solver.service";
+import type { GeneratedDaySchedule } from "../src/types/ai-scheduling";
 
 // Type imports
 import type { KitchenConfigInput } from "../src/lib/validations/kitchen-config.schema";
@@ -484,8 +484,23 @@ async function testPromptBuilder(): Promise<void> {
     },
   };
 
-  // Generate a base schedule to pass to the optimizer prompt
-  const baseSchedule = DeterministicSolverService.solve(dayCtx);
+  // Mock a base schedule to pass to the optimizer prompt
+  const baseSchedule: GeneratedDaySchedule = {
+    date: dayCtx.date.toISOString().split("T")[0],
+    dayOfWeek: dayCtx.dayName,
+    assignments: dayCtx.slots.flatMap(({ slot, candidates }) =>
+      candidates.slice(0, slot.preferredStaff).map((c) => ({
+        staffId: c.staffId,
+        staffName: c.staffName,
+        station: slot.station,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        reasoning: "Test assignment",
+      }))
+    ),
+    unfilledSlots: [],
+    notes: "Mock base schedule for prompt testing",
+  };
   const idToAlias = new Map<string, string>([["staff-1", "S1"], ["staff-2", "S2"]]);
 
   const userPrompt = buildOptimizerUserPrompt(dayCtx, baseSchedule, idToAlias);
@@ -521,7 +536,10 @@ async function testPromptBuilder(): Promise<void> {
   // With clopening, the candidates are now hard-filtered by CandidateService.
   // The optimizer prompt won't show clopening-specific sections since filtering
   // happens upstream. Just verify the prompt still generates without error.
-  const baseScheduleClopening = DeterministicSolverService.solve(dayCtxWithClopening);
+  const baseScheduleClopening: GeneratedDaySchedule = {
+    ...baseSchedule,
+    notes: "Mock base schedule for clopening prompt testing",
+  };
   const userPromptClopening = buildOptimizerUserPrompt(dayCtxWithClopening, baseScheduleClopening, idToAlias);
   assert(
     userPromptClopening.length > 50,
@@ -534,139 +552,11 @@ async function testPromptBuilder(): Promise<void> {
 // ============================================================================
 
 async function testAlgorithmicFallback(): Promise<void> {
-  logStep("Test 3: Algorithmic Fallback");
-
-  // Build a real day context using CandidateService
-  const ctx = await SchedulingAgentService.buildSchedulingContext(
-    orgId,
-    locationId,
-    TEST_USER_ID,
-    TEST_WEEK_START
+  logStep("Test 3: Algorithmic Fallback (SKIPPED -- legacy solver removed)");
+  skip(
+    "Algorithmic fallback test",
+    "Legacy deterministic solver has been removed. CP solver is now the sole engine."
   );
-
-  // Monday requirements
-  const mondayRequirements = ctx.laborRequirements.filter(
-    (r) => r.dayOfWeek === 1
-  );
-
-  const { CandidateService } = await import(
-    "../src/server/services/candidate.service"
-  );
-
-  const slotCandidates = await CandidateService.getCandidatesForDay(
-    orgId,
-    locationId,
-    TEST_WEEK_START,
-    mondayRequirements,
-    ctx.existingShifts
-  );
-
-  assert(slotCandidates.length === mondayRequirements.length, `got ${slotCandidates.length} slot candidate groups for ${mondayRequirements.length} requirements`);
-
-  // Build day context for fallback
-  const dayCtx: DaySchedulingContext = {
-    date: TEST_WEEK_START,
-    dayOfWeek: 1,
-    dayName: "Monday",
-    slots: slotCandidates,
-    existingShifts: ctx.existingShifts,
-    previousDayClosingShifts: [],
-    kitchenContext: {
-      operatingHours: { open: "09:00", close: "21:00" },
-      totalStaffCount: ctx.staff.length,
-    },
-  };
-
-  // Test fallback via generateDaySchedule by triggering it with a fake error
-  // Instead, we'll test the fallback path by calling generateDaySchedule
-  // which will fall back if OpenAI key is missing
-  const hasApiKey = !!process.env.OPENAI_API_KEY;
-
-  if (!hasApiKey) {
-    // Without API key, generateDaySchedule should fall back
-    const result = await SchedulingAgentService.generateDaySchedule(dayCtx, {
-      orgId,
-      locationId,
-      clerkUserId: TEST_USER_ID,
-      action: "schedule_generation",
-    });
-
-    assert(result.usedFallback === true, "used fallback when no API key");
-    assert(result.daySchedule.assignments.length > 0, `fallback generated ${result.daySchedule.assignments.length} assignments`);
-    assert(
-      result.daySchedule.notes.includes("basic assignment") ||
-        result.daySchedule.notes.includes("AI unavailable"),
-      "fallback notes mention AI unavailable"
-    );
-
-    // Verify no double-booking: same staff should not have overlapping assignments
-    const staffSlots = new Map<string, string[]>();
-    let noOverlap = true;
-    for (const a of result.daySchedule.assignments) {
-      const existing = staffSlots.get(a.staffId) ?? [];
-      for (const range of existing) {
-        const [eStart, eEnd] = range.split("-");
-        // Simple overlap check
-        if (a.startTime < eEnd && a.endTime > eStart) {
-          noOverlap = false;
-          break;
-        }
-      }
-      existing.push(`${a.startTime}-${a.endTime}`);
-      staffSlots.set(a.staffId, existing);
-    }
-    assert(noOverlap, "fallback has no overlapping assignments for same staff");
-
-    // Verify all staffIds are from candidate lists
-    const allValidIds = new Set<string>();
-    for (const sc of slotCandidates) {
-      for (const c of sc.candidates) {
-        allValidIds.add(c.staffId);
-      }
-    }
-    const allFromCandidates = result.daySchedule.assignments.every((a) =>
-      allValidIds.has(a.staffId)
-    );
-    assert(allFromCandidates, "all fallback assignments use valid candidate IDs");
-
-    // Each assignment should have the fallback reasoning
-    const allHaveFallbackReasoning = result.daySchedule.assignments.every(
-      (a) => a.reasoning.includes("fallback") || a.reasoning.includes("algorithmic")
-    );
-    assert(allHaveFallbackReasoning, "all fallback assignments have fallback reasoning text");
-  } else {
-    skip("Fallback via missing API key", "API key is present -- testing AI path instead");
-
-    // With API key, test actual AI generation
-    const result = await SchedulingAgentService.generateDaySchedule(dayCtx, {
-      orgId,
-      locationId,
-      clerkUserId: TEST_USER_ID,
-      action: "schedule_generation",
-    });
-
-    assert(result.usedFallback === false, "did NOT use fallback with API key");
-    assert(result.daySchedule.assignments.length > 0, `AI generated ${result.daySchedule.assignments.length} assignments`);
-    assert(result.tokenUsage.totalTokens > 0, `token usage tracked: ${result.tokenUsage.totalTokens} tokens`);
-
-    // Verify staffIds are from candidate lists
-    const allValidIds = new Set<string>();
-    for (const sc of slotCandidates) {
-      for (const c of sc.candidates) {
-        allValidIds.add(c.staffId);
-      }
-    }
-    const allFromCandidates = result.daySchedule.assignments.every((a) =>
-      allValidIds.has(a.staffId)
-    );
-    assert(allFromCandidates, "all AI assignments use valid candidate IDs");
-
-    // Verify reasoning is present
-    const allHaveReasoning = result.daySchedule.assignments.every(
-      (a) => a.reasoning && a.reasoning.length > 0
-    );
-    assert(allHaveReasoning, "all AI assignments have reasoning");
-  }
 }
 
 // ============================================================================

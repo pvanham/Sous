@@ -24,6 +24,13 @@ export interface IAISettings {
   subscriptionTier: "free" | "pro" | "enterprise";
 }
 
+// Schedule generation settings interface
+export interface IScheduleGenerationSettings {
+  allowClopening: boolean;
+  minHoursBetweenShifts: number;
+  clopeningWarningThresholdHours: number;
+}
+
 // Main KitchenConfig interface
 export interface IKitchenConfig {
   orgId: Types.ObjectId;
@@ -34,6 +41,7 @@ export interface IKitchenConfig {
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
   aiSettings: IAISettings;
+  scheduleGenerationSettings: IScheduleGenerationSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -122,6 +130,34 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
       default: () => ({
         monthlyGenerationLimit: 50,
         subscriptionTier: "free",
+      }),
+    },
+    scheduleGenerationSettings: {
+      type: new Schema<IScheduleGenerationSettings>(
+        {
+          allowClopening: {
+            type: Boolean,
+            default: false,
+          },
+          minHoursBetweenShifts: {
+            type: Number,
+            default: 10,
+            min: 6,
+            max: 16,
+          },
+          clopeningWarningThresholdHours: {
+            type: Number,
+            default: 10,
+            min: 6,
+            max: 16,
+          },
+        },
+        { _id: false }
+      ),
+      default: () => ({
+        allowClopening: false,
+        minHoursBetweenShifts: 10,
+        clopeningWarningThresholdHours: 10,
       }),
     },
   },

@@ -3,6 +3,7 @@ import KitchenConfig from "@/server/models/KitchenConfig";
 import type {
   KitchenConfigInput,
   AISettingsInput,
+  ScheduleGenerationSettingsInput,
 } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
 
@@ -101,6 +102,34 @@ export const KitchenConfigService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { aiSettings: data } },
+      { new: true, upsert: false }
+    ).lean();
+
+    if (!doc) {
+      throw new Error("Kitchen config not found.");
+    }
+
+    return toKitchenConfigDTO(doc);
+  },
+
+  /**
+   * Update only the schedule generation settings for a location's kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param data - Validated schedule generation settings input
+   * @returns Updated KitchenConfigDTO
+   */
+  async updateScheduleGenerationSettings(
+    orgId: string,
+    locationId: string,
+    data: ScheduleGenerationSettingsInput
+  ): Promise<KitchenConfigDTO> {
+    const doc = await KitchenConfig.findOneAndUpdate(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { scheduleGenerationSettings: data } },
       { new: true, upsert: false }
     ).lean();
 

@@ -11,9 +11,9 @@ import type { CandidateDTO } from "@/types/candidate";
 // Schedule Generation Prompts -- Swap-Based Architecture
 // ============================================================
 // Prompt templates for the AI Schedule Optimizer.
-// The AI receives a valid base schedule (already hill-climbed by
-// the deterministic solver) and suggests specific SWAPS to
-// improve preference alignment and hour fairness.
+// The AI receives a valid base schedule (produced by the CP solver)
+// and suggests specific SWAPS to improve preference alignment
+// and hour fairness.
 //
 // Key design: the AI returns a list of swaps (not a full schedule),
 // each of which is independently validated and applied. Invalid
@@ -104,7 +104,7 @@ function formatCandidate(
 export function buildOptimizerSystemPrompt(): string {
   return `You are Sous, a kitchen schedule optimizer.
 
-You will receive a VALID BASE SCHEDULE that has already been optimized by a deterministic solver with hill-climbing. Your job is to suggest SWAPS that further improve it.
+You will receive a VALID BASE SCHEDULE that has already been optimized by a constraint programming solver. Your job is to suggest SWAPS that further improve it.
 
 HARD RULES (violating any of these makes a swap invalid — it will be skipped):
 1. Each swap replaces ONE staff member in ONE slot with a DIFFERENT staff member from that slot's candidate list.
@@ -177,7 +177,7 @@ export interface ScoreBreakdownInput {
  * 6. Explicit list of valid slot keys
  *
  * @param context - Day scheduling context with candidates
- * @param baseSchedule - The hill-climbed deterministic solver's valid output
+ * @param baseSchedule - The CP solver's valid output
  * @param idToAlias - Map of real staffId -> short alias
  * @param scoreBreakdown - Optional current score breakdown for the AI to reason about
  */

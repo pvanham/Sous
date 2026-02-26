@@ -1,8 +1,8 @@
-import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours, IAISettings } from "@/server/models/KitchenConfig";
+import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours, IAISettings, IScheduleGenerationSettings } from "@/server/models/KitchenConfig";
 import type { StaffSkill } from "@/types/staff";
 
 // Re-export model interfaces for convenience
-export type { IOperatingHours, IWeeklyOperatingHours, IAISettings };
+export type { IOperatingHours, IWeeklyOperatingHours, IAISettings, IScheduleGenerationSettings };
 
 // AI Settings DTO (plain object, same shape as IAISettings but decoupled from model)
 export interface AISettingsDTO {
@@ -16,6 +16,18 @@ const DEFAULT_AI_SETTINGS: AISettingsDTO = {
   subscriptionTier: "free",
 };
 
+export interface ScheduleGenerationSettingsDTO {
+  allowClopening: boolean;
+  minHoursBetweenShifts: number;
+  clopeningWarningThresholdHours: number;
+}
+
+const DEFAULT_SCHEDULE_GENERATION_SETTINGS: ScheduleGenerationSettingsDTO = {
+  allowClopening: false,
+  minHoursBetweenShifts: 10,
+  clopeningWarningThresholdHours: 10,
+};
+
 // DTO returned from service layer (without Mongoose internals)
 export interface KitchenConfigDTO {
   id: string;
@@ -27,6 +39,7 @@ export interface KitchenConfigDTO {
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
   aiSettings: AISettingsDTO;
+  scheduleGenerationSettings: ScheduleGenerationSettingsDTO;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +61,13 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
           subscriptionTier: doc.aiSettings.subscriptionTier ?? DEFAULT_AI_SETTINGS.subscriptionTier,
         }
       : { ...DEFAULT_AI_SETTINGS },
+    scheduleGenerationSettings: doc.scheduleGenerationSettings
+      ? {
+          allowClopening: doc.scheduleGenerationSettings.allowClopening ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.allowClopening,
+          minHoursBetweenShifts: doc.scheduleGenerationSettings.minHoursBetweenShifts ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.minHoursBetweenShifts,
+          clopeningWarningThresholdHours: doc.scheduleGenerationSettings.clopeningWarningThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.clopeningWarningThresholdHours,
+        }
+      : { ...DEFAULT_SCHEDULE_GENERATION_SETTINGS },
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

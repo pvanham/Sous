@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UtensilsCrossed, Bot } from "lucide-react";
+import { UtensilsCrossed, Bot, Calendar } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard/settings/kitchen", label: "Kitchen", icon: UtensilsCrossed },
   { href: "/dashboard/settings/ai", label: "AI Settings", icon: Bot },
+  { href: "/dashboard/settings/schedule-generation", label: "Schedule Generation", icon: Calendar },
 ];
 
 export function SettingsNav() {

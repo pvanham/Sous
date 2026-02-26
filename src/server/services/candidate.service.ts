@@ -163,25 +163,25 @@ function calculateWeekHours(
   return hoursMap;
 }
 
-/** Minimum hours between a closing shift end and a next-day opening shift */
-const CLOPENING_THRESHOLD_HOURS = 10;
+const DEFAULT_CLOPENING_THRESHOLD_HOURS = 10;
 
 /**
  * Remove staff who closed the previous day and would start too soon
- * (less than CLOPENING_THRESHOLD_HOURS gap). This prevents clopening
+ * (less than the configured gap). This prevents clopening
  * at the hard-filter level rather than relying on AI/solver avoidance.
  *
- * @param staff - Staff to filter
- * @param previousDayClosingShifts - Closing shifts from the previous day
- * @param slotStartTime - Proposed slot start time in HH:MM format
- * @returns Staff who do NOT have a clopening risk for this slot
+ * When `allowClopening` is true, skips filtering entirely.
  */
 function filterByClopening(
   staff: StaffDTO[],
   previousDayClosingShifts: ShiftDTO[],
   slotStartTime: string,
+  clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
 ): StaffDTO[] {
+  if (clopeningSettings?.allowClopening) return staff;
   if (previousDayClosingShifts.length === 0) return staff;
+
+  const thresholdHours = clopeningSettings?.minHoursBetweenShifts ?? DEFAULT_CLOPENING_THRESHOLD_HOURS;
 
   const closingByStaff = new Map<string, Date>();
   for (const shift of previousDayClosingShifts) {
@@ -205,7 +205,7 @@ function filterByClopening(
     const gapMinutes = minutesRemainingInDay + openingMinutes;
     const gapHours = gapMinutes / 60;
 
-    return gapHours >= CLOPENING_THRESHOLD_HOURS;
+    return gapHours >= thresholdHours;
   });
 }
 
@@ -396,6 +396,7 @@ export const CandidateService = {
    * @param existingShifts - Pre-fetched shifts for the week
    * @param precomputedWeekHours - Optional pre-computed week hours map (avoids recalculation)
    * @param previousDayClosingShifts - Closing shifts from previous day for clopening hard filter
+   * @param clopeningSettings - Optional clopening policy from schedule generation settings
    * @returns Array of SlotCandidates, one per labor requirement
    */
   async getCandidatesForDay(
@@ -406,6 +407,7 @@ export const CandidateService = {
     existingShifts: ShiftDTO[],
     precomputedWeekHours?: Map<string, number>,
     previousDayClosingShifts: ShiftDTO[] = [],
+    clopeningSettings?: { allowClopening: boolean; minHoursBetweenShifts: number; clopeningWarningThresholdHours: number },
   ): Promise<SlotCandidates[]> {
     if (laborRequirements.length === 0) {
       return [];
@@ -482,6 +484,7 @@ export const CandidateService = {
         afterShifts,
         previousDayClosingShifts,
         req.startTime,
+        clopeningSettings,
       );
 
       // Build CandidateDTOs

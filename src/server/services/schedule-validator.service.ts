@@ -43,7 +43,7 @@ import type {
 /** Maximum number of self-correction retry attempts */
 const MAX_RETRY_ATTEMPTS = 1;
 
-/** Variance weight for hour balance penalty -- kept in sync with deterministic-solver */
+/** Variance weight for hour balance penalty */
 const VARIANCE_WEIGHT = 0.3;
 
 /** Per-hour penalty for staff below their minHoursPerWeek */
@@ -65,8 +65,8 @@ export interface QualityScoreBreakdown {
 /** Threshold for overtime risk warning (percentage of maxHoursPerWeek) */
 const OVERTIME_RISK_THRESHOLD = 0.9;
 
-/** Minimum hours between closing and opening shifts to avoid clopening */
-const CLOPENING_THRESHOLD_HOURS = 10;
+/** Default minimum hours between closing and opening shifts for clopening warnings */
+const DEFAULT_CLOPENING_WARNING_THRESHOLD_HOURS = 10;
 
 // ────────────────────────────────────────────────────────────
 // Internal: Tracking options for AI retry calls
@@ -235,12 +235,14 @@ export const ScheduleValidatorService = {
    * @param generated - The AI-generated day schedule to validate
    * @param context - The day's scheduling context with candidates and existing shifts
    * @param allStaff - All active staff DTOs (for skill/hour lookups beyond candidates)
+   * @param clopeningWarningThresholdHours - Configurable threshold for clopening warnings (defaults to 10)
    * @returns ValidationResult with errors and warnings
    */
   validate(
     generated: GeneratedDaySchedule,
     context: DaySchedulingContext,
-    allStaff: StaffDTO[]
+    allStaff: StaffDTO[],
+    clopeningWarningThresholdHours?: number,
   ): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
@@ -512,18 +514,17 @@ export const ScheduleValidatorService = {
       }
     }
 
-    // Warning: Clopening risk
+    // Warning: Clopening risk (uses configurable threshold, fires regardless of allowClopening)
+    const effectiveWarningThreshold = clopeningWarningThresholdHours ?? DEFAULT_CLOPENING_WARNING_THRESHOLD_HOURS;
     if (previousDayClosingShifts.length > 0) {
       for (let i = 0; i < assignments.length; i++) {
         const assignment = assignments[i];
 
-        // Find if this staff member had a closing shift the previous day
         const closingShift = previousDayClosingShifts.find(
           (s) => s.staffId === assignment.staffId
         );
         if (!closingShift) continue;
 
-        // Calculate gap between closing shift end and this assignment start
         const closingEnd = new Date(closingShift.end);
         const closingEndMinutes =
           closingEnd.getHours() * 60 + closingEnd.getMinutes();
@@ -531,18 +532,17 @@ export const ScheduleValidatorService = {
         const [openH, openM] = assignment.startTime.split(":").map(Number);
         const openingStartMinutes = openH * 60 + openM;
 
-        // Gap calculation: hours remaining in the closing day + hours into the opening day
         const minutesRemainingInDay = 24 * 60 - closingEndMinutes;
         const gapMinutes = minutesRemainingInDay + openingStartMinutes;
         const gapHours = gapMinutes / 60;
 
-        if (gapHours < CLOPENING_THRESHOLD_HOURS) {
+        if (gapHours < effectiveWarningThreshold) {
           warnings.push({
             type: "clopening_risk",
             staffId: assignment.staffId,
             staffName: assignment.staffName,
             shiftIndex: i,
-            message: `Staff "${assignment.staffName}" closed yesterday and opens today with only ${gapHours.toFixed(1)} hours gap (recommended minimum: ${CLOPENING_THRESHOLD_HOURS}h).`,
+            message: `Staff "${assignment.staffName}" closed yesterday and opens today with only ${gapHours.toFixed(1)} hours gap (warning threshold: ${effectiveWarningThreshold}h).`,
           });
         }
       }

@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 import {
   kitchenConfigSchema,
   aiSettingsSchema,
+  scheduleGenerationSettingsSchema,
 } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
@@ -391,6 +392,46 @@ export async function saveAISettings(
     const ctx = await getLocationContext(userId);
 
     const result = await KitchenConfigService.updateAISettings(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data
+    );
+
+    return { success: true, data: result };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Failed to save",
+    };
+  }
+}
+
+/**
+ * Save only the schedule generation settings for the current user's location.
+ * @param input - Schedule generation settings (allowClopening, minHoursBetweenShifts)
+ * @returns ActionResponse containing the updated config
+ */
+export async function saveScheduleGenerationSettings(
+  input: unknown
+): Promise<ActionResponse<KitchenConfigDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const parsed = scheduleGenerationSettingsSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error:
+          parsed.error.issues[0]?.message ?? "Invalid input",
+      };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    const result = await KitchenConfigService.updateScheduleGenerationSettings(
       ctx.orgId,
       ctx.locationId,
       parsed.data

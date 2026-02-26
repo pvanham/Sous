@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   Clock,
   Cpu,
-  Sparkles,
   User,
   UserMinus,
   MessageSquare,
@@ -44,11 +43,8 @@ import type {
 interface GeneratedShiftPreviewProps {
   generatedSchedule: GeneratedSchedule;
   isAccepting: boolean;
-  isAIOptimized: boolean;
-  aiUsageRemaining?: number;
   onAcceptAll: () => void;
   onRegenerate: () => void;
-  onOptimize: () => void;
   onCancel: () => void;
 }
 
@@ -73,19 +69,16 @@ const WARNING_CONFIG: Record<
  * GeneratedShiftPreview - Displays a generated schedule for review.
  *
  * Shows day-by-day shift assignments with reasoning, warnings,
- * unfilled slots, and summary statistics. Conditionally renders
- * "Optimize with AI" (base schedule) or "Regenerate" (AI-optimized).
+ * unfilled slots, and summary statistics. Provides "Regenerate"
+ * and "Accept All" actions.
  *
  * UI Layer only: no database imports, no business logic.
  */
 export function GeneratedShiftPreview({
   generatedSchedule,
   isAccepting,
-  isAIOptimized,
-  aiUsageRemaining,
   onAcceptAll,
   onRegenerate,
-  onOptimize,
   onCancel,
 }: GeneratedShiftPreviewProps) {
   const [expandedDays, setExpandedDays] = useState<Set<string>>(
@@ -106,10 +99,7 @@ export function GeneratedShiftPreview({
 
   const { metadata, warnings, days } = generatedSchedule;
 
-  // Group warnings by type
   const warningsByType = groupWarningsByType(warnings);
-
-  // Calculate total hours
   const totalHours = calculateTotalHours(days);
 
   return (
@@ -140,28 +130,10 @@ export function GeneratedShiftPreview({
         <span>
           Generated in {(metadata.generationTimeMs / 1000).toFixed(1)}s
         </span>
-        {isAIOptimized ? (
-          <>
-            {metadata.usedFallback && (
-              <Badge variant="warning">AI unavailable — used deterministic schedule</Badge>
-            )}
-            {!metadata.usedFallback && metadata.aiImprovedDays > 0 && (
-              <Badge variant="default">
-                AI optimized {metadata.aiImprovedDays}/{metadata.totalOptimizerDays} days
-              </Badge>
-            )}
-            {metadata.tokenUsage.totalTokens > 0 && (
-              <span>
-                {metadata.tokenUsage.totalTokens.toLocaleString()} tokens used
-              </span>
-            )}
-          </>
-        ) : (
-          <Badge variant="secondary">
-            <Cpu className="mr-1 h-3 w-3" />
-            Deterministic schedule
-          </Badge>
-        )}
+        <Badge variant="secondary">
+          <Cpu className="mr-1 h-3 w-3" />
+          CP Solver
+        </Badge>
       </div>
 
       {/* Preferred station matches (positive stat) */}
@@ -201,7 +173,7 @@ export function GeneratedShiftPreview({
             <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">
-                {isAIOptimized ? "AI Summary" : "Summary"}
+                Summary
               </p>
               <p className="text-sm">{generatedSchedule.summary}</p>
             </div>
@@ -214,21 +186,10 @@ export function GeneratedShiftPreview({
         <Button variant="outline" onClick={onCancel} disabled={isAccepting}>
           Cancel
         </Button>
-        {isAIOptimized ? (
-          <Button variant="outline" onClick={onRegenerate} disabled={isAccepting}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Regenerate
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            onClick={onOptimize}
-            disabled={isAccepting || aiUsageRemaining === 0}
-          >
-            <Sparkles className="mr-2 h-4 w-4" />
-            Optimize with AI
-          </Button>
-        )}
+        <Button variant="outline" onClick={onRegenerate} disabled={isAccepting}>
+          <RefreshCw className="mr-2 h-4 w-4" />
+          Regenerate
+        </Button>
         <Button
           onClick={onAcceptAll}
           disabled={isAccepting || metadata.totalShiftsCreated === 0}
@@ -362,7 +323,7 @@ function ShiftAssignmentRow({
         </TooltipTrigger>
         <TooltipContent side="top" className="max-w-xs">
           <p className="text-xs">
-            <span className="font-medium">AI Reasoning:</span>{" "}
+            <span className="font-medium">Reasoning:</span>{" "}
             {assignment.reasoning}
           </p>
         </TooltipContent>

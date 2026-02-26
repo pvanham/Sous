@@ -13,7 +13,7 @@ import type {
 // Architecture: Service Layer (per ARCHITECTURE.md)
 // - Does NOT import Mongoose models
 // - No DB access -- delegates to external solver
-// - Input/output use the same types as DeterministicSolverService
+// - Input/output use shared scheduling types (WeekSolverInput, GeneratedDaySchedule)
 // ============================================================
 
 const LOG_PREFIX = "[CPSolver]";
@@ -88,6 +88,12 @@ function serializeInput(input: WeekSolverInput): string {
     maxHoursLookup: mapToRecord(input.maxHoursLookup),
     minHoursLookup: mapToRecord(input.minHoursLookup),
     existingWeekHours: mapToRecord(input.existingWeekHours),
+    settings: input.scheduleGenerationSettings
+      ? {
+          allowClopening: input.scheduleGenerationSettings.allowClopening,
+          clopeningThresholdMinutes: input.scheduleGenerationSettings.minHoursBetweenShifts * 60,
+        }
+      : undefined,
   };
   return JSON.stringify(payload);
 }
