@@ -35,11 +35,19 @@ import {
 } from "@/server/actions/schedule-generation.actions";
 import { formatWeekLabel } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type {
   GeneratedSchedule,
   ReadinessCheckResult,
   ReadinessIssue,
   AcceptedShift,
+  SolverEngine,
 } from "@/types/ai-scheduling";
 import { GeneratedShiftPreview } from "./GeneratedShiftPreview";
 
@@ -105,6 +113,7 @@ export function GenerateScheduleDialog({
   const [generatedSchedule, setGeneratedSchedule] =
     useState<GeneratedSchedule | null>(null);
   const [isAIOptimized, setIsAIOptimized] = useState(false);
+  const [solverEngine, setSolverEngine] = useState<SolverEngine>("legacy");
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -112,6 +121,7 @@ export function GenerateScheduleDialog({
         setStep("readiness");
         setGeneratedSchedule(null);
         setIsAIOptimized(false);
+        setSolverEngine("legacy");
       }
       onOpenChange(isOpen);
     },
@@ -137,10 +147,13 @@ export function GenerateScheduleDialog({
     staleTime: 30_000,
   });
 
-  // ── Base generation mutation (deterministic only) ──
+  // ── Base generation mutation ──
   const generateMutation = useMutation({
-    mutationFn: async () => {
-      const result = await generateBaseSchedule({ scheduleId: schedule.id });
+    mutationFn: async (engine: SolverEngine) => {
+      const result = await generateBaseSchedule({
+        scheduleId: schedule.id,
+        solverEngine: engine,
+      });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
@@ -241,7 +254,7 @@ export function GenerateScheduleDialog({
 
   const handleGenerate = () => {
     setStep("generating");
-    generateMutation.mutate();
+    generateMutation.mutate(solverEngine);
   };
 
   const handleOptimize = () => {
@@ -293,6 +306,8 @@ export function GenerateScheduleDialog({
             isLoading={isCheckingReadiness}
             error={readinessError}
             weekLabel={weekLabel}
+            solverEngine={solverEngine}
+            onSolverEngineChange={setSolverEngine}
             onGenerate={handleGenerate}
             onRefresh={() => refetchReadiness()}
             onCancel={() => handleOpenChange(false)}
@@ -365,6 +380,8 @@ interface ReadinessStepProps {
   isLoading: boolean;
   error: Error | null;
   weekLabel: string;
+  solverEngine: SolverEngine;
+  onSolverEngineChange: (engine: SolverEngine) => void;
   onGenerate: () => void;
   onRefresh: () => void;
   onCancel: () => void;
@@ -375,6 +392,8 @@ function ReadinessStep({
   isLoading,
   error,
   weekLabel,
+  solverEngine,
+  onSolverEngineChange,
   onGenerate,
   onRefresh,
   onCancel,
@@ -449,6 +468,32 @@ function ReadinessStep({
                 label="Shift Slots"
                 value={readiness.totalRequirements}
               />
+            </div>
+
+            {/* Solver engine selector */}
+            <div className="rounded-lg border bg-muted/50 p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium">Solver Engine</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {solverEngine === "cp"
+                      ? "ILP solver finds globally optimal assignments"
+                      : "Fast greedy solver with hill-climbing optimization"}
+                  </p>
+                </div>
+                <Select
+                  value={solverEngine}
+                  onValueChange={(v) => onSolverEngineChange(v as SolverEngine)}
+                >
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="legacy">Legacy Solver</SelectItem>
+                    <SelectItem value="cp">CP Solver (Optimal)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {/* Issues list */}

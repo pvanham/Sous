@@ -14,11 +14,14 @@ const dateStringSchema = z
 // Generate Schedule Input
 // ────────────────────────────────────────────────────────────
 
+const solverEngineSchema = z.enum(["legacy", "cp"]).optional().default("legacy");
+
 /**
  * Schema for the generateSchedule action input.
  */
 export const generateScheduleSchema = z.object({
   scheduleId: z.string().min(1, "Schedule ID is required"),
+  solverEngine: solverEngineSchema,
 });
 
 export type GenerateScheduleInput = z.infer<typeof generateScheduleSchema>;

@@ -17,6 +17,13 @@ import type { TokenUsage } from "@/types/ai-usage";
 // ============================================================
 
 // ────────────────────────────────────────────────────────────
+// Solver Engine Selection
+// ────────────────────────────────────────────────────────────
+
+/** Which solver engine to use for base schedule generation. */
+export type SolverEngine = "legacy" | "cp";
+
+// ────────────────────────────────────────────────────────────
 // Scheduling Context (Full Week)
 // ────────────────────────────────────────────────────────────
 

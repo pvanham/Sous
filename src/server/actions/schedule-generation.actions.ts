@@ -353,11 +353,11 @@ export async function generateSchedule(
 // ────────────────────────────────────────────────────────────
 
 /**
- * Generate a week's schedule using ONLY the deterministic solver.
+ * Generate a week's schedule using the selected solver engine.
  * No AI optimizer calls, no AI usage check, no token logging.
  * Returns a base schedule for preview that can later be optimized with AI.
  *
- * @param input - Object with scheduleId
+ * @param input - Object with scheduleId and optional solverEngine
  * @returns GeneratedSchedule with aiOptimized = false
  */
 export async function generateBaseSchedule(
@@ -396,7 +396,10 @@ export async function generateBaseSchedule(
     );
 
     const generatedSchedule =
-      await SchedulingAgentService.generateBaseWeekSchedule(context);
+      await SchedulingAgentService.generateBaseWeekSchedule(
+        context,
+        parsed.data.solverEngine,
+      );
 
     return { success: true, data: generatedSchedule };
   } catch (error) {

@@ -14,6 +14,7 @@ import {
 } from "@/lib/utils/date";
 import { CandidateService } from "@/server/services/candidate.service";
 import { DeterministicSolverService } from "@/server/services/deterministic-solver.service";
+import { CPSolverService } from "@/server/services/cp-solver.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
@@ -46,6 +47,7 @@ import type {
   ValidationWarning,
   WeekDayCandidates,
   WeekSolverInput,
+  SolverEngine,
 } from "@/types/ai-scheduling";
 import type { OptimizerRejectionReason } from "./prompts/schedule-generation";
 
@@ -582,6 +584,7 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
  */
 async function prefetchAndSolve(
   context: SchedulingContext,
+  solverEngine: SolverEngine = "legacy",
 ): Promise<PrefetchAndSolveResult> {
   const weekDays = getWeekDays(context.weekStart);
   const weekHoursAccumulator = initWeekHoursFromShifts(
@@ -685,7 +688,10 @@ async function prefetchAndSolve(
   };
 
   const solverStart = Date.now();
-  const weekDaySchedules = DeterministicSolverService.solveWeek(weekSolverInput);
+  const weekDaySchedules =
+    solverEngine === "cp"
+      ? await CPSolverService.solveWeek(weekSolverInput)
+      : DeterministicSolverService.solveWeek(weekSolverInput);
   const solverElapsed = Date.now() - solverStart;
 
   const totalWeekAssignments = weekDaySchedules.reduce(
@@ -1259,27 +1265,31 @@ export const SchedulingAgentService = {
   },
 
   /**
-   * Generate a base week schedule using ONLY the deterministic solver.
-   * Runs Phase 1 (candidate pre-fetching) + Phase 2 (week-level greedy +
-   * hill climbing) without any AI optimizer calls. Produces a guaranteed-valid
-   * schedule that can be previewed immediately, then optionally optimized
-   * with AI via generateWeekSchedule().
+   * Generate a base week schedule using the selected solver engine.
+   * Runs Phase 1 (candidate pre-fetching) + Phase 2 (solver) without
+   * any AI optimizer calls. Produces a guaranteed-valid schedule that
+   * can be previewed immediately, then optionally optimized with AI
+   * via generateWeekSchedule().
    *
    * @param context - Full week scheduling context
+   * @param solverEngine - Which solver to use ("legacy" or "cp")
    * @returns GeneratedSchedule with aiOptimized = false
    */
   async generateBaseWeekSchedule(
     context: SchedulingContext,
+    solverEngine: SolverEngine = "legacy",
   ): Promise<GeneratedSchedule> {
     const startTime = Date.now();
 
+    const engineLabel = solverEngine === "cp" ? "CP (GLPK MILP)" : "Legacy (Greedy + Hill-Climbing)";
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting BASE week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
+        `  Engine: ${engineLabel}\n` +
         `  Staff: ${context.staff.length} active | Shift slots: ${context.laborRequirements.length} | Existing shifts: ${context.existingShifts.length}\n` +
         `${"═".repeat(60)}`,
     );
 
-    const base = await prefetchAndSolve(context);
+    const base = await prefetchAndSolve(context, solverEngine);
 
     // Combine skipped days + solver results
     const dayResults: GeneratedDaySchedule[] = [
@@ -1385,6 +1395,7 @@ export const SchedulingAgentService = {
 
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} BASE week generation complete in ${fmtMs(totalElapsed)}\n` +
+        `  Engine: ${engineLabel}\n` +
         `  Shifts: ${totalShiftsCreated} | Unfilled: ${totalUnfilledSlots} | Week Score: ${weekScore} | Warnings: ${allWarnings.length}\n` +
         `  Solver: ${base.totalWeekAssignments} assignments (${fmtMs(base.solverElapsed)})\n` +
         `${"═".repeat(60)}\n`,
