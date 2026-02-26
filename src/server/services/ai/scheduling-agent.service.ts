@@ -1281,7 +1281,7 @@ export const SchedulingAgentService = {
   ): Promise<GeneratedSchedule> {
     const startTime = Date.now();
 
-    const engineLabel = solverEngine === "cp" ? "CP (GLPK MILP)" : "Legacy (Greedy + Hill-Climbing)";
+    const engineLabel = solverEngine === "cp" ? "CP (OR-Tools CP-SAT)" : "Legacy (Greedy + Hill-Climbing)";
     console.log(
       `\n${"═".repeat(60)}\n${LOG_PREFIX} Starting BASE week generation: ${format(context.weekStart, "yyyy-MM-dd")}\n` +
         `  Engine: ${engineLabel}\n` +
