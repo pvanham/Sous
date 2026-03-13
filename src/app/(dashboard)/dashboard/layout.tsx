@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Home, Calendar, Users, ClipboardList, CalendarOff, Settings } from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { auth } from "@clerk/nextjs/server";
@@ -61,16 +61,7 @@ export default async function DashboardLayout({
               role={ctx.role}
             />
             <ThemeToggle />
-            <UserButton
-              afterSignOutUrl="/sign-in"
-              userProfileMode="navigation"
-              userProfileUrl="/dashboard/settings"
-              appearance={{
-                elements: {
-                  avatarBox: "h-8 w-8",
-                },
-              }}
-            />
+            <CustomUserButton />
           </div>
         </div>
       </header>

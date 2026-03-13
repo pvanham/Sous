@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { CustomUserButton } from "@/components/shared/CustomUserButton";
 
 export function MarketingHeader() {
   return (
@@ -25,12 +27,17 @@ export function MarketingHeader() {
         <div className="flex items-center gap-4">
           <ThemeToggle />
           <div className="hidden sm:flex items-center gap-2">
-            <Button variant="ghost" asChild>
-              <Link href="/sign-in">Log in</Link>
-            </Button>
-            <Button asChild>
-              <Link href="/sign-up">Get Started</Link>
-            </Button>
+            <SignedOut>
+              <Button variant="ghost" asChild>
+                <Link href="/sign-in">Log in</Link>
+              </Button>
+              <Button asChild>
+                <Link href="/sign-up">Get Started</Link>
+              </Button>
+            </SignedOut>
+            <SignedIn>
+              <CustomUserButton />
+            </SignedIn>
           </div>
         </div>
       </div>

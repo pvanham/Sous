@@ -26,6 +26,7 @@ app = FastAPI(title="Sous CP-SAT Solver")
 
 CLOPENING_THRESHOLD_MINUTES = 600  # 10 hours
 SOLVER_TIME_LIMIT_SECONDS = 30
+SCALE = 60
 
 # The coverage weights remain static hard-constraints disguised as soft constraints.
 W_MIN_SHORTFALL = 100000000  # 100,000,000
@@ -557,7 +558,7 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         model.add_min_equality(h_min, [h[s.idx] for s in staff_entries])
 
     # ── Ranked Soft Constraints (Preferences, Fairness, Cost) ──
-    # User ranks: 1st (x10), 2nd (x3), 3rd (x1)
+    # User ranks: 1st (x3.0), 2nd (x1.5), 3rd (x0.5)
     ranks = req.settings.softConstraintPriority if req.settings else ["preferences", "fairness", "cost"]
     
     # Safely handle missing/malformed arrays
@@ -565,12 +566,14 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         ranks = ["preferences", "fairness", "cost"]
         
     multipliers = {
-        ranks[0]: 10,
-        ranks[1]: 3,
-        ranks[2]: 1
+        ranks[0]: 3.0,
+        ranks[1]: 1.5,
+        ranks[2]: 0.5
     }
     
-    # 1. Preferences (Base: 10,000 per perfect match)
+    obj_terms: list = []
+
+    # 1. Preferences (Base: 4,000 station + 2,500 time match)
     pref_mult = multipliers.get("preferences", 1)
     
     for slot in flat_slots:
@@ -578,34 +581,41 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
             meta = candidate_meta[(s_idx, slot.idx)]
             coeff = 0
             if meta.is_preferred_station:
-                coeff += 6000 * pref_mult
-            if meta.is_preferred_time:
                 coeff += 4000 * pref_mult
+            if meta.is_preferred_time:
+                coeff += 2500 * pref_mult
             if coeff > 0:
                 obj_terms.append(coeff * x[(s_idx, slot.idx)])
 
-    # 2. Fairness (Base: -1,000 per hour of max-min spread)
-    # Because h variables are in minutes, we divide the penalty by 60
-    # Wait, CP-SAT needs integers. So we apply the penalty directly to minutes:
-    # -1000 per hour = -1000 / 60 per minute. To avoid floats, we multiply everything by 6.
-    # Actually, simpler: -16 per minute is roughly -960 per hour.
+    # 2. Fairness (Base: -10 per minute of spread ≈ -600 per hour)
     fair_mult = multipliers.get("fairness", 1)
-    fairness_penalty_per_min = 17 * fair_mult  # ~ -1020 per hour of spread
+    fairness_penalty_per_min = 10 * fair_mult
     
     if staff_entries:
         obj_terms.append(-fairness_penalty_per_min * h_max)
         obj_terms.append(fairness_penalty_per_min * h_min)
 
     # 3. Labor Cost (Base: -100 per $1)
+    # Important: Cost should only penalize NEWLY ASSIGNED hours, not existing hours!
     cost_mult = multipliers.get("cost", 1)
     
+    new_h: dict[int, cp_model.IntVar] = {}
     for staff in staff_entries:
+        slot_idxs = staff_to_slots.get(staff.idx, [])
+        hour_terms = [
+            flat_slots[t].duration_minutes * x[(staff.idx, t)] for t in slot_idxs
+        ]
+        
+        # Track only newly assigned minutes for this staff member
+        new_h[staff.idx] = model.new_int_var(0, staff.max_minutes, f"new_h_{staff.idx}")
+        model.add(new_h[staff.idx] == sum(hour_terms))
+        
         # staff.resolved_rate is $/hr. Cost per minute is rate / 60.
         # Base penalty is -100 per $1.
         # Penalty per minute = (rate / 60) * 100 * cost_mult
         cost_penalty_per_min = int((staff.resolved_rate * 100 / 60) * cost_mult)
         if cost_penalty_per_min > 0:
-            obj_terms.append(-cost_penalty_per_min * h[staff.idx])
+            obj_terms.append(-cost_penalty_per_min * new_h[staff.idx])
 
     # ── Hard Coverage & Min-Hours Constraints (Massive Penalties) ──
     
@@ -618,10 +628,12 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         if staff.idx in under:
             obj_terms.append(-W_MIN_HOURS_SHORTFALL * under[staff.idx])
 
-    # Overtime "Avoid" Policy penalty (500,000 per OT minute)
+    # Overtime "Avoid" Policy penalty (5,000 per OT minute)
+    # An 8 hour overtime shift = 480 mins * 5,000 = 2,400,000 penalty.
+    # High enough to deter, but not so high it breaks solver coverage weights.
     if policy == "avoid":
         for staff in staff_entries:
-            obj_terms.append(-500000 * ot[staff.idx])
+            obj_terms.append(-5000 * ot[staff.idx])
 
     model.maximize(sum(obj_terms))
 
