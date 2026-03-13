@@ -9,6 +9,15 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrayRankingField } from "./ArrayRankingField";
+
+import {
   Form,
   FormControl,
   FormDescription,
@@ -30,7 +39,8 @@ const defaultValues: ScheduleGenerationSettingsInput = {
   minHoursBetweenShifts: 10,
   clopeningWarningThresholdHours: 10,
   overtimeThresholdHours: 40,
-  overtimeTolerance: 0,
+  overtimePolicy: "avoid",
+  softConstraintPriority: ["preferences", "fairness", "cost"],
 };
 
 interface ScheduleGenerationSettingsFormProps {
@@ -202,33 +212,55 @@ export function ScheduleGenerationSettingsForm({
 
         <FormField
           control={form.control}
-          name="overtimeTolerance"
+          name="overtimePolicy"
           render={({ field }) => (
-            <FormItem className="space-y-4">
+            <FormItem className="space-y-4 rounded-lg border p-4">
               <div className="space-y-0.5">
-                <FormLabel>
-                  Overtime Tolerance:{" "}
-                  <span className="font-mono text-primary">{field.value} / 10</span>
-                </FormLabel>
+                <FormLabel>Overtime Policy</FormLabel>
                 <FormDescription>
-                  How willing the solver is to schedule overtime. 0 means it will try
-                  very hard to avoid overtime. 10 means it will largely ignore overtime
-                  when making efficient assignments.
+                  How the solver handles scheduling shifts that push staff past the overtime threshold.
+                </FormDescription>
+              </div>
+              <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <FormControl>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a policy" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="strict">
+                    Strictly Prevented (Leave slots unfilled)
+                  </SelectItem>
+                  <SelectItem value="avoid">
+                    Avoid if Possible (High penalty)
+                  </SelectItem>
+                  <SelectItem value="allowed">
+                    Allowed (No penalty)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="softConstraintPriority"
+          render={({ field }) => (
+            <FormItem className="space-y-4 rounded-lg border p-4">
+              <div className="space-y-0.5">
+                <FormLabel>Soft Constraint Priority</FormLabel>
+                <FormDescription>
+                  Rank your scheduling objectives. The solver will sacrifice the lowest ranking items to fulfill the highest ranking items.
                 </FormDescription>
               </div>
               <FormControl>
-                <Slider
-                  min={0}
-                  max={10}
-                  step={1}
-                  value={[field.value]}
-                  onValueChange={([value]) => field.onChange(value)}
+                <ArrayRankingField
+                  items={field.value}
+                  onChange={field.onChange}
                 />
               </FormControl>
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>0 (Strict)</span>
-                <span>10 (Lenient)</span>
-              </div>
               <FormMessage />
             </FormItem>
           )}

@@ -30,8 +30,8 @@ export interface IScheduleGenerationSettings {
   minHoursBetweenShifts: number;
   clopeningWarningThresholdHours: number;
   overtimeThresholdHours: number;
-  overtimeTolerance: number;
-  costOptimizationWeight: number;
+  overtimePolicy: "strict" | "avoid" | "allowed";
+  softConstraintPriority: ("preferences" | "fairness" | "cost")[];
 }
 
 // Main KitchenConfig interface
@@ -159,17 +159,15 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
             default: 40,
             min: 0,
           },
-          overtimeTolerance: {
-            type: Number,
-            default: 0,
-            min: 0,
-            max: 10,
+          overtimePolicy: {
+            type: String,
+            enum: ["strict", "avoid", "allowed"],
+            default: "avoid",
           },
-          costOptimizationWeight: {
-            type: Number,
-            default: 0,
-            min: 0,
-            max: 10,
+          softConstraintPriority: {
+            type: [String],
+            enum: ["preferences", "fairness", "cost"],
+            default: ["preferences", "fairness", "cost"],
           },
         },
         { _id: false }
@@ -179,8 +177,8 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
         minHoursBetweenShifts: 10,
         clopeningWarningThresholdHours: 10,
         overtimeThresholdHours: 40,
-        overtimeTolerance: 0,
-        costOptimizationWeight: 0,
+        overtimePolicy: "avoid",
+        softConstraintPriority: ["preferences", "fairness", "cost"],
       }),
     },
   },

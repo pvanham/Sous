@@ -19,7 +19,6 @@ const dateStringSchema = z
  */
 export const generateScheduleSchema = z.object({
   scheduleId: z.string().min(1, "Schedule ID is required"),
-  costOptimizationWeight: z.number().min(0).max(10).optional(),
 });
 
 export type GenerateScheduleInput = z.infer<typeof generateScheduleSchema>;

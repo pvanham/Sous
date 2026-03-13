@@ -27,16 +27,9 @@ app = FastAPI(title="Sous CP-SAT Solver")
 CLOPENING_THRESHOLD_MINUTES = 600  # 10 hours
 SOLVER_TIME_LIMIT_SECONDS = 30
 
-# CP-SAT requires integer coefficients. We scale per-match and
-# per-slot weights by 60 so that the fairness term (1 per minute
-# of max-min spread) maintains the same relative proportion as
-# the original formulation (1 per hour).
-SCALE = 60
-W_PREFERRED_STATION = 3 * SCALE  # 180
-W_PREFERRED_TIME = 2 * SCALE  # 120
+# The coverage weights remain static hard-constraints disguised as soft constraints.
 W_MIN_SHORTFALL = 100000000  # 100,000,000
 W_PREF_SHORTFALL = 10000000  # 10,000,000
-W_FAIRNESS = SCALE  # per minute of max-min hours spread (60)
 W_MIN_HOURS_SHORTFALL = 5 * SCALE  # 300 -- penalise staff below their weekly minimum
 
 
@@ -93,8 +86,8 @@ class ScheduleSettings(BaseModel):
     allowClopening: bool = False
     clopeningThresholdMinutes: int = 600
     overtimeThresholdHours: int = 40
-    overtimeTolerance: int = 0
-    costOptimizationWeight: int = 0
+    overtimePolicy: str = "avoid"
+    softConstraintPriority: list[str] = ["preferences", "fairness", "cost"]
 
 class SolveRequest(BaseModel):
     days: list[DayInput]
@@ -494,14 +487,21 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     for staff in staff_entries:
         h[staff.idx] = model.new_int_var(0, staff.max_minutes, f"h_{staff.idx}")
 
-    # Overtime slack variables (only needed if tolerance > 0)
+    # ── Overtime Policy Variables ─────────────────────────────
+    # Policies: "strict" (hard constraint), "avoid" (high penalty), "allowed" (no penalty)
     ot: dict[int, cp_model.IntVar] = {}
-    tolerance = req.settings.overtimeTolerance if req.settings else 0
+    
+    # Safely get settings
+    policy = req.settings.overtimePolicy if req.settings else "avoid"
     threshold_minutes = (req.settings.overtimeThresholdHours * 60) if req.settings else (40 * 60)
-    # Invert tolerance: 0 (strict) -> weight=100*SCALE, 10 (lenient) -> weight=0
-    weight = (10 - tolerance) * 10 * SCALE
-
-    if weight > 0:
+    
+    # 1. Strict Policy -> Enforced via upper bound on existing h variables
+    if policy == "strict":
+        for staff in staff_entries:
+            model.add(h[staff.idx] <= threshold_minutes)
+    
+    # 2. Avoid Policy -> Soft constraint with a massive penalty
+    elif policy == "avoid":
         for staff in staff_entries:
             ot[staff.idx] = model.new_int_var(0, staff.max_minutes, f"ot_{staff.idx}")
             model.add(ot[staff.idx] >= h[staff.idx] - threshold_minutes)
@@ -556,49 +556,72 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         model.add_max_equality(h_max, [h[s.idx] for s in staff_entries])
         model.add_min_equality(h_min, [h[s.idx] for s in staff_entries])
 
-    # ── Objective ─────────────────────────────────────────────
-
-    obj_terms: list = []
-
+    # ── Ranked Soft Constraints (Preferences, Fairness, Cost) ──
+    # User ranks: 1st (x10), 2nd (x3), 3rd (x1)
+    ranks = req.settings.softConstraintPriority if req.settings else ["preferences", "fairness", "cost"]
+    
+    # Safely handle missing/malformed arrays
+    if not ranks or len(ranks) != 3:
+        ranks = ["preferences", "fairness", "cost"]
+        
+    multipliers = {
+        ranks[0]: 10,
+        ranks[1]: 3,
+        ranks[2]: 1
+    }
+    
+    # 1. Preferences (Base: 10,000 per perfect match)
+    pref_mult = multipliers.get("preferences", 1)
+    
     for slot in flat_slots:
         for s_idx in slot.candidate_staff_idxs:
             meta = candidate_meta[(s_idx, slot.idx)]
             coeff = 0
             if meta.is_preferred_station:
-                coeff += W_PREFERRED_STATION
+                coeff += 6000 * pref_mult
             if meta.is_preferred_time:
-                coeff += W_PREFERRED_TIME
+                coeff += 4000 * pref_mult
             if coeff > 0:
                 obj_terms.append(coeff * x[(s_idx, slot.idx)])
 
+    # 2. Fairness (Base: -1,000 per hour of max-min spread)
+    # Because h variables are in minutes, we divide the penalty by 60
+    # Wait, CP-SAT needs integers. So we apply the penalty directly to minutes:
+    # -1000 per hour = -1000 / 60 per minute. To avoid floats, we multiply everything by 6.
+    # Actually, simpler: -16 per minute is roughly -960 per hour.
+    fair_mult = multipliers.get("fairness", 1)
+    fairness_penalty_per_min = 17 * fair_mult  # ~ -1020 per hour of spread
+    
+    if staff_entries:
+        obj_terms.append(-fairness_penalty_per_min * h_max)
+        obj_terms.append(fairness_penalty_per_min * h_min)
+
+    # 3. Labor Cost (Base: -100 per $1)
+    cost_mult = multipliers.get("cost", 1)
+    
+    for staff in staff_entries:
+        # staff.resolved_rate is $/hr. Cost per minute is rate / 60.
+        # Base penalty is -100 per $1.
+        # Penalty per minute = (rate / 60) * 100 * cost_mult
+        cost_penalty_per_min = int((staff.resolved_rate * 100 / 60) * cost_mult)
+        if cost_penalty_per_min > 0:
+            obj_terms.append(-cost_penalty_per_min * h[staff.idx])
+
+    # ── Hard Coverage & Min-Hours Constraints (Massive Penalties) ──
+    
     for slot in flat_slots:
         obj_terms.append(-W_MIN_SHORTFALL * smin[slot.idx])
         obj_terms.append(-W_PREF_SHORTFALL * spref[slot.idx])
-
-    if staff_entries:
-        obj_terms.append(-W_FAIRNESS * h_max)
-        obj_terms.append(W_FAIRNESS * h_min)
 
     # Min-hours shortfall penalty
     for staff in staff_entries:
         if staff.idx in under:
             obj_terms.append(-W_MIN_HOURS_SHORTFALL * under[staff.idx])
 
-    if weight > 0:
+    # Overtime "Avoid" Policy penalty (500,000 per OT minute)
+    if policy == "avoid":
         for staff in staff_entries:
-            obj_terms.append(-weight * ot[staff.idx])
-
-    cost_weight = req.settings.costOptimizationWeight if req.settings else 0
-    if cost_weight > 0:
-        for staff in staff_entries:
-            # Normalized cost coefficient: cost_weight * SCALE * (dollars_per_hour)
-            # This keeps cost in the same magnitude as preferences (180/120)
-            # while still being dominant at high slider values.
-            cents_per_hour = int(staff.resolved_rate * 100)
-            dollars_per_hour = cents_per_hour // 100
-            cost_coeff = cost_weight * SCALE * dollars_per_hour
-            # cost_coeff is per-minute, applied against h[s] (which is in minutes)
-            obj_terms.append(-cost_coeff * h[staff.idx])
+            obj_terms.append(-500000 * ot[staff.idx])
 
     model.maximize(sum(obj_terms))
 

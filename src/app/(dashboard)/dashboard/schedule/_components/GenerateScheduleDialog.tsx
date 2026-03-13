@@ -105,7 +105,6 @@ export function GenerateScheduleDialog({
   const [step, setStep] = useState<DialogStep>("readiness");
   const [generatedSchedule, setGeneratedSchedule] =
     useState<GeneratedSchedule | null>(null);
-  const [costWeight, setCostWeight] = useState<number>(0);
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -142,7 +141,6 @@ export function GenerateScheduleDialog({
     mutationFn: async () => {
       const result = await generateBaseSchedule({
         scheduleId: schedule.id,
-        costOptimizationWeight: costWeight,
       });
       if (!result.success) throw new Error(result.error);
       return result.data;
@@ -254,8 +252,6 @@ export function GenerateScheduleDialog({
             isLoading={isCheckingReadiness}
             error={readinessError}
             weekLabel={weekLabel}
-            costWeight={costWeight}
-            onCostWeightChange={setCostWeight}
             onGenerate={handleGenerate}
             onRefresh={() => refetchReadiness()}
             onCancel={() => handleOpenChange(false)}
@@ -313,8 +309,6 @@ interface ReadinessStepProps {
   isLoading: boolean;
   error: Error | null;
   weekLabel: string;
-  costWeight: number;
-  onCostWeightChange: (val: number) => void;
   onGenerate: () => void;
   onRefresh: () => void;
   onCancel: () => void;
@@ -325,8 +319,6 @@ function ReadinessStep({
   isLoading,
   error,
   weekLabel,
-  costWeight,
-  onCostWeightChange,
   onGenerate,
   onRefresh,
   onCancel,
@@ -388,49 +380,13 @@ function ReadinessStep({
 
             {/* Issues list */}
             {readiness.issues.length > 0 && (
-              <div className="space-y-2">
+              <div className="space-y-2 mt-4">
                 <h4 className="text-sm font-medium text-muted-foreground">
                   Issues Found
                 </h4>
                 {readiness.issues.map((issue, idx) => (
                   <ReadinessIssueRow key={idx} issue={issue} />
                 ))}
-              </div>
-            )}
-
-            {readiness.canProceed && (
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Label htmlFor="cost-optimization" className="text-sm font-medium">Labor Cost Optimization</Label>
-                    <TooltipProvider delayDuration={200}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <HelpCircle className="h-4 w-4 text-muted-foreground cursor-default" />
-                        </TooltipTrigger>
-                        <TooltipContent side="right" className="max-w-xs">
-                          <p className="text-xs">
-                            Adjust the weight (0-10) given to minimizing labor costs. Higher values prioritize cheaper staff assignments over preferences.
-                          </p>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  </div>
-                  <span className="text-sm font-semibold">{costWeight} / 10</span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-xs text-muted-foreground">Fairness</span>
-                  <Slider
-                    id="cost-optimization"
-                    value={[costWeight]}
-                    min={0}
-                    max={10}
-                    step={1}
-                    onValueChange={(val) => onCostWeightChange(val[0])}
-                    className="flex-1 cursor-pointer"
-                  />
-                  <span className="text-xs text-muted-foreground">Cost Focus</span>
-                </div>
               </div>
             )}
 

@@ -55,6 +55,8 @@ export const aiSettingsSchema = z.object({
 
 export type AISettingsInput = z.infer<typeof aiSettingsSchema>;
 
+export const softConstraintEnum = z.enum(["preferences", "fairness", "cost"]);
+
 export const scheduleGenerationSettingsSchema = z.object({
   allowClopening: z.boolean(),
   minHoursBetweenShifts: z
@@ -68,10 +70,13 @@ export const scheduleGenerationSettingsSchema = z.object({
   overtimeThresholdHours: z
     .number()
     .min(0, "Overtime threshold must be at least 0"),
-  overtimeTolerance: z
-    .number()
-    .min(0, "Overtime tolerance must be at least 0")
-    .max(10, "Overtime tolerance must be at most 10"),
+  overtimePolicy: z.enum(["strict", "avoid", "allowed"]),
+  softConstraintPriority: z
+    .array(softConstraintEnum)
+    .length(3, "Must rank exactly exactly 3 soft constraints")
+    .refine((items) => new Set(items).size === items.length, {
+      message: "Soft constraint priorities must be unique",
+    }),
 });
 
 export type ScheduleGenerationSettingsInput = z.infer<typeof scheduleGenerationSettingsSchema>;

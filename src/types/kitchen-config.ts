@@ -21,8 +21,8 @@ export interface ScheduleGenerationSettingsDTO {
   minHoursBetweenShifts: number;
   clopeningWarningThresholdHours: number;
   overtimeThresholdHours: number;
-  overtimeTolerance: number;
-  costOptimizationWeight: number;
+  overtimePolicy: "strict" | "avoid" | "allowed";
+  softConstraintPriority: ("preferences" | "fairness" | "cost")[];
 }
 
 const DEFAULT_SCHEDULE_GENERATION_SETTINGS: ScheduleGenerationSettingsDTO = {
@@ -30,8 +30,8 @@ const DEFAULT_SCHEDULE_GENERATION_SETTINGS: ScheduleGenerationSettingsDTO = {
   minHoursBetweenShifts: 10,
   clopeningWarningThresholdHours: 10,
   overtimeThresholdHours: 40,
-  overtimeTolerance: 0,
-  costOptimizationWeight: 0,
+  overtimePolicy: "avoid",
+  softConstraintPriority: ["preferences", "fairness", "cost"],
 };
 
 // DTO returned from service layer (without Mongoose internals)
@@ -73,8 +73,8 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
           minHoursBetweenShifts: doc.scheduleGenerationSettings.minHoursBetweenShifts ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.minHoursBetweenShifts,
           clopeningWarningThresholdHours: doc.scheduleGenerationSettings.clopeningWarningThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.clopeningWarningThresholdHours,
           overtimeThresholdHours: doc.scheduleGenerationSettings.overtimeThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimeThresholdHours,
-          overtimeTolerance: doc.scheduleGenerationSettings.overtimeTolerance ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimeTolerance,
-          costOptimizationWeight: doc.scheduleGenerationSettings.costOptimizationWeight ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.costOptimizationWeight,
+          overtimePolicy: doc.scheduleGenerationSettings.overtimePolicy ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimePolicy,
+          softConstraintPriority: doc.scheduleGenerationSettings.softConstraintPriority ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.softConstraintPriority,
         }
       : { ...DEFAULT_SCHEDULE_GENERATION_SETTINGS },
     createdAt: doc.createdAt,

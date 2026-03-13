@@ -96,8 +96,8 @@ function serializeInput(input: WeekSolverInput): string {
           allowClopening: input.scheduleGenerationSettings.allowClopening,
           clopeningThresholdMinutes: input.scheduleGenerationSettings.minHoursBetweenShifts * 60,
           overtimeThresholdHours: input.scheduleGenerationSettings.overtimeThresholdHours,
-          overtimeTolerance: input.scheduleGenerationSettings.overtimeTolerance,
-          costOptimizationWeight: input.scheduleGenerationSettings.costOptimizationWeight ?? 0,
+          overtimePolicy: input.scheduleGenerationSettings.overtimePolicy,
+          softConstraintPriority: input.scheduleGenerationSettings.softConstraintPriority,
         }
       : undefined,
   };

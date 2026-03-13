@@ -8,6 +8,9 @@ export interface OrganizationDTO {
   id: string;
   ownerId: string;
   name: string;
+  subscriptionTier: "free" | "pro" | "enterprise";
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -31,6 +34,9 @@ export function toOrganizationDTO(
     id: String(doc._id),
     ownerId: doc.ownerId,
     name: doc.name,
+    subscriptionTier: doc.subscriptionTier,
+    stripeCustomerId: doc.stripeCustomerId,
+    stripeSubscriptionId: doc.stripeSubscriptionId,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

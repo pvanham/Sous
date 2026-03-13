@@ -574,7 +574,8 @@ export const ScheduleValidatorService = {
     let score = 0;
 
     const candidateMap = new Map<string, CandidateDTO>();
-    for (const { candidates } of context.slots) {
+    const slotsToProcess = context?.slots ?? [];
+    for (const { candidates } of slotsToProcess) {
       for (const c of candidates) {
         if (!candidateMap.has(c.staffId)) {
           candidateMap.set(c.staffId, c);
@@ -645,7 +646,8 @@ export const ScheduleValidatorService = {
     weekHoursOverride?: Map<string, number>,
   ): QualityScoreBreakdown {
     const candidateMap = new Map<string, CandidateDTO>();
-    for (const { candidates } of context.slots) {
+    const slotsToProcess = context?.slots ?? [];
+    for (const { candidates } of slotsToProcess) {
       for (const c of candidates) {
         if (!candidateMap.has(c.staffId)) {
           candidateMap.set(c.staffId, c);

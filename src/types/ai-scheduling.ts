@@ -127,8 +127,8 @@ export interface WeekSolverInput {
     minHoursBetweenShifts: number;
     clopeningWarningThresholdHours: number;
     overtimeThresholdHours: number;
-    overtimeTolerance: number;
-    costOptimizationWeight?: number;
+    overtimePolicy: "strict" | "avoid" | "allowed";
+    softConstraintPriority: ("preferences" | "fairness" | "cost")[];
   };
 }
 

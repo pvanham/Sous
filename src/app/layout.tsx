@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
-
+import { appClerkAppearance } from "@/lib/clerk-theme";
 import { Providers } from "@/components/shared/providers";
 
 import "./globals.css";
@@ -16,7 +16,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider appearance={appClerkAppearance}>
       <html
         lang="en"
         suppressHydrationWarning

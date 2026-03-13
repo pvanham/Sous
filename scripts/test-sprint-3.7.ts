@@ -454,6 +454,7 @@ async function testPromptBuilder(): Promise<void> {
           minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: ["Grill"],
+          roles: [],
         },
         {
           staffId: "staff-2",
@@ -465,6 +466,7 @@ async function testPromptBuilder(): Promise<void> {
           minHoursPerWeek: 0,
           overtimeWarning: false,
           preferredStations: [],
+          roles: [],
         },
       ],
       hasSufficientCandidates: true,
