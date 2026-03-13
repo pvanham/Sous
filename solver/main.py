@@ -36,7 +36,8 @@ W_PREFERRED_STATION = 3 * SCALE  # 180
 W_PREFERRED_TIME = 2 * SCALE  # 120
 W_MIN_SHORTFALL = 100000000  # 100,000,000
 W_PREF_SHORTFALL = 10000000  # 10,000,000
-W_FAIRNESS = 1  # per minute of max-min hours spread
+W_FAIRNESS = SCALE  # per minute of max-min hours spread (60)
+W_MIN_HOURS_SHORTFALL = 5 * SCALE  # 300 -- penalise staff below their weekly minimum
 
 
 # ────────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ class _FlatSlot:
 
 
 class _StaffEntry:
-    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "existing_minutes", "resolved_rate")
+    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "min_minutes", "existing_minutes", "resolved_rate")
 
     def __init__(
         self,
@@ -218,6 +219,7 @@ class _StaffEntry:
         staff_id: str,
         staff_name: str,
         max_minutes: int,
+        min_minutes: int,
         existing_minutes: int,
         resolved_rate: float,
     ):
@@ -225,6 +227,7 @@ class _StaffEntry:
         self.staff_id = staff_id
         self.staff_name = staff_name
         self.max_minutes = max_minutes
+        self.min_minutes = min_minutes
         self.existing_minutes = existing_minutes
         self.resolved_rate = resolved_rate
 
@@ -320,6 +323,9 @@ def _transform_input(
                             staff_name=cand.staffName,
                             max_minutes=int(
                                 req.maxHoursLookup.get(cand.staffId, 40) * 60
+                            ),
+                            min_minutes=int(
+                                req.minHoursLookup.get(cand.staffId, 0) * 60
                             ),
                             existing_minutes=int(
                                 req.existingWeekHours.get(cand.staffId, 0) * 60
@@ -500,6 +506,15 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
             ot[staff.idx] = model.new_int_var(0, staff.max_minutes, f"ot_{staff.idx}")
             model.add(ot[staff.idx] >= h[staff.idx] - threshold_minutes)
 
+    # Min-hours shortfall slack: under[s] >= min_minutes - h[s]
+    under: dict[int, cp_model.IntVar] = {}
+    for staff in staff_entries:
+        if staff.min_minutes > 0:
+            under[staff.idx] = model.new_int_var(
+                0, staff.min_minutes, f"under_{staff.idx}"
+            )
+            model.add(under[staff.idx] >= staff.min_minutes - h[staff.idx])
+
     # ── Constraints ───────────────────────────────────────────
 
     # 1) Coverage: assigned + slack = preferredStaff
@@ -564,6 +579,11 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
         obj_terms.append(-W_FAIRNESS * h_max)
         obj_terms.append(W_FAIRNESS * h_min)
 
+    # Min-hours shortfall penalty
+    for staff in staff_entries:
+        if staff.idx in under:
+            obj_terms.append(-W_MIN_HOURS_SHORTFALL * under[staff.idx])
+
     if weight > 0:
         for staff in staff_entries:
             obj_terms.append(-weight * ot[staff.idx])
@@ -571,20 +591,14 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     cost_weight = req.settings.costOptimizationWeight if req.settings else 0
     if cost_weight > 0:
         for staff in staff_entries:
-            # Scale up cost math for integer CP-SAT variables, divide by 60 for minutes
-            # Rate * 100 = cents per hour. Cents / 60 = cents per minute.
-            # Using integer division to keep CP-SAT math clean
+            # Normalized cost coefficient: cost_weight * SCALE * (dollars_per_hour)
+            # This keeps cost in the same magnitude as preferences (180/120)
+            # while still being dominant at high slider values.
             cents_per_hour = int(staff.resolved_rate * 100)
-            
-            # Since CP-SAT requires int coefficients, we can calculate per-minute rate
-            # Or multiply the variable and THEN divide. However, ortools requires linear expressions.
-            # So we must use a constant coefficient:
-            # obj_terms.append( x * coefficient )
-            
-            # The coefficient per minute of work is (cents_per_hour // 60)
-            cents_per_minute = cents_per_hour // 60
-            employee_cost_term = h[staff.idx] * cents_per_minute
-            obj_terms.append(-cost_weight * employee_cost_term)
+            dollars_per_hour = cents_per_hour // 100
+            cost_coeff = cost_weight * SCALE * dollars_per_hour
+            # cost_coeff is per-minute, applied against h[s] (which is in minutes)
+            obj_terms.append(-cost_coeff * h[staff.idx])
 
     model.maximize(sum(obj_terms))
 

@@ -50,11 +50,14 @@ The CP-SAT model mathematically forbids violating the following conditions:
 The solver uses a unified objective function to find the optimal arrangement. The goal is to **MAXIMIZE** the overall mathematical score.
 
 The model factors weights against decisions:
-* **Penalize Minimum Shortfalls heavily:** `-60,000 * smin` (The solver prioritizes having bare minimum safety coverage at all costs).
-* **Penalize Preferred Shortfalls moderately:** `-600 * spref`
+* **Penalize Minimum Coverage Shortfalls:** `-100,000,000 * smin` (The solver prioritizes bare minimum safety coverage at all costs).
+* **Penalize Preferred Coverage Shortfalls:** `-10,000,000 * spref`
 * **Reward Station Preferences:** `+180` for assigning a staff member to a station they prefer.
 * **Reward Time Preferences:** `+120` for hitting a preferred time slot.
-* **Maximize Fairness:** `-(h_max - h_min)`, reducing the variance in total hours distributed across the staff base (aims to allocate hours evenly).
+* **Maximize Fairness:** `-60 * (h_max - h_min)`, reducing the spread in total hours distributed across the staff base (aims to allocate hours evenly).
+* **Penalize Min-Hours Shortfall:** `-300 * under[s]` for each minute a staff member falls below their `minHoursPerWeek`. Encourages the solver to meet everyone's minimum hour requirements.
+* **Penalize Overtime (soft):** Configurable via `overtimeTolerance` setting (0=strict, 10=lenient).
+* **Minimize Labor Cost (optional):** When the user's cost optimization slider is above 0, the solver penalizes expensive staff proportionally (`-cost_weight * 60 * $/hr * h[s]`). The multiplier is normalized so cost optimization is dominant at high slider values but doesn't completely obliterate fairness.
 
 ---
 
