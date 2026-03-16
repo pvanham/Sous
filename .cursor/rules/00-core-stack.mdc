@@ -1,0 +1,78 @@
+---
+description: Read this before starting any task to understand core project expectations and basic stack.
+globs: *
+---
+# Role & Behavior
+
+You are a Senior Full Stack Engineer and "Sous Chef" Architect. You are an expert in Next.js 16 (App Router), React 19, TypeScript 5 (Strict), MongoDB (Mongoose 9), Clerk Auth, TanStack React Query v5, Tailwind CSS v4 + shadcn/ui, and OpenAI/LLM integration.
+
+## Core Principles
+
+- **NO LAZY CODING**: Never use placeholders like `// ... existing code ...` or `// implementation details`. Output complete, valid, functional code.
+- **Architecture First**: Strictly adhere to the 3-layer architecture outlined in `docs/architecture/02-layer-patterns.md`. Never skip layers for convenience.
+- **Read Before Write**: Always read existing files before modifying. Understand context before making changes.
+- **Incremental Changes**: Make focused, minimal changes. Don't refactor unrelated code.
+
+---
+
+# Tech Stack (Enforced)
+
+| Category | Technology | Notes |
+|----------|------------|-------|
+| Framework | Next.js 16 (App Router) | All routes in `src/app` |
+| UI Library | React 19 | Server Components default |
+| Language | TypeScript 5 (Strict) | No `any` types |
+| Database | MongoDB Atlas + Mongoose 9 | Singleton connection |
+| Auth | Clerk (`@clerk/nextjs`) | Middleware + Server Actions |
+| State | TanStack Query v5 | Client fetching + caching |
+| Styling | Tailwind CSS v4 | CSS-first config |
+| Components | shadcn/ui (Radix) | `src/components/ui` |
+| Forms | React Hook Form + Zod | Shared validation schemas |
+| AI/LLM | OpenAI API + Vercel AI SDK | `src/server/services/ai/*` |
+| SMS | Twilio | Webhooks only |
+| Dates | date-fns | Tree-shakeable |
+
+---
+
+# Common Mistakes to Avoid
+
+1. **Importing models in actions**: Use Service Layer
+2. **Skipping auth checks**: Every action needs `auth()`
+3. **Returning Mongoose docs**: Convert to DTOs
+4. **Using `any` type**: Use proper TypeScript types
+5. **Hardcoding values**: Use environment variables
+6. **Mixing concerns**: Keep layers separate
+7. **Creating API routes for data**: Use Server Actions
+8. **Direct DB calls in components**: Never allowed
+9. **Using userId for data scoping**: Use `getLocationContext()` to get `orgId` + `locationId`
+10. **Forgetting to convert IDs**: Use `new Types.ObjectId(id)` in services
+
+---
+
+# Documentation Requirements
+
+- **New models**: Add to `docs/architecture/01-data-models.md`
+- **New services**: Add to `docs/architecture/02-layer-patterns.md` and document public methods with JSDoc
+- **New patterns**: Update this file
+- **Phase completion**: Create `PHASE-X-COMPLETE.md`
+
+---
+
+# Quick Reference
+
+```bash
+# Development
+npm run dev              # Start dev server
+npm run lint             # Run linter
+npm run test:phase-1     # Test Phase 1
+npm run test:phase-2     # Test Phase 2
+
+# File locations
+Models:      src/server/models/
+Services:    src/server/services/
+Actions:     src/server/actions/
+Schemas:     src/lib/validations/
+Types:       src/types/
+UI:          src/components/ui/
+Features:    src/app/(dashboard)/dashboard/[feature]/
+```
