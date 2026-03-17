@@ -5,7 +5,10 @@ import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
+
+const VALID_INVITED_ROLES: MemberRole[] = ["manager", "shift_lead"];
 
 export async function POST(req: Request) {
   // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
@@ -66,18 +69,23 @@ export async function POST(req: Request) {
     // Default org name derived from email if available
     const defaultName = email ? `${email.split('@')[0]}'s Restaurant` : "My Restaurant";
 
-    // PHASE 2 SUPPORT: Check if they were invited as a manager
-    if (publicMetadata && publicMetadata.role === "manager" && publicMetadata.orgId) {
+    const metadataRole = publicMetadata?.role as string | undefined;
+    const isInvitedMember = metadataRole && publicMetadata?.orgId;
+
+    if (isInvitedMember) {
+      const resolvedRole: MemberRole = VALID_INVITED_ROLES.includes(metadataRole as MemberRole)
+        ? (metadataRole as MemberRole)
+        : "manager";
       try {
         await OrganizationMemberService.create({
           orgId: publicMetadata.orgId as string,
           locationId: (publicMetadata.locationId as string) || null,
           clerkUserId: userId,
-          role: "manager",
+          role: resolvedRole,
         });
-        console.log(`Successfully added user ${userId} as manager to org ${publicMetadata.orgId}`);
+        console.log(`Successfully added user ${userId} as ${resolvedRole} to org ${publicMetadata.orgId}`);
       } catch (error) {
-        console.error("Failed to create manager membership:", error);
+        console.error("Failed to create membership:", error);
         return new Response("Internal Server Error", { status: 500 });
       }
     } else {
