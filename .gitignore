@@ -132,3 +132,4 @@ Desktop.ini
 *.bak
 *.tmp
 *.orig
+node_modules
