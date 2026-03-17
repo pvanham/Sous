@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bot, Loader2 } from "lucide-react";
+import type { EmailCodeFactor } from "@clerk/types";
 
 export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -15,10 +16,11 @@ export default function SignInPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [showEmailCode, setShowEmailCode] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Form submission handler
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isLoaded) return;
@@ -34,10 +36,23 @@ export default function SignInPage() {
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
         router.push("/dashboard");
+      } else if (result.status === "needs_second_factor") {
+        const emailCodeFactor = result.supportedSecondFactors?.find(
+          (factor): factor is EmailCodeFactor => factor.strategy === "email_code",
+        );
+
+        if (emailCodeFactor) {
+          await signIn.prepareSecondFactor({
+            strategy: "email_code",
+            emailAddressId: emailCodeFactor.emailAddressId,
+          });
+          setShowEmailCode(true);
+        } else {
+          setError("Required verification method is not available.");
+        }
       } else {
-        // Handle specific MFA or edge cases if needed in the future
-        console.warn("Sign in needs additional steps", result.status);
-        setError("Sign in requires additional steps not supported here.");
+        console.error("Sign-in not complete:", result.status);
+        setError("Unable to complete sign-in. Please try again.");
       }
     } catch (err: any) {
       setError(err.errors?.[0]?.message || "Invalid email or password.");
@@ -46,7 +61,31 @@ export default function SignInPage() {
     }
   };
 
-  // Google OAuth handler
+  const handleEmailCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const result = await signIn.attemptSecondFactor({
+        strategy: "email_code",
+        code,
+      });
+
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+        router.push("/dashboard");
+      } else {
+        setError("Verification was not complete. Please try again.");
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.message || "Invalid verification code.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleGoogleAuth = () => {
     if (!isLoaded) return;
     signIn.authenticateWithRedirect({
@@ -55,6 +94,47 @@ export default function SignInPage() {
       redirectUrlComplete: "/dashboard",
     });
   };
+
+  if (showEmailCode) {
+    return (
+      <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
+        <CardHeader className="space-y-1 text-center">
+          <div className="w-full flex justify-center mb-2">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              <Bot className="h-6 w-6 text-primary-foreground" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Verify your identity</CardTitle>
+          <CardDescription>
+            We sent a verification code to {email}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleEmailCode} className="space-y-4">
+            <div className="space-y-2">
+              <Input
+                type="text"
+                placeholder="Enter 6-digit code"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                className="text-center tracking-widest text-lg"
+              />
+            </div>
+            {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || code.length < 6}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
@@ -70,7 +150,6 @@ export default function SignInPage() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Google OAuth Button */}
         <Button 
           type="button" 
           variant="outline" 
