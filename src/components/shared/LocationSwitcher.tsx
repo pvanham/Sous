@@ -12,11 +12,12 @@ import {
 import { switchActiveLocation } from "@/server/actions/user.actions";
 import { toast } from "sonner";
 import type { LocationDTO } from "@/types/location";
+import type { MemberRole } from "@/types/organization-member";
 
 interface LocationSwitcherProps {
   locations: LocationDTO[];
   activeLocationId: string | null;
-  role: "owner" | "manager";
+  role: MemberRole;
 }
 
 export function LocationSwitcher({
