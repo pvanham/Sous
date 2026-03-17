@@ -27,3 +27,10 @@ export interface ToolExecutionContext {
   clerkUserId: string;
   role: MemberRole;
 }
+
+/** Type-safe factory that captures the Zod generic so execute params are inferred correctly. */
+export function defineTool<TParams extends z.ZodType>(
+  def: AIToolDefinition<TParams>
+): AIToolDefinition {
+  return def as AIToolDefinition;
+}
