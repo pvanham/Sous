@@ -32,6 +32,7 @@ import { getStaffSummaryParamsSchema } from "../src/lib/ai/tools/definitions/get
 import { getTimeOffRequestsParamsSchema } from "../src/lib/ai/tools/definitions/get-time-off-requests.schema";
 import { proposeShiftSwapParamsSchema } from "../src/lib/ai/tools/definitions/propose-shift-swap.schema";
 import { proposeScheduleGenerationParamsSchema } from "../src/lib/ai/tools/definitions/propose-schedule-generation.schema";
+import { defineTool } from "../src/lib/ai/tools/tool-registry.types";
 import type { AIToolDefinition, ToolExecutionContext } from "../src/lib/ai/tools/tool-registry.types";
 import type { OrchestratorContext } from "../src/lib/ai/orchestrator/build-context";
 
@@ -269,35 +270,35 @@ assert(genLong.success === false, "propose_schedule_generation: instructions >50
 console.log("\n=== 4. Tool Executor (executeTool) ===\n");
 
 const mockToolList: AIToolDefinition[] = [
-  {
+  defineTool({
     name: "test_tool",
     description: "A test tool",
     requiredPermission: "schedule:read",
     parameters: z.object({ id: z.string().min(1) }),
-    execute: async (params: { id: string }) => ({ found: true, id: params.id }),
-  },
-  {
+    execute: async (params, _context) => ({ found: true, id: params.id }),
+  }),
+  defineTool({
     name: "null_tool",
     description: "Returns null",
     requiredPermission: "schedule:read",
     parameters: z.object({}),
-    execute: async () => null,
-  },
-  {
+    execute: async (_params, _context) => null,
+  }),
+  defineTool({
     name: "throwing_tool",
     description: "Throws an error",
     requiredPermission: "schedule:read",
     parameters: z.object({}),
-    execute: async () => {
+    execute: async (_params, _context) => {
       throw new Error("Something broke");
     },
-  },
-  {
+  }),
+  defineTool({
     name: "no_handler_tool",
     description: "Has no execute",
     requiredPermission: "schedule:read",
     parameters: z.object({}),
-  },
+  }),
 ];
 
 await (async () => {

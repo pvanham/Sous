@@ -1,6 +1,11 @@
 import { tool, type ToolSet } from "ai";
 import type { AIToolDefinition, ToolExecutionContext } from "./tool-registry.types";
 import { executeTool } from "./tool-executor";
+import {
+  isProposalResult,
+  toClientSafeProposal,
+  persistProposal,
+} from "../orchestrator/proposal-handler";
 
 const VALID_TOOL_NAME = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 const MAX_DESCRIPTION_LENGTH = 1024;
@@ -50,6 +55,21 @@ export function toAISDKTools(
       inputSchema: def.parameters,
       execute: async (params) => {
         const result = await executeTool(def.name, params, context, tools);
+
+        if (result.success && isProposalResult(result.data)) {
+          const proposal = result.data;
+
+          if (context.conversationId) {
+            persistProposal(context.conversationId, proposal).catch((err) => {
+              console.error(
+                `[ProposalHandler] Failed to persist proposal '${proposal.proposalId}': ${err}`
+              );
+            });
+          }
+
+          return toClientSafeProposal(proposal);
+        }
+
         return result;
       },
     });

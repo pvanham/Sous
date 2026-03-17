@@ -23,4 +23,10 @@ export interface ScheduleGenerationPayload {
     overtimePolicy: string;
     allowClopening: boolean;
   };
+  /** Raw timestamps captured at proposal time for per-entity OCC filters */
+  _occTimestamps: {
+    scheduleUpdatedAt: string | null;
+    configUpdatedAt: string | null;
+    latestStaffUpdatedAt: string | null;
+  };
 }

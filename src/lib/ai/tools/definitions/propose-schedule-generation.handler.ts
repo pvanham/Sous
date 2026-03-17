@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import type {
   ProposeScheduleGenerationParams,
   ScheduleGenerationPayload,
@@ -6,6 +5,7 @@ import type {
 import type { ToolExecutionContext } from "../tool-registry.types";
 import type { ToolProposal } from "../tool-proposal.types";
 import { sanitizeUserText } from "../sanitize";
+import { computeDataVersion } from "@/lib/ai/orchestrator/occ";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -67,10 +67,11 @@ export async function executeProposeScheduleGeneration(
           .updatedAt.toISOString()
       : "none";
 
-  const dataVersion = crypto
-    .createHash("md5")
-    .update(scheduleVersion + configVersion + latestStaffUpdate)
-    .digest("hex");
+  const dataVersion = computeDataVersion(
+    scheduleVersion,
+    configVersion,
+    latestStaffUpdate
+  );
 
   const overtimeThresholdHours =
     config?.scheduleGenerationSettings.overtimeThresholdHours ??
@@ -93,6 +94,12 @@ export async function executeProposeScheduleGeneration(
       overtimeThresholdHours,
       overtimePolicy,
       allowClopening,
+    },
+    _occTimestamps: {
+      scheduleUpdatedAt: schedule ? schedule.updatedAt.toISOString() : null,
+      configUpdatedAt: config ? config.updatedAt.toISOString() : null,
+      latestStaffUpdatedAt:
+        latestStaffUpdate !== "none" ? latestStaffUpdate : null,
     },
   };
 

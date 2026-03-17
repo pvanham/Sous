@@ -141,6 +141,32 @@ export const ShiftService = {
   },
 
   /**
+   * Atomically reassign a shift to a different staff member using an OCC filter.
+   * The filter embeds the expected `updatedAt` so the update only succeeds if
+   * the shift has not been modified since the proposal was created.
+   *
+   * @returns Updated ShiftDTO, or null if the OCC filter didn't match (stale data).
+   */
+  async reassignWithOCC(
+    occFilter: Record<string, unknown>,
+    targetStaffId: string,
+    orgId: string,
+    locationId: string,
+  ): Promise<ShiftDTO | null> {
+    const doc = await Shift.findOneAndUpdate(
+      {
+        ...occFilter,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { staffId: new Types.ObjectId(targetStaffId) } },
+      { new: true }
+    ).lean();
+
+    return doc ? toShiftDTO(doc) : null;
+  },
+
+  /**
    * Delete a shift.
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)

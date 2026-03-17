@@ -26,6 +26,7 @@ export interface ToolExecutionContext {
   locationId: string;
   clerkUserId: string;
   role: MemberRole;
+  conversationId?: string;
 }
 
 /** Type-safe factory that captures the Zod generic so execute params are inferred correctly. */

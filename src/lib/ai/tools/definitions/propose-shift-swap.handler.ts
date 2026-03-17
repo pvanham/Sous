@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import type {
   ProposeShiftSwapParams,
   ShiftSwapPayload,
@@ -6,6 +5,7 @@ import type {
 import type { ToolExecutionContext } from "../tool-registry.types";
 import type { ToolProposal } from "../tool-proposal.types";
 import { sanitizeUserText } from "../sanitize";
+import { computeDataVersion } from "@/lib/ai/orchestrator/occ";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
 
@@ -55,10 +55,7 @@ export async function executeProposeShiftSwap(
   const start = timeFormatter.format(startDate);
   const end = timeFormatter.format(endDate);
 
-  const dataVersion = crypto
-    .createHash("md5")
-    .update(shift.updatedAt.toISOString())
-    .digest("hex");
+  const dataVersion = computeDataVersion(shift.updatedAt);
 
   const description = `Reassign '${day} ${start} - ${end} (${shift.station})' from ${currentStaffName} to ${targetStaffName}`;
 
