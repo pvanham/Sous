@@ -133,6 +133,12 @@ export const StaffService = {
     locationId: string,
     data: Omit<StaffInput, "isActive"> & { isActive?: boolean }
   ): Promise<StaffDTO> {
+    // Cast skills to match Mongoose schema expectations
+    const skills = (data.skills || []).map((s) => ({
+      station: s.station,
+      proficiency: s.proficiency as 1 | 2 | 3 | 4 | 5,
+    }));
+
     const doc = await Staff.create({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
@@ -140,8 +146,14 @@ export const StaffService = {
       email: data.email.toLowerCase(),
       phone: data.phone,
       roles: data.roles,
-      skills: data.skills || [],
+      skills,
       isActive: data.isActive ?? true,
+      // Phase 3: Staff constraints for AI scheduling
+      maxHoursPerWeek: data.maxHoursPerWeek ?? 40,
+      minHoursPerWeek: data.minHoursPerWeek ?? 0,
+      preferredStations: data.preferredStations ?? [],
+      certifications: data.certifications ?? [],
+      hourlyRate: data.hourlyRate ?? 0,
     });
 
     return toStaffDTO(doc.toObject());
@@ -169,6 +181,16 @@ export const StaffService = {
     if (data.roles !== undefined) updateData.roles = data.roles;
     if (data.skills !== undefined) updateData.skills = data.skills;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
+    // Phase 3: Staff constraints for AI scheduling
+    if (data.maxHoursPerWeek !== undefined)
+      updateData.maxHoursPerWeek = data.maxHoursPerWeek;
+    if (data.minHoursPerWeek !== undefined)
+      updateData.minHoursPerWeek = data.minHoursPerWeek;
+    if (data.preferredStations !== undefined)
+      updateData.preferredStations = data.preferredStations;
+    if (data.certifications !== undefined)
+      updateData.certifications = data.certifications;
+    if (data.hourlyRate !== undefined) updateData.hourlyRate = data.hourlyRate;
 
     const doc = await Staff.findOneAndUpdate(
       {
@@ -215,6 +237,12 @@ export const StaffService = {
     );
 
     const bulkOps = staffData.map((staff) => {
+      // Cast skills to match Mongoose schema expectations
+      const skills = (staff.skills || []).map((s) => ({
+        station: s.station,
+        proficiency: s.proficiency as 1 | 2 | 3 | 4 | 5,
+      }));
+
       const filter = {
         orgId: orgObjectId,
         locationId: locationObjectId,
@@ -225,8 +253,14 @@ export const StaffService = {
           name: staff.name,
           phone: staff.phone,
           roles: staff.roles,
-          skills: staff.skills || [],
+          skills,
           isActive: true,
+          // Phase 3: Staff constraints for AI scheduling
+          maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
+          minHoursPerWeek: staff.minHoursPerWeek ?? 0,
+          preferredStations: staff.preferredStations ?? [],
+          certifications: staff.certifications ?? [],
+          hourlyRate: staff.hourlyRate ?? 0,
         },
         $setOnInsert: {
           orgId: orgObjectId,
@@ -485,6 +519,57 @@ export const StaffService = {
       },
       {
         $pull: { skills: { station: { $in: stations } } },
+      }
+    );
+
+    return result.modifiedCount;
+  },
+
+  /**
+   * Count staff who have any of the specified stations in their preferredStations array.
+   * Used for impact analysis when removing stations from kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to check
+   * @returns Count of staff with any of the specified stations in preferredStations
+   */
+  async countByPreferredStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    return await Staff.countDocuments({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      preferredStations: { $in: stations },
+    });
+  },
+
+  /**
+   * Remove specified stations from preferredStations for all staff at a location.
+   * Used when a station is removed from kitchen config (cascading cleanup).
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param stations - Array of station names to remove from preferredStations
+   * @returns Number of staff documents modified
+   */
+  async removePreferredStations(
+    orgId: string,
+    locationId: string,
+    stations: string[]
+  ): Promise<number> {
+    if (stations.length === 0) return 0;
+
+    const result = await Staff.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        preferredStations: { $in: stations },
+      },
+      {
+        $pull: { preferredStations: { $in: stations } },
       }
     );
 

@@ -1,8 +1,38 @@
-import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours } from "@/server/models/KitchenConfig";
+import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours, IAISettings, IScheduleGenerationSettings } from "@/server/models/KitchenConfig";
 import type { StaffSkill } from "@/types/staff";
 
 // Re-export model interfaces for convenience
-export type { IOperatingHours, IWeeklyOperatingHours };
+export type { IOperatingHours, IWeeklyOperatingHours, IAISettings, IScheduleGenerationSettings };
+
+// AI Settings DTO (plain object, same shape as IAISettings but decoupled from model)
+export interface AISettingsDTO {
+  monthlyGenerationLimit: number;
+  subscriptionTier: "free" | "pro" | "enterprise";
+}
+
+/** Default AI settings applied when the field is missing on legacy documents */
+const DEFAULT_AI_SETTINGS: AISettingsDTO = {
+  monthlyGenerationLimit: 1000,
+  subscriptionTier: "free",
+};
+
+export interface ScheduleGenerationSettingsDTO {
+  allowClopening: boolean;
+  minHoursBetweenShifts: number;
+  clopeningWarningThresholdHours: number;
+  overtimeThresholdHours: number;
+  overtimePolicy: "strict" | "avoid" | "allowed";
+  softConstraintPriority: ("preferences" | "fairness" | "cost")[];
+}
+
+const DEFAULT_SCHEDULE_GENERATION_SETTINGS: ScheduleGenerationSettingsDTO = {
+  allowClopening: false,
+  minHoursBetweenShifts: 10,
+  clopeningWarningThresholdHours: 10,
+  overtimeThresholdHours: 40,
+  overtimePolicy: "avoid",
+  softConstraintPriority: ["preferences", "fairness", "cost"],
+};
 
 // DTO returned from service layer (without Mongoose internals)
 export interface KitchenConfigDTO {
@@ -13,6 +43,9 @@ export interface KitchenConfigDTO {
   stations: string[];
   roles: string[];
   operatingHours: IWeeklyOperatingHours;
+  minTimeOffAdvanceDays: number;
+  aiSettings: AISettingsDTO;
+  scheduleGenerationSettings: ScheduleGenerationSettingsDTO;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -27,6 +60,23 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
     stations: doc.stations,
     roles: doc.roles,
     operatingHours: doc.operatingHours,
+    minTimeOffAdvanceDays: doc.minTimeOffAdvanceDays ?? 7,
+    aiSettings: doc.aiSettings
+      ? {
+          monthlyGenerationLimit: doc.aiSettings.monthlyGenerationLimit ?? DEFAULT_AI_SETTINGS.monthlyGenerationLimit,
+          subscriptionTier: doc.aiSettings.subscriptionTier ?? DEFAULT_AI_SETTINGS.subscriptionTier,
+        }
+      : { ...DEFAULT_AI_SETTINGS },
+    scheduleGenerationSettings: doc.scheduleGenerationSettings
+      ? {
+        allowClopening: doc.scheduleGenerationSettings.allowClopening ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.allowClopening,
+          minHoursBetweenShifts: doc.scheduleGenerationSettings.minHoursBetweenShifts ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.minHoursBetweenShifts,
+          clopeningWarningThresholdHours: doc.scheduleGenerationSettings.clopeningWarningThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.clopeningWarningThresholdHours,
+          overtimeThresholdHours: doc.scheduleGenerationSettings.overtimeThresholdHours ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimeThresholdHours,
+          overtimePolicy: doc.scheduleGenerationSettings.overtimePolicy ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.overtimePolicy,
+          softConstraintPriority: doc.scheduleGenerationSettings.softConstraintPriority ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.softConstraintPriority,
+        }
+      : { ...DEFAULT_SCHEDULE_GENERATION_SETTINGS },
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
@@ -58,6 +108,10 @@ export interface ConfigChangeImpact {
     }>;
     /** Number of historical shifts referencing removed stations (informational only) */
     historicalShiftCount: number;
+    /** Number of labor requirements that will be deleted for removed stations */
+    laborRequirementCount: number;
+    /** Number of staff with removed stations in their preferredStations */
+    preferredStationStaffCount: number;
   };
 
   /** Impact of role removal (CRITICAL - roles are required) */

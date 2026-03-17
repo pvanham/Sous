@@ -1,6 +1,10 @@
 import { Types } from "mongoose";
 import KitchenConfig from "@/server/models/KitchenConfig";
-import type { KitchenConfigInput } from "@/lib/validations/kitchen-config.schema";
+import type {
+  KitchenConfigInput,
+  AISettingsInput,
+  ScheduleGenerationSettingsInput,
+} from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
 
 /**
@@ -45,16 +49,27 @@ export const KitchenConfigService = {
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
 
+    const updateData: Record<string, unknown> = {
+      orgId: orgObjectId,
+      locationId: locationObjectId,
+      name: data.name,
+      stations: data.stations.filter((s) => s.trim() !== ""),
+      roles: data.roles.filter((r) => r.trim() !== ""),
+      operatingHours: data.operatingHours,
+      minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
+    };
+
+    // Include aiSettings if provided, using defaults for missing values
+    if (data.aiSettings) {
+      updateData.aiSettings = {
+        monthlyGenerationLimit: data.aiSettings.monthlyGenerationLimit ?? 1000,
+        subscriptionTier: data.aiSettings.subscriptionTier ?? "free",
+      };
+    }
+
     const doc = await KitchenConfig.findOneAndUpdate(
       { orgId: orgObjectId, locationId: locationObjectId },
-      {
-        orgId: orgObjectId,
-        locationId: locationObjectId,
-        name: data.name,
-        stations: data.stations.filter((s) => s.trim() !== ""),
-        roles: data.roles.filter((r) => r.trim() !== ""),
-        operatingHours: data.operatingHours,
-      },
+      updateData,
       {
         new: true, // Return the updated document
         upsert: true, // Create if doesn't exist
@@ -64,6 +79,62 @@ export const KitchenConfigService = {
 
     if (!doc) {
       throw new Error("Failed to upsert kitchen config");
+    }
+
+    return toKitchenConfigDTO(doc);
+  },
+
+  /**
+   * Update only the AI settings for a location's kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param data - Validated AI settings input
+   * @returns Updated KitchenConfigDTO
+   */
+  async updateAISettings(
+    orgId: string,
+    locationId: string,
+    data: AISettingsInput
+  ): Promise<KitchenConfigDTO> {
+    const doc = await KitchenConfig.findOneAndUpdate(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { aiSettings: data } },
+      { new: true, upsert: false }
+    ).lean();
+
+    if (!doc) {
+      throw new Error("Kitchen config not found.");
+    }
+
+    return toKitchenConfigDTO(doc);
+  },
+
+  /**
+   * Update only the schedule generation settings for a location's kitchen config.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param data - Validated schedule generation settings input
+   * @returns Updated KitchenConfigDTO
+   */
+  async updateScheduleGenerationSettings(
+    orgId: string,
+    locationId: string,
+    data: ScheduleGenerationSettingsInput
+  ): Promise<KitchenConfigDTO> {
+    const doc = await KitchenConfig.findOneAndUpdate(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { scheduleGenerationSettings: data } },
+      { new: true, upsert: false }
+    ).lean();
+
+    if (!doc) {
+      throw new Error("Kitchen config not found.");
     }
 
     return toKitchenConfigDTO(doc);

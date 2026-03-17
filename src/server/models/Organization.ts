@@ -4,6 +4,9 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 export interface IOrganization {
   ownerId: string; // Clerk userId of the owner
   name: string;
+  subscriptionTier: "free" | "pro" | "enterprise";
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +27,20 @@ const OrganizationSchema = new Schema<IOrganizationDocument>(
       required: true,
       minlength: 2,
       maxlength: 100,
+    },
+    subscriptionTier: {
+      type: String,
+      enum: ["free", "pro", "enterprise"],
+      default: "free",
+      required: true,
+    },
+    stripeCustomerId: {
+      type: String,
+      sparse: true,
+    },
+    stripeSubscriptionId: {
+      type: String,
+      sparse: true,
     },
   },
   {

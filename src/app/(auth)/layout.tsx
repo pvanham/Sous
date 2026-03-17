@@ -1,0 +1,29 @@
+import { ThemeToggle } from "@/components/shared/ThemeToggle";
+
+export default function AuthLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans relative overflow-hidden">
+      
+      {/* Theme Toggle - Top Right */}
+      <div className="absolute top-4 right-4 z-50">
+        <ThemeToggle />
+      </div>
+
+      {/* Abstract Background Elements */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_40%_50%_at_50%_-20%,rgba(120,119,198,0.15),rgba(255,255,255,0))] pointer-events-none" />
+      <div className="absolute bottom-0 inset-x-0 h-1/2 bg-gradient-to-t from-background to-transparent pointer-events-none" />
+
+      {/* Content */}
+      <div className="flex-1 flex items-center justify-center p-6 relative z-10">
+        <div className="w-full max-w-md">
+          {children}
+        </div>
+      </div>
+
+    </div>
+  );
+}

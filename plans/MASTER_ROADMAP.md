@@ -68,11 +68,13 @@
 - **Migration Script:** `scripts/migrate-to-multi-location.ts` for existing data
 
 **MVP Behavior:**
+
 - First-time users get auto-created organization + location
 - Single-location UX remains unchanged
 - Foundation ready for multi-location switcher in Phase 5+
 
 **Key Files:**
+
 ```
 src/lib/auth/get-location-context.ts     # Resolve org/location from Clerk userId
 src/server/models/Organization.ts        # Tenant container
@@ -83,850 +85,56 @@ scripts/migrate-to-multi-location.ts     # Data migration script
 
 ---
 
-## Phase 3: The "Sous" Agent (AI Schedule Generation)
+## Phase 3: The "Sous" Agent (AI Schedule Generation) ✅ COMPLETE
 
-**Goal:** One-click intelligent schedule generation using a **Hybrid Validator-Selector Pattern**.
+**Status**: ✅ Complete (March 2026)  
+**Documentation**: See `SCHEDULE_GENERATION.md`
 
-**Key Architecture Decision:** Pure LLMs struggle with hard constraint satisfaction (max hours, availability, overlapping shifts). Pure algorithms feel "robotic" and ignore human elements. **Sous uses a hybrid approach** where:
+**Delivered:**
 
-- **Algorithms** define the "Search Space" (filter valid candidates)
-- **LLM** makes the "Selection" (choose best from valid options + explain reasoning)
-- **Algorithms** validate the output (catch any AI mistakes)
-
-**USP:** "Other schedulers are just calculators. Sous is an intelligent assistant that checks the laws (Algorithm) but cares about your people (LLM), and explains every decision it makes."
-
----
-
-### The Hybrid Architecture (Phase 3 Foundation)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    STEP 1: HARD FILTER (Algorithm)                           │
-│                                                                              │
-│   Input: All 50 Staff Members + Time Slot                                    │
-│   Logic:                                                                     │
-│     - Remove staff marked "Unavailable" for that time                        │
-│     - Remove staff already scheduled (overlap check)                         │
-│     - Remove staff without required Skill (station matching)                 │
-│     - Flag staff approaching max hours (overtime warning)                    │
-│   Output: Candidate List per slot                                            │
-│     Shift A (Grill): [John, Sarah, Mike]                                     │
-│     Shift B (Prep): [Alice, Bob]                                             │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    STEP 2: SOFT SELECTOR (LLM)                               │
-│                                                                              │
-│   Input: ONLY the valid candidates (not full staff list!)                    │
-│   Prompt: "Select the best person from these VALID options to maximize       │
-│            team balance. John prefers mornings. Sarah needs more hours."     │
-│   Output: JSON with assignments + reasoning                                  │
-│                                                                              │
-│   Why this works: AI physically CANNOT choose invalid staff                  │
-└─────────────────────────────────┬───────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    STEP 3: VALIDATOR (Algorithm)                                 │
-│                                                                                  │
-│   Checks:                                                                        │
-│     - Did AI double-book anyone?                                                 │
-│     - Did AI exceed max hours?                                                   │
-│     - Any constraint violations?                                                 │
-│   Action:                                                                        │
-│     - Valid → Save to database                                                   │
-│     - Invalid → Auto-retry with error context (Self-Correction Loop, max 3x)    │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
+- Transitioned from the original LLM Soft-Selector plan to a pure Python CP-SAT Microservice.
+- Next.js backend prepares the input (calculating valid candidates, labor requirements, availability, and existing shifts) and sends it to the FastApi solver.
+- The constraint programming solver uses OR-Tools to hit target mathematical objective functions (optimizing labor cost, preference hits, and fairness) while strictly respecting hard constraints (max hours, clopening, etc.).
+- Robust user interfaces for defining labor requirements and staff availabilities.
+- "Generate Base Schedule" action that populates a preview grid of deterministic shift assignments before the manager commits to them.
+- *Note: The planned AI Swap Optimizer step was deprecated and is being reimagined as an interactive AI Assistant in Phase 4.*
 
 ---
 
-### Sprint 3.1: Labor Requirements Model
+## Phase 4: Agentic AI Scheduling Assistant
 
-**Scope:** Data layer for staffing requirements that the AI will fulfill.
+**Goal:** An interactive, conversational AI agent that actively assists the manager in reviewing schedules, refining shifts, and managing team dynamics.
 
-**Files to Create:**
+**Background:** The previous approach of a passive AI swap randomizer run during initial generation was deprecated due to lack of manager control and predictability. Instead, this phase will introduce a fully agentic assistant that managers can collaborate with.
 
-- `src/server/models/LaborRequirement.ts`
-- `src/server/services/labor-requirement.service.ts`
-- `src/server/actions/labor-requirement.actions.ts`
-- `src/lib/validations/labor-requirement.schema.ts`
-- `src/types/labor-requirement.ts`
+### Sprint 4.1: AI Assistant Chat UI
 
-**Schema Design:**
+**Scope:** A conversational sidebar or dialog in the scheduling dashboard.
 
-```typescript
-LaborRequirement {
-  userId: string,
-  dayOfWeek: 0-6,           // 0=Sunday, 1=Monday, etc.
-  station: string,          // Must match KitchenConfig.stations
-  startTime: string,        // "09:00"
-  endTime: string,          // "17:00"
-  minStaff: number,         // Minimum required
-  preferredStaff: number,   // Ideal count
-  priority: 'critical' | 'high' | 'normal' | 'low'
-}
-```
+**Features:** 
+- Chat interface for managers to ask natural language questions (e.g., "Why is John getting so much overtime?" or "Can we swap Alice and Bob's shifts on Friday?").
+- Persistent message history using the Vercel AI SDK.
 
-**Service Methods:**
+### Sprint 4.2: Scheduling Context Pipeline
 
-- `getByUserId(userId)` - All requirements for a kitchen
-- `getByDayOfWeek(userId, day)` - Requirements for a specific day
-- `upsert(userId, data)` - Create or update requirement
-- `deleteById(userId, id)` - Remove requirement
+**Scope:** Provide the agent with full system context.
 
-> **Context for Cursor:** "Create a `LaborRequirement` Mongoose model to store staffing requirements per station per time block. Follow the 3-layer architecture: Model → Service → Actions. Create Zod schemas for validation. The service should handle CRUD operations and return DTOs. Actions must check auth() and call the service layer."
+**Features:**
+- Inject the current visible schedule, staff availability, and labor requirements into the LLM system prompt.
+- Structure the state so the agent understands shift start/end times and station constraints.
+
+### Sprint 4.3: Agentic Tool Calling & Mutations
+
+**Scope:** Empower the agent to take action.
+
+**Features:**
+- Define explicit tools the agent can use (`propose_shift_swap`, `find_coverage_for_slot`, `analyze_labor_cost`).
+- When the agent calls a mutation tool, it updates the visual UI (e.g., highlighting proposed shift changes in the central grid).
+- Explicit manager `Accept/Reject` confirmation controls for any agent-proposed schedule mutations.
 
 ---
 
-### Sprint 3.2: Labor Requirements UI
-
-**Scope:** Template builder interface for defining staffing needs.
-
-**Files to Create:**
-
-- `src/app/(dashboard)/dashboard/labor/page.tsx`
-- `src/app/(dashboard)/dashboard/labor/_components/LaborGrid.tsx`
-- `src/app/(dashboard)/dashboard/labor/_components/RequirementCell.tsx`
-- `src/app/(dashboard)/dashboard/labor/_components/RequirementFormDialog.tsx`
-
-**UI Design:**
-
-```
-┌────────────────────────────────────────────────────────┐
-│ Labor Requirements                                      │
-├─────────┬────────┬────────┬────────┬────────┬─────────┤
-│ Station │ Mon    │ Tue    │ Wed    │ Thu    │ Fri ... │
-├─────────┼────────┼────────┼────────┼────────┼─────────┤
-│ Grill   │ 2 (9-5)│ 2 (9-5)│ 3 (9-9)│ 3 (9-9)│ 4 (9-11)│
-│ Prep    │ 1 (6-2)│ 1 (6-2)│ 2 (6-3)│ 2 (6-3)│ 2 (6-3) │
-└─────────┴────────┴────────┴────────┴────────┴─────────┘
-```
-
-**Interactions:**
-
-- Click cell → Open dialog to set min/preferred staff, time range, priority
-- Visual indicators for priority levels (color-coded borders)
-- Summary row showing total labor hours per day
-
-> **Context for Cursor:** "Build a `/dashboard/labor` page with a grid showing labor requirements by station and day. Use CSS Grid layout. Click any cell to open a dialog for editing requirements. Use TanStack Query to fetch and mutate data via the server actions from Sprint 3.1. Add navigation link in dashboard layout."
-
----
-
-### Sprint 3.3: Staff Availability & Constraints Model
-
-**Scope:** Data layer for staff preferences and hard constraints the AI must respect.
-
-**Files to Create:**
-
-- `src/server/models/StaffAvailability.ts`
-- `src/server/services/staff-availability.service.ts`
-- `src/server/actions/staff-availability.actions.ts`
-- `src/lib/validations/staff-availability.schema.ts`
-- `src/types/staff-availability.ts`
-
-**Schema Design:**
-
-```typescript
-StaffAvailability {
-  userId: string,           // Kitchen owner
-  staffId: ObjectId,        // Staff member
-  dayOfWeek: 0-6,
-  availableFrom: string,    // "09:00" or null (not available)
-  availableTo: string,      // "22:00" or null
-  preference: 'preferred' | 'available' | 'unavailable',
-  notes: string             // "Has class until 2pm on Mondays"
-}
-
-// Also update Staff model to add:
-Staff {
-  ...existing,
-  maxHoursPerWeek: number,     // Default 40
-  minHoursPerWeek: number,     // Default 0
-  preferredStations: string[], // Ordered by preference
-  certifications: string[],    // e.g., "Food Handler", "Manager Cert"
-  hourlyRate: number,          // Required for labor cost calculations
-}
-```
-
-**Service Methods:**
-
-- `getByStaffId(staffId)` - All availability for a staff member
-- `getAvailableStaff(userId, dayOfWeek, startTime, endTime)` - Find who can work a slot
-- `bulkUpsert(userId, staffId, availabilities[])` - Set weekly availability
-
-> **Context for Cursor:** "Create a `StaffAvailability` model for storing when staff can/prefer to work. Add fields to the existing Staff model for constraints (maxHoursPerWeek, minHoursPerWeek, preferredStations, certifications). Also add hourlyRate for labor cost tracking. Create service methods that can query available staff for a given time slot. Follow the 3-layer architecture."
-
----
-
-### Sprint 3.4: Staff Availability UI
-
-**Scope:** Interface for staff/managers to set availability preferences.
-
-**Files to Create:**
-
-- `src/app/(dashboard)/dashboard/staff/[id]/availability/page.tsx`
-- `src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilityGrid.tsx`
-- `src/app/(dashboard)/dashboard/staff/[id]/availability/_components/AvailabilitySlot.tsx`
-- Update `src/app/(dashboard)/dashboard/staff/_components/StaffTable.tsx` - Add availability link
-
-**UI Design:**
-
-```
-┌────────────────────────────────────────────────────────┐
-│ John Smith - Weekly Availability                        │
-├─────────┬────────┬────────┬────────┬────────┬─────────┤
-│ Time    │ Mon    │ Tue    │ Wed    │ Thu    │ Fri ... │
-├─────────┼────────┼────────┼────────┼────────┼─────────┤
-│ Morning │ ✓ Pref │ ✓ Avail│ ✗      │ ✓ Avail│ ✓ Pref  │
-│ Afternoon│ ✓ Pref│ ✓ Avail│ ✗      │ ✗      │ ✓ Pref  │
-│ Evening │ ✗      │ ✗      │ ✗      │ ✓ Avail│ ✓ Avail │
-└─────────┴────────┴────────┴────────┴────────┴─────────┘
-│ Max Hours/Week: [40]  Min Hours/Week: [20]              │
-│ Preferred Stations: [Grill] [Prep]                      │
-└────────────────────────────────────────────────────────┘
-```
-
-**Interactions:**
-
-- Click slot to cycle: Preferred → Available → Unavailable
-- Drag to select multiple slots
-- Save button persists changes
-
-> **Context for Cursor:** "Create an availability management page at `/dashboard/staff/[id]/availability`. Display a weekly grid where managers can set each staff member's availability. Use click-to-toggle for preference states. Include fields for max/min hours per week and preferred stations. Add a link to this page from the staff table."
-
----
-
-### Sprint 3.4a: Time-Off Requests Model
-
-**Scope:** Data layer for specific date-range time-off requests (vacation, appointments). This is different from weekly availability patterns—it's for specific dates when staff are unavailable.
-
-**Files to Create:**
-
-- `src/server/models/TimeOffRequest.ts`
-- `src/server/services/time-off-request.service.ts`
-- `src/server/actions/time-off-request.actions.ts`
-- `src/lib/validations/time-off-request.schema.ts`
-- `src/types/time-off-request.ts`
-
-**Schema Design:**
-
-```typescript
-TimeOffRequest {
-  userId: string,           // Kitchen owner
-  staffId: ObjectId,        // Staff member requesting time off
-  startDate: Date,          // First day off
-  endDate: Date,            // Last day off (inclusive)
-  reason?: string,          // "Vacation", "Doctor appointment", etc.
-  status: 'pending' | 'approved' | 'denied',
-  createdAt: Date,
-  reviewedAt?: Date,        // When approved/denied
-  reviewedBy?: string,      // userId of approver
-}
-```
-
-**Service Methods:**
-
-- `create(userId, staffId, data)` - Submit time-off request
-- `getByStaffId(userId, staffId)` - Get all requests for a staff member
-- `getByDateRange(userId, startDate, endDate)` - Get all requests in a date range
-- `updateStatus(userId, requestId, status, reviewedBy)` - Approve/deny request
-- `getApprovedTimeOff(userId, staffId, startDate, endDate)` - Get approved time off for a staff member in a date range
-
-**Important:** The `CandidateService` (Sprint 3.5) must check approved `TimeOffRequests` when filtering candidates for a shift. A staff member with approved time off for a date should not be included in the candidate list for shifts on that date.
-
-> **Context for Cursor:** "Create a `TimeOffRequest` model for specific date-range time-off requests (different from weekly availability patterns). This handles vacation days, appointments, etc. Include approval workflow with 'pending', 'approved', 'denied' statuses. The service should have a method to check if a staff member has approved time off for a given date range. This will be used by CandidateService to exclude staff from shift assignments. Follow 3-layer architecture."
-
----
-
-### Sprint 3.4b: Time-Off Requests UI & Approval
-
-**Scope:** Minimal manager-facing workflow to review and approve/deny time-off requests. This connects Sprint 3.4a's model/service/actions to actual day-to-day usage so CandidateService filtering is effective in practice.
-
-**Files to Create/Update (UI Layer):**
-
-- `src/app/(dashboard)/dashboard/time-off/page.tsx`
-- `src/app/(dashboard)/dashboard/time-off/_components/TimeOffRequestTable.tsx`
-- `src/app/(dashboard)/dashboard/time-off/_components/TimeOffRequestReviewDialog.tsx`
-- `src/app/(dashboard)/dashboard/time-off/_components/CreateTimeOffRequestDialog.tsx`
-- Update `src/app/(dashboard)/dashboard/staff/_components/StaffTable.tsx` - Add "Time Off" link
-- Update dashboard navigation (layout) to include "Time Off"
-
-**UI Requirements:**
-
-- Table view with filters: Pending / Approved / Denied
-- Review dialog: Approve / Deny, optional manager note
-- Create request dialog (manager entry): Select staff + date range + optional reason
-- Audit visibility: show reviewedAt + reviewedBy on approved/denied requests
-
-**Notes:**
-
-- This UI should call the Server Actions from Sprint 3.4a (no direct DB access).
-- Approved requests must immediately impact candidate filtering in Sprint 3.5.
-
-> **Context for Cursor:** "Build a manager-facing time-off approval UI at `/dashboard/time-off`. Use TanStack Query to list TimeOffRequests via server actions. Provide filters (pending/approved/denied) and a review dialog to approve/deny requests. Also provide a dialog for managers to create a request for a staff member. Show reviewedAt/reviewedBy fields. Add a 'Time Off' link in the dashboard navigation and from the staff table. Follow 3-layer architecture (UI → Actions → Services)."
-
----
-
-### Sprint 3.5: Candidate Filter Service (Hard Filter Layer)
-
-**Scope:** Pure TypeScript service that filters valid staff candidates BEFORE AI sees them. This is the foundation of the hybrid approach.
-
-**Files to Create:**
-
-- `src/server/services/candidate.service.ts`
-- `src/types/candidate.ts`
-
-**Service Design:**
-
-```typescript
-// candidate.service.ts - Pure TypeScript, no LLM calls
-export const CandidateService = {
-  /**
-   * Get valid candidates for a specific time slot
-   * This is the "Hard Filter" - removes anyone who CAN'T work
-   */
-  async getCandidatesForSlot(
-    userId: string,
-    date: Date,
-    startTime: string,
-    endTime: string,
-    station: string,
-    existingShifts: ShiftDTO[]
-  ): Promise<CandidateDTO[]>,
-
-  /**
-   * Get candidates for all open slots in a day
-   * Used for day-by-day generation (chunking strategy)
-   */
-  async getCandidatesForDay(
-    userId: string,
-    date: Date,
-    laborRequirements: LaborRequirementDTO[],
-    existingShifts: ShiftDTO[]
-  ): Promise<SlotCandidates[]>,
-
-  /**
-   * Check if assigning a shift would cause overtime
-   */
-  async wouldCauseOvertime(
-    staffId: string,
-    proposedShift: { date: Date, startTime: string, endTime: string },
-    existingShifts: ShiftDTO[],
-    maxHours: number
-  ): Promise<boolean>,
-};
-
-// Filter logic (pure functions)
-function filterByAvailability(staff, availability, dayOfWeek, startTime, endTime): StaffDTO[];
-function filterBySkills(staff, requiredStation): StaffDTO[];
-function filterByExistingShifts(staff, existingShifts, proposedStart, proposedEnd): StaffDTO[];
-function flagOvertimeRisk(staff, existingShifts): StaffWithOvertimeFlag[];
-```
-
-**Candidate Output Structure:**
-
-```typescript
-interface CandidateDTO {
-  staffId: string;
-  staffName: string;
-  skills: { station: string; proficiency: number }[];
-  preference: "preferred" | "available"; // From availability
-  currentWeekHours: number;
-  maxHoursPerWeek: number;
-  overtimeWarning: boolean; // Would this shift push them into overtime?
-  preferredStations: string[];
-  notes?: string;
-}
-
-interface SlotCandidates {
-  slot: {
-    station: string;
-    startTime: string;
-    endTime: string;
-    minStaff: number;
-    preferredStaff: number;
-    priority: "critical" | "high" | "normal" | "low";
-  };
-  candidates: CandidateDTO[]; // Only VALID candidates
-  hasSufficientCandidates: boolean;
-}
-```
-
-> **Context for Cursor:** "Create a CandidateService that implements the 'Hard Filter' step of the hybrid AI scheduling approach. This service filters staff to ONLY those who are VALID for a given slot (available, have skill, not already scheduled, not exceeding max hours). It should use the StaffAvailability and Staff models. IMPORTANT: Must also check approved TimeOffRequests (from Sprint 3.4a) and exclude staff who have approved time off for the shift date. Time handling: CandidateService receives slot inputs as (date + startTime/endTime). Convert these to Date ranges using KitchenConfig.timezone (IANA) so day-of-week and overlap checks are timezone-correct (DST-safe). Return CandidateDTO objects with relevant context for the AI. Include an overtime warning flag. This service is PURE TypeScript - no OpenAI calls. Follow 3-layer architecture."
-
----
-
-### Sprint 3.6: OpenAI Client & AI Cost Tracking
-
-**Scope:** OpenAI integration with cost tracking to prevent runaway usage.
-
-**Files to Create:**
-
-- `src/lib/ai/openai-client.ts`
-- `src/server/models/AIUsageLog.ts`
-- `src/server/services/ai-usage.service.ts`
-- Update `src/server/models/KitchenConfig.ts` - Add timezone + AI usage limits
-
-**Dependencies to Install:**
-
-```bash
-npm install openai ai
-```
-
-**KitchenConfig Updates:**
-
-```typescript
-KitchenConfig {
-  ...existing,
-  timezone: string,  // IANA timezone, e.g., "America/New_York"
-  aiSettings: {
-    monthlyGenerationLimit: number,  // Default 50 generations/month
-    subscriptionTier: 'free' | 'pro' | 'enterprise',  // Future use
-  }
-}
-```
-
-**Time & Timezone Conventions (Critical):**
-
-- Shifts are stored in the database as `start: Date` and `end: Date` (absolute timestamps).
-- Labor requirements and availability use `date + startTime/endTime` inputs for UI ergonomics.
-- All conversions from `date + time` → `Date` must use `KitchenConfig.timezone` (restaurant-local timezone).
-- DST-safe rule: avoid ambiguous local times by using timezone-aware conversion utilities. Never assume server timezone.
-
-**AI Usage Tracking:**
-
-```typescript
-AIUsageLog {
-  userId: string,
-  action: 'schedule_generation' | 'schedule_refinement' | 'message_parsing',
-  promptTokens: number,
-  completionTokens: number,
-  totalTokens: number,
-  estimatedCost: number,  // In cents
-  createdAt: Date,
-}
-
-// Service methods
-AIUsageService = {
-  async logUsage(userId, action, usage): Promise<void>,
-  async getMonthlyUsage(userId): Promise<UsageSummary>,
-  async canGenerate(userId): Promise<{ allowed: boolean; remaining: number }>,
-};
-```
-
-**OpenAI Client:**
-
-```typescript
-// openai-client.ts
-export async function generateJSON<T>(
-  systemPrompt: string,
-  userPrompt: string,
-  options?: { userId?: string; action?: string },
-): Promise<{ data: T; usage: TokenUsage }>;
-
-export async function generateCompletion(
-  systemPrompt: string,
-  userPrompt: string,
-  options?: { temperature?: number; maxTokens?: number },
-): Promise<{ content: string; usage: TokenUsage }>;
-```
-
-**Fallback Behavior:**
-
-If OpenAI is unavailable (rate limited, service down, or user exceeds monthly limit), provide a basic algorithmic fallback:
-
-- Assign first available candidate to each slot (no AI reasoning)
-- Use simple rules: match skill requirements, respect availability, avoid overlaps
-- Mark the schedule as "Generated without AI optimization"
-- Log the fallback event for monitoring
-- Display clear message to user: "Schedule created using basic assignment (AI unavailable)"
-
-This ensures the app remains functional even when AI services are down.
-
-> **Context for Cursor:** "Create an OpenAI client wrapper in `src/lib/ai/openai-client.ts`. It should: (1) handle API calls with proper error handling and retries, (2) track token usage, (3) support JSON mode for structured output. Also create an AIUsageLog model and AIUsageService to track usage per user. Update KitchenConfig: add `timezone` (IANA string) and `aiSettings.monthlyGenerationLimit`. The client should check usage limits before making calls and throw a clear error if limit exceeded. Implement fallback behavior: if OpenAI is unavailable or limit exceeded, use basic algorithmic assignment (first available candidate per slot) and mark schedule as 'Generated without AI optimization'. Ensure all scheduling time conversions use KitchenConfig.timezone (DST-safe)."
-
----
-
-### Sprint 3.7: AI Scheduling Agent Service (Selector Layer)
-
-**Scope:** The LLM "Soft Selector" that picks from valid candidates.
-
-**Files to Create:**
-
-- `src/server/services/ai/scheduling-agent.service.ts`
-- `src/server/services/ai/prompts/schedule-generation.ts`
-- `src/types/ai-scheduling.ts`
-
-**Key Difference from Pure LLM Approach:** The AI now receives ONLY pre-filtered candidates, not the full staff list. This dramatically reduces hallucination risk.
-
-**Service Design:**
-
-```typescript
-// scheduling-agent.service.ts
-export const SchedulingAgentService = {
-  /**
-   * Build context with pre-filtered candidates per slot
-   */
-  async buildSchedulingContext(userId: string, weekStart: Date): Promise<SchedulingContext>,
-
-  /**
-   * Generate schedule for ONE day (chunking strategy for large kitchens)
-   * Receives candidates per slot, not raw staff list
-   */
-  async generateDaySchedule(
-    context: DaySchedulingContext,
-    previousDayClosingShifts?: ShiftDTO[]  // Avoid clopening violations
-  ): Promise<GeneratedDaySchedule>,
-
-  /**
-   * Generate full week schedule (calls generateDaySchedule for each day)
-   */
-  async generateWeekSchedule(context: SchedulingContext): Promise<GeneratedSchedule>,
-};
-
-// The AI receives this FILTERED context
-interface DaySchedulingContext {
-  date: Date;
-  dayOfWeek: string;
-  slots: SlotCandidates[];  // Pre-filtered candidates per slot!
-  existingShifts: ShiftDTO[];
-  previousDayClosingShifts?: ShiftDTO[];  // To check for clopening
-  kitchenContext: {
-    operatingHours: { open: string; close: string };
-    totalStaffCount: number;
-  };
-}
-```
-
-**Prompt Strategy (Key Change):**
-
-```
-You are Sous, a kitchen scheduling assistant.
-
-You will receive a list of OPEN SLOTS and VALID CANDIDATES for each slot.
-All candidates have already been verified as available and qualified.
-Your job is to SELECT the best candidate from each slot's options.
-
-Consider:
-- Staff preferences (preferred stations, preferred times)
-- Fair hour distribution
-- Team balance and experience mix
-- Clopening avoidance (don't schedule someone who closed last night for early morning)
-
-For each assignment, explain your reasoning in 1-2 sentences.
-
-OUTPUT FORMAT: JSON array of shift assignments
-```
-
-> **Context for Cursor:** "Create the SchedulingAgentService that implements the 'Soft Selector' step. It receives SlotCandidates (pre-filtered by CandidateService) and asks the AI to SELECT the best option from valid candidates only. Implement day-by-day generation (chunking strategy) where each day is generated separately, passing the previous day's closing shifts to avoid clopening violations. The prompt should emphasize that all candidates are already verified as valid."
-
----
-
-### Sprint 3.8: Schedule Validator Service (Validator Layer)
-
-**Scope:** Deterministic validation of AI output with self-correction loop.
-
-**Files to Create:**
-
-- `src/server/services/schedule-validator.service.ts`
-- `src/lib/validations/generated-schedule.schema.ts`
-
-**Service Design:**
-
-```typescript
-// schedule-validator.service.ts
-export const ScheduleValidatorService = {
-  /**
-   * Validate AI-generated schedule against all hard constraints
-   */
-  async validate(
-    generated: GeneratedSchedule,
-    context: SchedulingContext
-  ): Promise<ValidationResult>,
-
-  /**
-   * Self-correction: feed errors back to AI for retry
-   */
-  async retryWithCorrections(
-    original: GeneratedSchedule,
-    errors: ValidationError[],
-    context: SchedulingContext,
-    attempt: number
-  ): Promise<GeneratedSchedule>,
-};
-
-interface ValidationResult {
-  valid: boolean;
-  errors: ValidationError[];
-  warnings: ValidationWarning[];
-}
-
-interface ValidationError {
-  type: 'double_booking' | 'unavailable_staff' | 'max_hours_exceeded' |
-        'skill_mismatch' | 'invalid_staff_id' | 'overlap';
-  staffId: string;
-  staffName: string;
-  shiftIndex: number;
-  message: string;
-  correctionHint: string;  // "John is already scheduled 2pm-6pm, choose different time"
-}
-```
-
-**Self-Correction Flow:**
-
-```typescript
-async function generateWithRetry(context, maxRetries = 3) {
-  let schedule = await SchedulingAgentService.generateWeekSchedule(context);
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const validation = await ScheduleValidatorService.validate(
-      schedule,
-      context,
-    );
-
-    if (validation.valid) return schedule;
-
-    if (attempt === maxRetries) {
-      throw new Error(`Failed after ${maxRetries} attempts`);
-    }
-
-    // Feed errors back to AI
-    schedule = await ScheduleValidatorService.retryWithCorrections(
-      schedule,
-      validation.errors,
-      context,
-      attempt,
-    );
-  }
-}
-```
-
-> **Context for Cursor:** "Create a ScheduleValidatorService that validates AI-generated schedules against hard constraints. Check for: double-bookings, unavailable staff assignments, max hours violations, skill mismatches. If validation fails, implement a self-correction loop that feeds the specific errors back to the AI with correction hints. Allow up to 3 retry attempts before failing. Return both errors (hard failures) and warnings (soft issues like overtime risk)."
-
----
-
-### Sprint 3.9: Schedule Generation Action & UI
-
-**Scope:** Wire up the hybrid generation pipeline to the schedule page.
-
-**Files to Create/Update:**
-
-- `src/server/actions/schedule-generation.actions.ts`
-- Update `src/app/(dashboard)/dashboard/schedule/_components/ScheduleActions.tsx`
-- `src/app/(dashboard)/dashboard/schedule/_components/GenerateScheduleDialog.tsx`
-- `src/app/(dashboard)/dashboard/schedule/_components/GeneratedShiftPreview.tsx`
-
-**Generation Action Flow:**
-
-```typescript
-// schedule-generation.actions.ts
-export async function generateSchedule(scheduleId: string) {
-  // 1. Check AI usage limits
-  const canGenerate = await AIUsageService.canGenerate(userId);
-  if (!canGenerate.allowed) {
-    return { success: false, error: `Monthly limit reached.` };
-  }
-
-  // 2. Build context (includes candidate filtering via CandidateService)
-  const context = await SchedulingAgentService.buildSchedulingContext(
-    userId,
-    weekStart,
-  );
-
-  // 3. Generate with validation + retry loop
-  const schedule = await generateWithRetry(context);
-
-  // 4. Log AI usage
-  await AIUsageService.logUsage(userId, "schedule_generation", schedule.usage);
-
-  // 5. Return for preview (don't save yet)
-  return {
-    success: true,
-    data: { shifts: schedule.shifts, warnings: schedule.warnings },
-  };
-}
-```
-
-**UI Flow:**
-
-1. User clicks "Generate Schedule" button
-2. Check usage limit → Show remaining generations
-3. Dialog opens showing labor requirements summary
-4. User confirms → Show progress (day by day generation)
-5. Preview shows generated shifts with AI reasoning
-6. Show any warnings (overtime risks, unfilled slots)
-7. User can accept all, modify, or regenerate
-8. Accept → Shifts saved to database
-
-**Data Readiness Gate (Pre-Generation Checklist):**
-
-Before generation begins, the dialog should run readiness checks and surface issues clearly. If critical data is missing, either block generation or require explicit confirmation.
-
-**Readiness Checks:**
-
-- Missing `hourlyRate` for any active staff (required for labor cost tracking)
-- Missing/empty StaffAvailability for active staff (or low completion %)
-- Requirements missing for open days/stations
-- Requirements outside operating hours
-- Skill coverage gaps: requirements with no qualified candidates
-
-**UI Copy Guidance:**
-
-- "X staff missing hourly rate"
-- "Availability completeness: X%"
-- "Y requirements have no qualified candidates"
-
-This prevents “AI failed” experiences caused by incomplete configuration and improves trust.
-
-**Graceful Failure Handling:**
-
-If generation fails after all retries, **never** show just an error message. Instead:
-
-1. **Show Partial Results**: "We filled X of Y required shifts. These slots couldn't be filled due to availability conflicts:"
-   - List unfilled slots with reasons (e.g., "Friday 5pm-10pm Grill: No available qualified staff")
-2. **Offer Recovery Options**:
-   - "View Partial Schedule" → Show what was successfully generated
-   - "Adjust Labor Requirements" → Link to labor requirements page
-   - "Review Staff Availability" → Link to availability management
-   - "Try Again" → Retry generation button
-
-3. **Provide Context**: Explain why it failed:
-   - "3 shifts couldn't be filled because no staff are available during those times"
-   - "2 shifts need Grill skills but all qualified staff are already scheduled"
-   - "Consider adjusting required staffing levels or staff availability"
-
-4. **Save Progress**: If 80%+ of shifts were generated, offer to save the partial schedule as a draft
-
-Never leave users with a dead-end error. Always provide actionable next steps.
-
-> **Context for Cursor:** "Create the schedule generation action and UI. The action should: (1) check AI usage limits first, (2) use the hybrid pipeline (CandidateService → SchedulingAgentService → ScheduleValidatorService), (3) log usage, (4) return shifts for preview without saving. Create GenerateScheduleDialog that shows progress, displays generated shifts with reasoning, and shows warnings. IMPORTANT: Add a Data Readiness Gate checklist before generation (missing hourlyRate, low availability completeness, missing requirements, requirements outside operating hours, no qualified candidates). If critical items are missing, block generation or require explicit confirmation, with clear UI copy (e.g., 'X staff missing hourly rate'). Also implement graceful failure handling—if generation fails, show partial results with specific unfilled slots and reasons, offer recovery options (view partial, adjust requirements, review availability, try again), and if 80%+ succeeded, offer to save as draft. Never show just an error message. Add 'Generate Schedule' button to ScheduleActions."
-
----
-
-### Sprint 3.10: Schedule Refinement with Snapshotting
-
-**Scope:** Allow iterative refinement with undo capability.
-
-**Files to Create/Update:**
-
-- `src/server/services/ai/schedule-refiner.service.ts`
-- `src/server/models/ScheduleSnapshot.ts`
-- `src/server/services/schedule-snapshot.service.ts`
-- `src/server/actions/schedule-generation.actions.ts` - Add refine action
-- `src/app/(dashboard)/dashboard/schedule/_components/RefineScheduleDialog.tsx`
-
-**Snapshotting for Undo:**
-
-```typescript
-ScheduleSnapshot {
-  userId: string,
-  scheduleId: ObjectId,
-  shifts: ShiftDTO[],  // Complete copy of all shifts
-  createdAt: Date,
-  reason: 'pre_ai_refinement' | 'manual_backup',
-  description: string,  // "Before AI refinement: 'Add more grill coverage Friday'"
-}
-
-ScheduleSnapshotService = {
-  async createSnapshot(userId, scheduleId, reason): Promise<string>,
-  async restoreSnapshot(userId, snapshotId): Promise<void>,
-  async listSnapshots(userId, scheduleId): Promise<SnapshotDTO[]>,
-};
-```
-
-**Refinement Flow:**
-
-1. Create snapshot of current schedule (for undo)
-2. AI analyzes request + current schedule + available candidates
-3. AI suggests specific changes (add shift, swap, etc.)
-4. Show diff: current vs proposed
-5. User accepts/rejects individual changes
-6. If user wants to undo, restore from snapshot
-
-> **Context for Cursor:** "Add schedule refinement with snapshot support. Before any AI refinement, create a ScheduleSnapshot that captures all current shifts. Create RefineScheduleDialog with a text input for natural language requests. The AI should analyze the request and suggest specific changes, shown as a diff (added/removed/modified). Allow accepting individual changes. Add 'Restore Previous' button that restores from the most recent snapshot."
-
----
-
-### Sprint 3.11: Coverage Validation & Gap Detection
-
-**Scope:** Real-time coverage analysis comparing shifts to requirements.
-
-**Files to Create:**
-
-- `src/server/services/coverage-analyzer.service.ts`
-- `src/app/(dashboard)/dashboard/schedule/_components/CoverageBar.tsx`
-- `src/app/(dashboard)/dashboard/schedule/_components/CoverageDetailPopover.tsx`
-
-**Service Methods:**
-
-```typescript
-CoverageAnalyzerService = {
-  analyzeCoverage(shifts, requirements, weekStart): CoverageAnalysis,
-  findGaps(analysis): CoverageGap[],
-  findOverstaffed(analysis): OverstaffedPeriod[],
-}
-
-interface CoverageAnalysis {
-  byDay: Record<string, DayCoverage>;  // Keyed by ISO date string: YYYY-MM-DD
-  overallScore: number;  // 0-100
-  criticalGaps: number;
-  warnings: number;
-  // Labor cost tracking (requires hourlyRate from Staff model)
-  totalScheduledHours: number;      // Sum of all shift hours
-  totalLaborCost: number;           // Sum of (hours × hourlyRate) for all shifts
-  costByDay: Record<string, number>; // Keyed by ISO date string: YYYY-MM-DD
-}
-```
-
-**Note:** Use ISO date keys (`YYYY-MM-DD`) instead of `Map<Date, ...>`. Maps and Date keys are not JSON-serializable for Server Actions and TanStack Query caching. Reconstruct Dates in the UI as needed.
-
-**UI:**
-
-- Color-coded bar under each day column (green=covered, yellow=understaffed, red=critical gap)
-- Click bar to see detailed breakdown by station and time
-- Overall week coverage score in header
-- **Labor cost summary** in schedule header: "Total: $X,XXX.XX (XXX hours)" with daily breakdown on hover
-
-> **Context for Cursor:** "Create a coverage analyzer service that compares current shifts against labor requirements. For each 30-minute block, calculate if minimum staffing is met. Also calculate labor costs using hourlyRate from Staff model (added in Sprint 3.3): compute totalScheduledHours, totalLaborCost (sum of hours × hourlyRate), and costByDay breakdown. IMPORTANT: CoverageAnalysis must be JSON-serializable—use ISO date keys (`YYYY-MM-DD`) with `Record<string, ...>` instead of `Map<Date, ...>`. Create a `CoverageBar` component that displays under each day in the schedule grid. Use color coding: green (100%+), yellow (75-99%), red (<75%). Add a popover showing detailed breakdown by station when clicked. Display labor cost summary in schedule header with daily breakdown on hover."
-
----
-
-### Sprint 3.12: Phase 3 Testing & Polish
-
-**Scope:** Verification script and final polish for hybrid AI scheduling.
-
-**Files to Create:**
-
-- `scripts/test-phase-3.ts`
-- Update `package.json` with `test:phase-3` script
-
-**Test Cases:**
-
-1. Labor requirement CRUD
-2. Staff availability CRUD
-3. **CandidateService filters correctly** (core of hybrid approach)
-4. AI scheduler receives only valid candidates
-5. **Validator catches AI mistakes** (double-booking, etc.)
-6. **Self-correction loop works** (retry with errors)
-7. Coverage analyzer correctly identifies gaps
-8. Snapshots save and restore correctly
-9. AI usage tracking and limits work
-
-**Polish Items:**
-
-- Error handling for OpenAI rate limits/failures
-- Retry logic with exponential backoff
-- Clear error messages when generation fails
-- Loading states throughout
-- Usage limit warnings before generation
-
-> **Context for Cursor:** "Create a Phase 3 verification script that tests the hybrid AI scheduling pipeline. Key tests: (1) CandidateService correctly filters invalid staff, (2) AI receives only valid candidates, (3) Validator catches any AI mistakes, (4) Self-correction loop retries with error context, (5) Snapshots work for undo. Mock the OpenAI response for deterministic testing. Add npm script."
-
----
-
-## Phase 4: The Reactive Hotline (LLM-Powered SMS Automation)
+## Phase 5: The Reactive Hotline (LLM-Powered SMS Automation)
 
 **Goal:** Autonomous handling of employee requests via SMS with graduated human oversight.
 
@@ -962,7 +170,7 @@ interface CoverageAnalysis {
 
 ---
 
-### Sprint 4.1: Twilio Integration & Message Storage
+### Sprint 5.1: Twilio Integration & Message Storage
 
 **Scope:** SMS webhook handling and message persistence.
 
@@ -1048,7 +256,7 @@ Staff {
 
 ---
 
-### Sprint 4.2: Message Processing Agent with Confidence Routing
+### Sprint 5.2: Message Processing Agent with Confidence Routing
 
 **Scope:** LLM agent that routes actions based on confidence levels.
 
@@ -1093,7 +301,7 @@ interface RoutingDecision {
 
 ```typescript
 function routeByConfidence(
-  confidence: number,
+  confidence: number
 ): "auto_handle" | "draft_and_wait" | "escalate" {
   if (confidence >= 90) return "auto_handle";
   if (confidence >= 70) return "draft_and_wait";
@@ -1111,7 +319,7 @@ function routeByConfidence(
 
 ---
 
-### Sprint 4.3: Background Message Processing
+### Sprint 5.3: Background Message Processing
 
 **Scope:** Async processing queue for messages.
 
@@ -1160,11 +368,11 @@ npm install inngest
 - Create functions in `src/inngest/` directory
 - Use Inngest dev server for local development
 
-> **Context for Cursor:** "Create a message processing service that runs after webhook saves the message. Use **Inngest** for background job processing. Install inngest package. Create Inngest functions: (1) message.received - processes SMS using MessageAgentService from Sprint 4.2, (2) coverage.waterfall-step - handles 15-min timeouts for coverage requests, (3) shift.reminder - scheduled day-before reminders. Set up Inngest client with proper env vars. Create `/api/inngest` route for Inngest webhook. Update message status as it progresses through stages. If autonomous handling succeeds, send response SMS and mark as 'handled'. If it fails or is uncertain, mark as 'escalated' and send manager notification (for now, just log it). Handle errors gracefully—don't lose messages."
+> **Context for Cursor:** "Create a message processing service that runs after webhook saves the message. Use **Inngest** for background job processing. Install inngest package. Create Inngest functions: (1) message.received - processes SMS using MessageAgentService from Sprint 5.2, (2) coverage.waterfall-step - handles 15-min timeouts for coverage requests, (3) shift.reminder - scheduled day-before reminders. Set up Inngest client with proper env vars. Create `/api/inngest` route for Inngest webhook. Update message status as it progresses through stages. If autonomous handling succeeds, send response SMS and mark as 'handled'. If it fails or is uncertain, mark as 'escalated' and send manager notification (for now, just log it). Handle errors gracefully—don't lose messages."
 
 ---
 
-### Sprint 4.4: Manager Inbox Dashboard
+### Sprint 5.4: Manager Inbox Dashboard
 
 **Scope:** UI for managers to review messages and handle escalations.
 
@@ -1212,7 +420,7 @@ npm install inngest
 
 ---
 
-### Sprint 4.5: Coverage Request Automation
+### Sprint 5.5: Coverage Request Automation
 
 **Scope:** Automated workflow for finding shift coverage.
 
@@ -1291,7 +499,7 @@ CoverageRequest {
 
 ---
 
-### Sprint 4.6: Conversation Threading & Context
+### Sprint 5.6: Conversation Threading & Context
 
 **Scope:** Multi-turn conversation handling.
 
@@ -1322,7 +530,7 @@ AI: "Thanks, I've marked your call-out as sick leave. I've reached out to 3 team
 
 ---
 
-### Sprint 4.7: Outbound Notifications
+### Sprint 5.7: Outbound Notifications
 
 **Scope:** Proactive notifications to staff.
 
@@ -1349,19 +557,19 @@ NotificationService = {
 }
 ```
 
-> **Context for Cursor:** "Create a notification service for outbound SMS. Add a 'Notify Staff' button to the schedule page that sends each scheduled employee their shifts for the week. Messages should be formatted nicely. Track outbound messages in the Message collection with direction='outbound'. Use the Twilio client from Sprint 4.2. Respect rate limits."
+> **Context for Cursor:** "Create a notification service for outbound SMS. Add a 'Notify Staff' button to the schedule page that sends each scheduled employee their shifts for the week. Messages should be formatted nicely. Track outbound messages in the Message collection with direction='outbound'. Use the Twilio client from Sprint 5.2. Respect rate limits."
 
 ---
 
-### Sprint 4.8: Phase 4 Testing & Time Travel Tool
+### Sprint 5.8: Phase 5 Testing & Time Travel Tool
 
 **Scope:** Verification, robustness, and testing utilities for time-dependent flows.
 
 **Files to Create:**
 
-- `scripts/test-phase-4.ts`
+- `scripts/test-phase-5.ts`
 - `src/lib/testing/time-travel.ts` - Dev tool for testing time-dependent flows
-- Update `package.json` with `test:phase-4` script
+- Update `package.json` with `test:phase-5` script
 
 **Time Travel Tool (Critical for Testing):**
 
@@ -1407,19 +615,19 @@ export const TimeTravel = {
 - Dead letter queue for failed messages
 - Never lose a message—always log and track
 
-> **Context for Cursor:** "Create a Phase 4 verification script. Include a TimeTravel dev utility for testing time-dependent flows (waterfall timeouts, offer expiration). Test: (1) confidence routing (high/medium/low), (2) waterfall sends one SMS at a time, (3) timeout triggers next candidate, (4) conversation threading with currentIntentContext. Mock Twilio and OpenAI for deterministic tests. The TimeTravel tool should only be available in development."
+> **Context for Cursor:** "Create a Phase 5 verification script. Include a TimeTravel dev utility for testing time-dependent flows (waterfall timeouts, offer expiration). Test: (1) confidence routing (high/medium/low), (2) waterfall sends one SMS at a time, (3) timeout triggers next candidate, (4) conversation threading with currentIntentContext. Mock Twilio and OpenAI for deterministic tests. The TimeTravel tool should only be available in development."
 
 ---
 
-## Phase 5: Production Preparation
+## Phase 6: Production Preparation
 
 **Goal:** Security, access control, mobile experience, and deployment readiness.
 
-**Future Consideration (Post-MVP):** The Phase 4 Inbox currently uses TanStack Query polling for updates. For a truly "reactive" experience where managers see incoming texts instantly, consider adding Server-Sent Events (SSE) or a service like Pusher in a future iteration. Polling is acceptable for MVP.
+**Future Consideration (Post-MVP):** The Phase 5 Inbox currently uses TanStack Query polling for updates. For a truly "reactive" experience where managers see incoming texts instantly, consider adding Server-Sent Events (SSE) or a service like Pusher in a future iteration. Polling is acceptable for MVP.
 
 ---
 
-### Sprint 5.1: Role-Based Access Control (RBAC)
+### Sprint 6.1: Role-Based Access Control (RBAC)
 
 **Scope:** Secure the app based on user roles.
 
@@ -1470,7 +678,7 @@ const ROLES = {
 
 ---
 
-### Sprint 5.2: Staff Self-Service Portal
+### Sprint 6.2: Staff Self-Service Portal
 
 **Scope:** Mobile-friendly view for staff to see their schedules.
 
@@ -1514,7 +722,7 @@ const ROLES = {
 
 ---
 
-### Sprint 5.3: Settings & Configuration Improvements
+### Sprint 6.3: Settings & Configuration Improvements
 
 **Scope:** Admin settings and environment configuration.
 
@@ -1537,7 +745,7 @@ const ROLES = {
 
 ---
 
-### Sprint 5.4: Error Boundaries & Loading States
+### Sprint 6.4: Error Boundaries & Loading States
 
 **Scope:** Production-grade error handling and UX.
 
@@ -1567,7 +775,7 @@ const ROLES = {
 
 ---
 
-### Sprint 5.5: Performance Optimization
+### Sprint 6.5: Performance Optimization
 
 **Scope:** Optimize for production performance.
 
@@ -1596,7 +804,7 @@ const ROLES = {
 
 ---
 
-### Sprint 5.6: Environment & Deployment Configuration
+### Sprint 6.6: Environment & Deployment Configuration
 
 **Scope:** Prepare for deployment.
 
@@ -1642,7 +850,7 @@ NEXT_PUBLIC_APP_URL=
 
 ---
 
-### Sprint 5.7: Final Testing & Documentation
+### Sprint 6.7: Final Testing & Documentation
 
 **Scope:** End-to-end testing and documentation.
 
@@ -1651,7 +859,7 @@ NEXT_PUBLIC_APP_URL=
 - `scripts/test-e2e.ts` - Full integration test
 - Update `README.md` - Complete documentation
 - `DEPLOYMENT.md` - Deployment guide
-- `plans/PHASE-5-COMPLETE.md` - Completion report
+- `plans/PHASE-6-COMPLETE.md` - Completion report
 
 **Test Scenarios:**
 
@@ -1695,22 +903,21 @@ Each sprint is designed to be completable in **1-2 coding agent sessions** (appr
 | ------- | ----------- | ------- | ------------- |
 | Phase 1 | ✅ Complete | 3       | -             |
 | Phase 2 | ✅ Complete | 4       | -             |
-| Phase 3 | 🔜 Next     | 14      | 20-28         |
-| Phase 4 | ⏳ Planned  | 8       | 12-16         |
-| Phase 5 | ⏳ Planned  | 7       | 10-14         |
+| Phase 3 | ✅ Complete | 12      | -             |
+| Phase 4 | ⏳ Planned  | TBD     | TBD           |
+| Phase 5 | ⏳ Planned  | 8       | 12-16         |
+| Phase 6 | ⏳ Planned  | 7       | 10-14         |
 
-**Total Remaining:** ~29 sprints, ~42-58 coding sessions
+**Total Remaining:** ~15+ sprints, ~22-30+ coding sessions
 
-### Phase 3 Key Architecture Changes (Hybrid Approach)
+### Phase 3 Key Architecture Changes (CP Solver)
 
 - **Sprint 3.4a/3.4b**: TimeOffRequests (date-range) + approval workflow
-- **Sprint 3.5**: CandidateService (Hard Filter) - filter BEFORE AI
-- **Sprint 3.6**: OpenAI Client + AI Cost Tracking
-- **Sprint 3.7**: SchedulingAgentService (Soft Selector) - AI picks from valid only
-- **Sprint 3.8**: ScheduleValidatorService + Self-Correction Loop
+- **Sprint 3.5**: CandidateService (Hard Filter)
+- **Sprint 3.6 - 3.X**: Python CP-SAT Solver Integration (FastAPI + OR-Tools)
 - **Sprint 3.10**: Snapshotting for undo capability
 
-### Phase 4 Key Risk Mitigations
+### Phase 5 Key Risk Mitigations
 
 - **Confidence Thresholds**: High=auto, Medium=draft, Low=escalate
 - **Waterfall SMS**: Text one candidate at a time, not blast
@@ -1719,4 +926,4 @@ Each sprint is designed to be completable in **1-2 coding agent sessions** (appr
 
 ---
 
-_Last Updated: January 2026_
+_Last Updated: March 2026_

@@ -103,43 +103,48 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   // Query: Get or create schedule for current week
   const {
-    data: scheduleResponse,
+    data: schedule,
     isLoading: isScheduleLoading,
     error: scheduleError,
   } = useQuery({
     queryKey: scheduleKeys.week(weekStartKey),
-    queryFn: () => getOrCreateScheduleForWeek({ weekStartDate: currentWeek }),
+    queryFn: async () => {
+      const result = await getOrCreateScheduleForWeek({ weekStartDate: currentWeek });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
   });
 
-  // Extract schedule data
-  const schedule = scheduleResponse?.success ? scheduleResponse.data : null;
-
   // Query: Get shifts for the schedule (only if we have a schedule)
-  const { data: shiftsResponse, isLoading: isShiftsLoading } = useQuery({
+  const { data: shifts = [], isLoading: isShiftsLoading } = useQuery({
     queryKey: shiftKeys.bySchedule(schedule?.id ?? ""),
-    queryFn: () => listShiftsBySchedule({ scheduleId: schedule!.id }),
+    queryFn: async () => {
+      const result = await listShiftsBySchedule({ scheduleId: schedule!.id });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
     enabled: !!schedule?.id,
   });
 
-  // Extract shifts data
-  const shifts = shiftsResponse?.success ? shiftsResponse.data : [];
-
   // Query: Get all staff members
-  const { data: staffResponse, isLoading: isStaffLoading } = useQuery({
+  const { data: allStaff = [], isLoading: isStaffLoading } = useQuery({
     queryKey: staffKeys.list(),
-    queryFn: () => listStaff(),
+    queryFn: async () => {
+      const result = await listStaff();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
   });
-
-  // Extract staff data
-  const allStaff = staffResponse?.success ? staffResponse.data : [];
 
   // Query: Get kitchen config for time views
-  const { data: configResponse } = useQuery({
+  const { data: config = null } = useQuery({
     queryKey: kitchenConfigKeys.all,
-    queryFn: () => getKitchenConfig(),
+    queryFn: async () => {
+      const result = await getKitchenConfig();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
   });
-
-  const config = configResponse?.success ? configResponse.data : null;
 
   // Delete mutation with optimistic updates
   const deleteMutation = useMutation({
@@ -159,12 +164,9 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
       queryClient.setQueryData(
         shiftKeys.bySchedule(schedule.id),
-        (old: { success: boolean; data: ShiftDTO[] } | undefined) => {
-          if (!old?.success) return old;
-          return {
-            ...old,
-            data: old.data.filter((s) => s.id !== shiftId),
-          };
+        (old: ShiftDTO[] | undefined) => {
+          if (!old) return old;
+          return old.filter((s) => s.id !== shiftId);
         }
       );
 
@@ -308,8 +310,22 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   // Error state
   if (scheduleError) {
     return (
-      <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
-        <p>Failed to load schedule. Please try again.</p>
+      <div className="space-y-4">
+        {/* Still render the header so the user can navigate weeks */}
+        <ScheduleHeader
+          weekStart={currentWeek}
+          onPrevWeek={handlePrevWeek}
+          onNextWeek={handleNextWeek}
+          isLoading={false}
+        />
+        <div className="rounded-lg border border-destructive bg-destructive/10 p-4 text-destructive">
+          <p className="font-medium">Failed to load schedule</p>
+          <p className="mt-1 text-sm">
+            {scheduleError instanceof Error
+              ? scheduleError.message
+              : "An unexpected error occurred. Please try again."}
+          </p>
+        </div>
       </div>
     );
   }

@@ -37,10 +37,9 @@ export const skillSchema = z.object({
     .max(5, "Proficiency cannot exceed 5"),
 });
 
-// Main staff schema - used for creating/updating staff
-// Note: skills and isActive are required to ensure input/output types match
-// for react-hook-form compatibility. Use defaultStaffValues for form defaults.
-export const staffSchema = z.object({
+// Base staff object schema (without refinements)
+// This is used for .partial() and .omit() which don't work on refined schemas
+const staffBaseSchema = z.object({
   name: z
     .string()
     .min(2, "Name must be at least 2 characters")
@@ -52,10 +51,47 @@ export const staffSchema = z.object({
     .min(1, "At least one role is required"),
   skills: z.array(skillSchema),
   isActive: z.boolean(),
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek: z
+    .number()
+    .int()
+    .min(0, "Maximum hours cannot be negative")
+    .max(168, "Maximum hours cannot exceed 168 (24*7)")
+    .optional()
+    .default(40),
+  minHoursPerWeek: z
+    .number()
+    .int()
+    .min(0, "Minimum hours cannot be negative")
+    .optional()
+    .default(0),
+  preferredStations: z.array(z.string()).optional().default([]),
+  certifications: z.array(z.string()).optional().default([]),
+  hourlyRate: z
+    .number()
+    .min(0, "Hourly rate cannot be negative")
+    .optional()
+    .default(0),
 });
 
-// Partial staff schema for updates
-export const staffUpdateSchema = staffSchema.partial();
+// Main staff schema with cross-field validation
+// Note: skills and isActive are required to ensure input/output types match
+// for react-hook-form compatibility. Use defaultStaffValues for form defaults.
+export const staffSchema = staffBaseSchema.refine(
+  (data) => {
+    const max = data.maxHoursPerWeek ?? 40;
+    const min = data.minHoursPerWeek ?? 0;
+    return max >= min;
+  },
+  {
+    message:
+      "Maximum hours per week must be greater than or equal to minimum hours",
+    path: ["maxHoursPerWeek"],
+  }
+);
+
+// Partial staff schema for updates (uses base schema without refinements)
+export const staffUpdateSchema = staffBaseSchema.partial();
 
 // CSV row schema - more flexible for import (skills parsed from string)
 export const csvRowSchema = z.object({
@@ -70,7 +106,8 @@ export const csvRowSchema = z.object({
 });
 
 // Schema for bulk CSV import - array of staff data (already parsed)
-export const importStaffSchema = z.array(staffSchema.omit({ isActive: true }));
+// Uses base schema without refinements since .omit() doesn't work on refined schemas
+export const importStaffSchema = z.array(staffBaseSchema.omit({ isActive: true }));
 
 // Schema for paginated staff list params
 export const staffListParamsSchema = z.object({
@@ -96,6 +133,12 @@ export interface StaffFormValues {
   roles: string[];
   skills: Array<{ station: string; proficiency: number }>;
   isActive: boolean;
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek?: number;
+  minHoursPerWeek?: number;
+  preferredStations?: string[];
+  certifications?: string[];
+  hourlyRate?: number;
 }
 
 // Helper function to parse CSV row into StaffInput format
@@ -127,6 +170,12 @@ export function parseCsvRowToStaff(row: CsvRowInput): Omit<StaffInput, "isActive
     phone: row.phone,
     roles,
     skills,
+    // Phase 3: Use defaults for CSV imports
+    maxHoursPerWeek: 40,
+    minHoursPerWeek: 0,
+    preferredStations: [],
+    certifications: [],
+    hourlyRate: 0,
   };
 }
 
@@ -138,4 +187,10 @@ export const defaultStaffValues: StaffInput = {
   roles: [],
   skills: [],
   isActive: true,
+  // Phase 3: Staff constraints for AI scheduling
+  maxHoursPerWeek: 40,
+  minHoursPerWeek: 0,
+  preferredStations: [],
+  certifications: [],
+  hourlyRate: 0,
 };

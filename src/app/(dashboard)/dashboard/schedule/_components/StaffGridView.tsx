@@ -54,8 +54,10 @@ export function StaffGridView({
   onCreateShift,
   onEditShift,
 }: StaffGridViewProps) {
-  // Filter to active staff only
-  const activeStaff = staff.filter((s) => s.isActive);
+  // Filter to active staff only (guard against non-array during hydration)
+  const activeStaff = Array.isArray(staff)
+    ? staff.filter((s) => s.isActive)
+    : [];
 
   if (activeStaff.length === 0) {
     return (

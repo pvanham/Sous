@@ -74,7 +74,7 @@ const shiftFormSchema = z
     {
       message: "End time must be after start time",
       path: ["endTime"],
-    }
+    },
   );
 
 type ShiftFormValues = z.infer<typeof shiftFormSchema>;
@@ -122,9 +122,9 @@ interface ShiftFormDialogProps {
  */
 function getDefaultStartTime(
   config: KitchenConfigDTO | null,
-  date: Date
+  date: Date,
 ): string {
-  if (!config) return "09:00";
+  if (!config?.operatingHours) return "09:00";
 
   const dayNames = [
     "sunday",
@@ -171,35 +171,42 @@ export function ShiftFormDialog({
   const queryClient = useQueryClient();
 
   // Fetch kitchen config for stations dropdown and default times
-  const { data: configResponse, isLoading: isConfigLoading } = useQuery({
+  const { data: config = null, isLoading: isConfigLoading } = useQuery({
     queryKey: kitchenConfigKeys.all,
-    queryFn: () => getKitchenConfig(),
+    queryFn: async () => {
+      const result = await getKitchenConfig();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
     enabled: open,
   });
-
-  const config = configResponse?.success ? configResponse.data : null;
 
   // Fetch staff list to display staff name
-  const { data: staffResponse, isLoading: isStaffLoading } = useQuery({
+  const { data: allStaff = [], isLoading: isStaffLoading } = useQuery({
     queryKey: staffKeys.list(),
-    queryFn: () => listStaff(),
+    queryFn: async () => {
+      const result = await listStaff();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
     enabled: open,
   });
 
-  const allStaff = staffResponse?.success ? staffResponse.data : [];
+  // Ensure allStaff is always an array (guards against undefined/null data)
+  const staffList = Array.isArray(allStaff) ? allStaff : [];
 
   // Get the staff member for display
   const currentStaffId = mode === "edit" ? shift?.staffId : staffId;
   const currentStaffMember = useMemo(
-    () => allStaff.find((s) => s.id === currentStaffId),
-    [allStaff, currentStaffId]
+    () => staffList.find((s) => s.id === currentStaffId),
+    [staffList, currentStaffId],
   );
 
   // Get current date for display
   const currentDate = mode === "edit" && shift ? new Date(shift.start) : date;
 
   // Filter to active staff only
-  const activeStaff = allStaff.filter((s) => s.isActive);
+  const activeStaff = staffList.filter((s) => s.isActive);
 
   // Calculate default values
   const defaultValues = useMemo((): ShiftFormValues => {
@@ -215,9 +222,10 @@ export function ShiftFormDialog({
     }
 
     // Create mode defaults - use prefilled values if available
-    const defaultStart = prefilledStartTime || getDefaultStartTime(config, date || new Date());
+    const defaultStart =
+      prefilledStartTime || getDefaultStartTime(config, date || new Date());
     const defaultEnd = getDefaultEndTime(defaultStart);
-    const defaultStation = prefilledStation || config?.stations[0] || "";
+    const defaultStation = prefilledStation || config?.stations?.[0] || "";
 
     return {
       staffId: staffId || "",
@@ -227,7 +235,15 @@ export function ShiftFormDialog({
       station: defaultStation,
       notes: "",
     };
-  }, [mode, shift, staffId, date, config, prefilledStartTime, prefilledStation]);
+  }, [
+    mode,
+    shift,
+    staffId,
+    date,
+    config,
+    prefilledStartTime,
+    prefilledStation,
+  ]);
 
   // Initialize form
   const form = useForm<ShiftFormValues>({
@@ -265,14 +281,14 @@ export function ShiftFormDialog({
 
       // Snapshot previous value
       const previousShifts = queryClient.getQueryData(
-        shiftKeys.bySchedule(scheduleId)
+        shiftKeys.bySchedule(scheduleId),
       );
 
       // Optimistically add new shift
       queryClient.setQueryData(
         shiftKeys.bySchedule(scheduleId),
-        (old: { success: boolean; data: ShiftDTO[] } | undefined) => {
-          if (!old?.success) return old;
+        (old: ShiftDTO[] | undefined) => {
+          if (!old) return old;
 
           const start = combineDateTime(newShift.date, newShift.startTime);
           const end = combineDateTime(newShift.date, newShift.endTime);
@@ -291,11 +307,8 @@ export function ShiftFormDialog({
             updatedAt: new Date(),
           };
 
-          return {
-            ...old,
-            data: [...old.data, tempShift],
-          };
-        }
+          return [...old, tempShift];
+        },
       );
 
       return { previousShifts };
@@ -305,7 +318,7 @@ export function ShiftFormDialog({
       if (context?.previousShifts) {
         queryClient.setQueryData(
           shiftKeys.bySchedule(scheduleId),
-          context.previousShifts
+          context.previousShifts,
         );
       }
     },
@@ -350,37 +363,37 @@ export function ShiftFormDialog({
 
       // Snapshot previous value
       const previousShifts = queryClient.getQueryData(
-        shiftKeys.bySchedule(scheduleId)
+        shiftKeys.bySchedule(scheduleId),
       );
 
       // Optimistically update shift
       queryClient.setQueryData(
         shiftKeys.bySchedule(scheduleId),
-        (old: { success: boolean; data: ShiftDTO[] } | undefined) => {
-          if (!old?.success) return old;
+        (old: ShiftDTO[] | undefined) => {
+          if (!old) return old;
 
           const start = combineDateTime(
             updatedValues.date,
-            updatedValues.startTime
+            updatedValues.startTime,
           );
-          const end = combineDateTime(updatedValues.date, updatedValues.endTime);
+          const end = combineDateTime(
+            updatedValues.date,
+            updatedValues.endTime,
+          );
 
-          return {
-            ...old,
-            data: old.data.map((s) =>
-              s.id === shift.id
-                ? {
-                    ...s,
-                    start,
-                    end,
-                    station: updatedValues.station,
-                    notes: updatedValues.notes || "",
-                    updatedAt: new Date(),
-                  }
-                : s
-            ),
-          };
-        }
+          return old.map((s) =>
+            s.id === shift.id
+              ? {
+                  ...s,
+                  start,
+                  end,
+                  station: updatedValues.station,
+                  notes: updatedValues.notes || "",
+                  updatedAt: new Date(),
+                }
+              : s,
+          );
+        },
       );
 
       return { previousShifts };
@@ -390,7 +403,7 @@ export function ShiftFormDialog({
       if (context?.previousShifts) {
         queryClient.setQueryData(
           shiftKeys.bySchedule(scheduleId),
-          context.previousShifts
+          context.previousShifts,
         );
       }
     },

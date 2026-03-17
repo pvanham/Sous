@@ -2,6 +2,7 @@ import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { clerkClient } from "@clerk/nextjs/server";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
 /**
@@ -40,17 +41,25 @@ export async function getLocationContext(
     // User has a membership - resolve their location
     let locationId = membership.locationId;
 
-    // If membership is org-wide (locationId is null), get the default location
+    // If membership is org-wide (locationId is null), get the active location from Clerk
     if (!locationId) {
-      const defaultLocation = await LocationService.getDefaultByOrgId(
-        membership.orgId
-      );
-      if (!defaultLocation) {
-        throw new Error(
-          "Organization has no locations. Please contact support."
+      const client = await clerkClient();
+      const user = await client.users.getUser(clerkUserId);
+      const activeLocationId = user.publicMetadata?.activeLocationId as string | undefined;
+
+      if (activeLocationId) {
+        locationId = activeLocationId;
+      } else {
+        const defaultLocation = await LocationService.getDefaultByOrgId(
+          membership.orgId
         );
+        if (!defaultLocation) {
+          throw new Error(
+            "Organization has no locations. Please contact support."
+          );
+        }
+        locationId = defaultLocation.id;
       }
-      locationId = defaultLocation.id;
     }
 
     return {
@@ -60,73 +69,10 @@ export async function getLocationContext(
     };
   }
 
-  // 2. No membership - check if user is an organization owner
-  const ownedOrg = await OrganizationService.getByOwnerId(clerkUserId);
-
-  if (ownedOrg) {
-    // User owns an org but has no membership (shouldn't happen, but handle gracefully)
-    // Get the default location and create a membership
-    const defaultLocation = await LocationService.getDefaultByOrgId(ownedOrg.id);
-
-    if (!defaultLocation) {
-      // Create a default location for the org
-      const newLocation = await LocationService.create(ownedOrg.id, {
-        name: "Main Kitchen",
-        timezone: "America/New_York",
-      });
-
-      // Create owner membership
-      await OrganizationMemberService.create({
-        orgId: ownedOrg.id,
-        locationId: null, // Org-wide access
-        clerkUserId,
-        role: "owner",
-      });
-
-      return {
-        orgId: ownedOrg.id,
-        locationId: newLocation.id,
-        role: "owner",
-      };
-    }
-
-    // Create owner membership
-    await OrganizationMemberService.create({
-      orgId: ownedOrg.id,
-      locationId: null, // Org-wide access
-      clerkUserId,
-      role: "owner",
-    });
-
-    return {
-      orgId: ownedOrg.id,
-      locationId: defaultLocation.id,
-      role: "owner",
-    };
-  }
-
-  // 3. New user - auto-create organization, location, and membership (MVP bootstrap)
-  const newOrg = await OrganizationService.create(clerkUserId, {
-    name: "My Restaurant",
-  });
-
-  const newLocation = await LocationService.create(newOrg.id, {
-    name: "Main Kitchen",
-    timezone: "America/New_York",
-  });
-
-  await OrganizationMemberService.create({
-    orgId: newOrg.id,
-    locationId: null, // Org-wide access for owner
-    clerkUserId,
-    role: "owner",
-  });
-
-  return {
-    orgId: newOrg.id,
-    locationId: newLocation.id,
-    role: "owner",
-  };
+  // 2. No membership found - the webhook might still be processing, or user is not invited.
+  throw new Error(
+    "Your account is being provisioned or you do not have access to any kitchens. Please wait a moment and refresh."
+  );
 }
 
 /**

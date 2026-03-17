@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Users, Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { AlertTriangle, Users, Clock, ChevronDown, ChevronUp, ClipboardList, UserCircle } from "lucide-react";
 
 import {
   AlertDialog,
@@ -52,7 +52,11 @@ export function ConfigChangeWarningDialog({
 
   if (!impact) return null;
 
-  const hasStationImpact = impact.removedStations.length > 0 && impact.stationImpact.affectedStaffCount > 0;
+  const hasStationImpact =
+    impact.removedStations.length > 0 &&
+    (impact.stationImpact.affectedStaffCount > 0 ||
+      impact.stationImpact.laborRequirementCount > 0 ||
+      impact.stationImpact.preferredStationStaffCount > 0);
   const hasRoleImpact = impact.removedRoles.length > 0 && impact.roleImpact.affectedStaffCount > 0;
   const requiresReplacement = impact.requiresRoleReplacement;
 
@@ -111,15 +115,19 @@ export function ConfigChangeWarningDialog({
                       </span>
                     </div>
                     <Badge variant="secondary">
-                      {impact.stationImpact.affectedStaffCount} staff affected
+                      {impact.stationImpact.affectedStaffCount > 0
+                        ? `${impact.stationImpact.affectedStaffCount} staff affected`
+                        : "Data will be removed"}
                     </Badge>
                   </div>
 
-                  <p className="text-sm">
-                    <strong>{impact.stationImpact.affectedStaffCount}</strong> staff member(s) have
-                    skills for <strong>{impact.removedStations.join(", ")}</strong> that will be
-                    removed.
-                  </p>
+                  {impact.stationImpact.affectedStaffCount > 0 && (
+                    <p className="text-sm">
+                      <strong>{impact.stationImpact.affectedStaffCount}</strong> staff member(s) have
+                      skills for <strong>{impact.removedStations.join(", ")}</strong> that will be
+                      removed.
+                    </p>
+                  )}
 
                   {/* Expandable staff list */}
                   {impact.stationImpact.affectedStaff.length > 0 && (
@@ -162,6 +170,28 @@ export function ConfigChangeWarningDialog({
                       <span>
                         {impact.stationImpact.historicalShiftCount} historical shift(s) reference
                         this station (data will be preserved)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Labor requirements notice */}
+                  {impact.stationImpact.laborRequirementCount > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 p-2 rounded">
+                      <ClipboardList className="h-4 w-4" />
+                      <span>
+                        {impact.stationImpact.laborRequirementCount} labor requirement(s) for this
+                        station will be permanently deleted.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Preferred stations notice */}
+                  {impact.stationImpact.preferredStationStaffCount > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 p-2 rounded">
+                      <UserCircle className="h-4 w-4" />
+                      <span>
+                        {impact.stationImpact.preferredStationStaffCount} staff member(s) have this
+                        station in their preferences. It will be removed.
                       </span>
                     </div>
                   )}
