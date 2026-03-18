@@ -3,7 +3,6 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import Conversation from "@/server/models/Conversation";
-import { buildOCCFilter, getStaleReason } from "@/lib/ai/orchestrator/occ";
 import { executeProposal } from "@/lib/ai/orchestrator/execute-proposal";
 import type { StoredProposal } from "@/types/conversation";
 
@@ -106,29 +105,17 @@ export async function POST(
   }
 
   // ----- APPROVE PATH -----
-  let occFilter;
-  try {
-    occFilter = buildOCCFilter(proposal);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json(
-      { success: false, proposalId, error: "stale_data", message },
-      { status: 409 }
-    );
-  }
-
   const orgId = String(conversation.orgId);
   const locationId = String(conversation.locationId);
 
   const result = await executeProposal({
     proposal,
-    occFilter,
     orgId,
     locationId,
     clerkUserId: userId,
   });
 
-  if (result.stale) {
+  if (result.errorCode === "stale_data") {
     await Conversation.updateOne(
       { _id: conversation._id, "messages.proposal.proposalId": proposalId },
       {
@@ -145,7 +132,7 @@ export async function POST(
         success: false,
         proposalId,
         error: "stale_data",
-        message: result.error ?? getStaleReason(proposal),
+        message: result.error ?? "The underlying data has changed. Please try again.",
       },
       { status: 409 }
     );
@@ -156,7 +143,7 @@ export async function POST(
       {
         success: false,
         proposalId,
-        error: "execution_failed",
+        error: result.errorCode ?? "execution_failed",
         message: result.error ?? "Failed to execute the approved action. The proposal has not been applied.",
       },
       { status: 500 }

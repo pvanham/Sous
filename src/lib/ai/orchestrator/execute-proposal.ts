@@ -1,11 +1,15 @@
 import type { StoredProposal } from "@/types/conversation";
-import type { OCCFilterResult } from "./occ";
-import { getStaleReason } from "./occ";
+import { buildOCCFilter, getStaleReason } from "./occ";
 import { ShiftService } from "@/server/services/shift.service";
+
+export type ProposalErrorCode =
+  | "stale_data"
+  | "malformed_payload"
+  | "unknown_tool"
+  | "execution_failed";
 
 export interface ExecuteProposalInput {
   proposal: StoredProposal;
-  occFilter: OCCFilterResult | OCCFilterResult[];
   orgId: string;
   locationId: string;
   clerkUserId: string;
@@ -16,23 +20,23 @@ export interface ExecuteProposalResult {
   executionSummary: string;
   data?: unknown;
   error?: string;
-  /** True when the atomic OCC filter returned null (data modified since proposal). */
-  stale?: boolean;
+  errorCode?: ProposalErrorCode;
 }
 
 /**
- * Dispatch an approved proposal to the correct service layer mutation.
- * The OCC filter is already built by the caller — this function uses it
- * to perform the atomic findOneAndUpdate via the appropriate service.
+ * Maps a validated StoredProposal to the correct service-layer mutation.
+ * Internally builds the atomic OCC filter and executes the mutation
+ * in a single findOneAndUpdate call. The caller only needs to provide
+ * the proposal and tenant-scoping fields.
  */
 export async function executeProposal(
   input: ExecuteProposalInput
 ): Promise<ExecuteProposalResult> {
-  const { proposal, occFilter, orgId, locationId } = input;
+  const { proposal, orgId, locationId } = input;
 
   switch (proposal.toolName) {
     case "propose_shift_swap":
-      return executeShiftSwap(proposal, occFilter, orgId, locationId);
+      return executeShiftSwap(proposal, orgId, locationId);
     case "propose_schedule_generation":
       return executeScheduleGeneration(proposal);
     default:
@@ -40,17 +44,27 @@ export async function executeProposal(
         success: false,
         executionSummary: "",
         error: `Unknown proposal type: '${proposal.toolName}'. This proposal cannot be executed.`,
+        errorCode: "unknown_tool",
       };
   }
 }
 
 async function executeShiftSwap(
   proposal: StoredProposal,
-  occFilter: OCCFilterResult | OCCFilterResult[],
   orgId: string,
   locationId: string,
 ): Promise<ExecuteProposalResult> {
   const { payload } = proposal;
+
+  const shiftId = payload.shiftId;
+  if (typeof shiftId !== "string") {
+    return {
+      success: false,
+      executionSummary: "",
+      error: "Malformed proposal payload for 'propose_shift_swap': missing required field 'shiftId'.",
+      errorCode: "malformed_payload",
+    };
+  }
 
   const targetStaffId = payload.targetStaffId;
   if (typeof targetStaffId !== "string") {
@@ -58,6 +72,20 @@ async function executeShiftSwap(
       success: false,
       executionSummary: "",
       error: "Malformed proposal payload for 'propose_shift_swap': missing required field 'targetStaffId'.",
+      errorCode: "malformed_payload",
+    };
+  }
+
+  let occFilter;
+  try {
+    occFilter = buildOCCFilter(proposal);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      executionSummary: "",
+      error: message,
+      errorCode: "stale_data",
     };
   }
 
@@ -66,6 +94,7 @@ async function executeShiftSwap(
       success: false,
       executionSummary: "",
       error: "Malformed proposal payload for 'propose_shift_swap': expected single OCC filter.",
+      errorCode: "malformed_payload",
     };
   }
 
@@ -82,7 +111,7 @@ async function executeShiftSwap(
         success: false,
         executionSummary: "",
         error: getStaleReason(proposal),
-        stale: true,
+        errorCode: "stale_data",
       };
     }
 
@@ -100,6 +129,7 @@ async function executeShiftSwap(
       success: false,
       executionSummary: "",
       error: `Shift swap failed: ${message}`,
+      errorCode: "execution_failed",
     };
   }
 }
@@ -108,10 +138,18 @@ async function executeScheduleGeneration(
   proposal: StoredProposal,
 ): Promise<ExecuteProposalResult> {
   const weekStartDate = proposal.payload.weekStartDate;
+  if (typeof weekStartDate !== "string") {
+    return {
+      success: false,
+      executionSummary: "",
+      error: "Malformed proposal payload for 'propose_schedule_generation': missing required field 'weekStartDate'.",
+      errorCode: "malformed_payload",
+    };
+  }
 
   return {
     success: true,
-    executionSummary: `Schedule generation queued for week of ${typeof weekStartDate === "string" ? weekStartDate : "unknown"}. Phase 4 will handle async execution.`,
+    executionSummary: `Schedule generation queued for week of ${weekStartDate}. Phase 4 will handle async execution.`,
     data: { queued: true, weekStartDate },
   };
 }

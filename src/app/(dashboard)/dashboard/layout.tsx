@@ -3,6 +3,7 @@ import { Home, Calendar, Users, ClipboardList, CalendarOff, Settings } from "luc
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
+import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { listLocations } from "@/server/actions/location.actions";
@@ -60,6 +61,7 @@ export default async function DashboardLayout({
               activeLocationId={ctx.locationId}
               role={ctx.role}
             />
+            <AIAssistantPanel locationId={ctx.locationId} />
             <ThemeToggle />
             <CustomUserButton />
           </div>

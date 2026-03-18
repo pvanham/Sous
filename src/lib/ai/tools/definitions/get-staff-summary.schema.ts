@@ -11,6 +11,8 @@ export interface StaffSummary {
   totalStaff: number;
   activeStaff: number;
   inactiveStaff: number;
+  /** Lightweight lookup list for resolving names to IDs in follow-up tool calls */
+  staffList: { id: string; name: string }[];
   /** Distribution of staff across roles */
   roleDistribution: { role: string; count: number }[];
   /** Distribution of staff skill proficiency by station */

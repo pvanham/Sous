@@ -56,6 +56,7 @@ export async function executeGetStaffSummary(
     totalStaff: filtered.length,
     activeStaff: activeStaff.length,
     inactiveStaff: inactiveStaff.length,
+    staffList: filtered.map((member) => ({ id: member.id, name: member.name })),
     roleDistribution,
     stationCoverage,
     hoursSummary: {

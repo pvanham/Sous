@@ -7,6 +7,7 @@ import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { Types } from "mongoose";
 
 const DEFAULT_OVERTIME_THRESHOLD_HOURS = 40;
 
@@ -14,13 +15,35 @@ export async function executeGetScheduleHealth(
   params: GetScheduleHealthParams,
   context: ToolExecutionContext
 ): Promise<ScheduleHealthSummary | null> {
-  const schedule = await ScheduleService.getById(
-    context.orgId,
-    context.locationId,
-    params.scheduleId
-  );
+  const hasValidId =
+    params.scheduleId && Types.ObjectId.isValid(params.scheduleId);
 
-  if (!schedule) return null;
+  let schedule = hasValidId
+    ? await ScheduleService.getById(
+        context.orgId,
+        context.locationId,
+        params.scheduleId!
+      )
+    : null;
+
+  if (!schedule) {
+    schedule = await ScheduleService.getMostRecent(
+      context.orgId,
+      context.locationId
+    );
+  }
+
+  if (!schedule) {
+    console.log(
+      "[get_schedule_health] No schedule found for context",
+      {
+        orgId: context.orgId,
+        locationId: context.locationId,
+        requestedScheduleId: params.scheduleId ?? null,
+      }
+    );
+    return null;
+  }
 
   const [shifts, staff, config] = await Promise.all([
     ShiftService.getBySchedule(schedule.id),
@@ -86,6 +109,12 @@ export async function executeGetScheduleHealth(
   const unscheduledStaffCount = activeStaff.filter(
     (s) => !scheduledStaffIds.has(s.id)
   ).length;
+
+  console.log(`[get_schedule_health] Returning data for schedule ${schedule.id}`, {
+    totalShifts,
+    totalStaffScheduled,
+    overtimeRiskCount: overtimeRisks.length,
+  });
 
   return {
     scheduleId: schedule.id,

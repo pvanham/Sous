@@ -47,6 +47,15 @@ export interface ConversationDTO {
   updatedAt: Date;
 }
 
+export interface ConversationListItem {
+  conversationId: string;
+  preview: string;
+  messageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
+}
+
 export function toConversationDTO(
   doc: IConversation & { _id: unknown }
 ): ConversationDTO {

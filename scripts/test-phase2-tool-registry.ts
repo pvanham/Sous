@@ -54,6 +54,7 @@ const mockContext: ToolExecutionContext = {
   locationId: "loc_test",
   clerkUserId: "user_test",
   role: "owner",
+  timezone: "America/New_York",
 };
 
 // ─── 1. Sanitization Utilities ───────────────────────────────────────────────

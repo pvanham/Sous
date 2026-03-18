@@ -13,12 +13,14 @@ import { StaffService } from "@/server/services/staff.service";
 const DEFAULT_OVERTIME_THRESHOLD_HOURS = 40;
 const DEFAULT_OVERTIME_POLICY = "avoid";
 
-const weekFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "long",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
+function createWeekFormatter(tz: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: tz,
+  });
+}
 
 function parseISODate(value: string): Date | null {
   const date = new Date(value);
@@ -82,7 +84,8 @@ export async function executeProposeScheduleGeneration(
   const allowClopening =
     config?.scheduleGenerationSettings.allowClopening ?? false;
 
-  const weekLabel = weekFormatter.format(weekStart);
+  const tz = context.timezone || "UTC";
+  const weekLabel = createWeekFormatter(tz).format(weekStart);
   const description = `Generate a new schedule for the week of ${weekLabel} with ${activeStaff.length} staff members`;
 
   const payload: ScheduleGenerationPayload = {

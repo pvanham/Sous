@@ -223,6 +223,35 @@ export const ScheduleService = {
   },
 
   /**
+   * Get the most recent schedule for a location.
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @returns Most recent ScheduleDTO by weekStartDate, or null if none exist
+   */
+  async getMostRecent(
+    orgId: string,
+    locationId: string,
+  ): Promise<ScheduleDTO | null> {
+    const doc = await Schedule.findOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .sort({ weekStartDate: -1 })
+      .lean();
+
+    if (!doc) {
+      const monday = new Date();
+      const dayIndex = monday.getDay(); // 0=Sun ... 6=Sat
+      const daysSinceMonday = (dayIndex + 6) % 7;
+      monday.setDate(monday.getDate() - daysSinceMonday);
+      monday.setHours(0, 0, 0, 0);
+
+      return this.getOrCreateForWeek(orgId, locationId, monday);
+    }
+    return toScheduleDTO(doc);
+  },
+
+  /**
    * Get a schedule by ID.
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)

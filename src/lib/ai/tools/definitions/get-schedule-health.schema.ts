@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const getScheduleHealthParamsSchema = z.object({
-  scheduleId: z.string().min(1, "scheduleId is required"),
+  scheduleId: z.string().min(1).optional(),
 });
 
 export type GetScheduleHealthParams = z.infer<

@@ -19,7 +19,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "get_schedule_health",
     description:
-      "Analyze a schedule's health: total shifts, hours, overtime risks, manager coverage gaps, and unscheduled staff.",
+      "Analyze a schedule's health: total shifts, hours, overtime risks, manager coverage gaps, and unscheduled staff. If scheduleId is omitted, uses the most recent schedule.",
     requiredPermission: "schedule:read",
     parameters: getScheduleHealthParamsSchema,
     execute: executeGetScheduleHealth,
@@ -27,7 +27,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "get_shift_roster",
     description:
-      "Get a paginated list of shifts for a schedule, optionally filtered by staff member or day of week.",
+      "Get a paginated list of shifts for a schedule. Omit staffId to get ALL staff shifts; provide a specific staffId to filter to one person. Omit dayOfWeek to get all days; provide 0-6 (Mon-Sun) to filter to one day. If scheduleId is omitted, uses the most recent schedule. Never pass literal strings like 'all' for staffId — omit the field instead.",
     requiredPermission: "shift:read",
     parameters: getShiftRosterParamsSchema,
     execute: executeGetShiftRoster,
@@ -51,7 +51,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "propose_shift_swap",
     description:
-      "Propose reassigning a shift to a different staff member. Returns a proposal for user confirmation.",
+      "Propose reassigning a shift to a different staff member. Returns a proposal for user confirmation. Provide targetStaffName for name-based lookup or targetStaffId if you already have the ID. If both are given, targetStaffId takes precedence.",
     requiredPermission: "shift:swap",
     parameters: proposeShiftSwapParamsSchema,
     execute: executeProposeShiftSwap,

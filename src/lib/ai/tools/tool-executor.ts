@@ -37,6 +37,8 @@ export async function executeTool(
       })
       .join("; ");
 
+    console.log(`[ToolExecutor] '${toolName}' VALIDATION_FAILED: ${issues}`);
+
     return {
       success: false,
       toolName,
@@ -55,9 +57,12 @@ export async function executeTool(
   }
 
   try {
+    console.log(`[ToolExecutor] Calling '${toolName}'`, JSON.stringify(parseResult.data));
+
     const result = await tool.execute(parseResult.data, context);
 
     if (result === null) {
+      console.log(`[ToolExecutor] '${toolName}' returned null (NOT_FOUND)`);
       return {
         success: false,
         toolName,
@@ -66,12 +71,14 @@ export async function executeTool(
       };
     }
 
+    console.log(`[ToolExecutor] '${toolName}' succeeded`);
     return {
       success: true,
       toolName,
       data: result,
     };
   } catch (err) {
+    console.error(`[ToolExecutor] '${toolName}' threw:`, err);
     const message = err instanceof Error ? err.message : String(err);
     return {
       success: false,

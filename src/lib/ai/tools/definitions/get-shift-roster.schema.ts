@@ -4,7 +4,7 @@ import type { PaginationMeta } from "../pagination";
 
 export const getShiftRosterParamsSchema = z
   .object({
-    scheduleId: z.string().min(1, "scheduleId is required"),
+    scheduleId: z.string().min(1).optional(),
     staffId: z.string().optional(),
     dayOfWeek: z.number().int().min(0).max(6).optional(),
   })
