@@ -29,7 +29,8 @@ function isManager(staff: StaffDTO): boolean {
       role.toLowerCase().includes("manager") ||
       role.toLowerCase() === "gm" ||
       role.toLowerCase() === "km" ||
-      role.toLowerCase() === "agm",
+      role.toLowerCase() === "agm" ||
+      role.toLowerCase() === "shift leader",
   );
 }
 

@@ -305,6 +305,8 @@ export interface GeneratedSchedule {
   metadata: GenerationMetadata;
   /** Validation warnings aggregated across all days (Sprint 3.8) */
   warnings: ValidationWarning[];
+  /** Manager coverage gaps across the returned days (Optional for backward compatibility) */
+  managerWarnings?: import("@/server/services/schedule.service").ManagerCoverageGap[];
 }
 
 // ────────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import type {
 } from "@/types/ai-scheduling";
 import type { KitchenConfigDTO, IWeeklyOperatingHours } from "@/types/kitchen-config";
 import type { LaborRequirementDTO } from "@/types/labor-requirement";
+import type { ShiftDTO } from "@/types/shift";
 
 // ────────────────────────────────────────────────────────────
 // Day key lookup for operating hours
@@ -303,6 +304,36 @@ export async function generateBaseSchedule(
 
     const generatedSchedule =
       await SchedulingAgentService.generateBaseWeekSchedule(context);
+
+    // Run manager coverage validation
+    const pseudoShifts: ShiftDTO[] = [];
+    for (const day of generatedSchedule.days) {
+      const date = parseDateString(day.date);
+      for (const assignment of day.assignments) {
+        pseudoShifts.push({
+          id: `pseudo-${assignment.staffId}-${assignment.startTime}`,
+          orgId: ctx.orgId,
+          locationId: ctx.locationId,
+          scheduleId: schedule.id,
+          staffId: assignment.staffId,
+          start: combineDateTime(date, assignment.startTime),
+          end: combineDateTime(date, assignment.endTime),
+          station: assignment.station,
+          notes: "",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    const managerWarnings = ScheduleService.validateManagerCoverage(
+      new Date(schedule.weekStartDate),
+      pseudoShifts,
+      context.staff,
+      context.config,
+    );
+
+    generatedSchedule.managerWarnings = managerWarnings;
 
     return { success: true, data: generatedSchedule };
   } catch (error) {

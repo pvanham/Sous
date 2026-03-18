@@ -166,6 +166,11 @@ export function GeneratedShiftPreview({
         <WarningsSection warningsByType={warningsByType} />
       )}
 
+      {/* Manager Warnings section */}
+      {generatedSchedule.managerWarnings && generatedSchedule.managerWarnings.length > 0 && (
+        <ManagerWarningsSection managerWarnings={generatedSchedule.managerWarnings} />
+      )}
+
       {/* Day-by-day schedule */}
       <div className="space-y-2">
         {days.map((day) => (
@@ -483,4 +488,39 @@ function calculateTotalHours(days: GeneratedDaySchedule[]): number {
   }
 
   return totalMinutes / 60;
+}
+
+// ────────────────────────────────────────────────────────────
+// Manager Warnings Section
+// ────────────────────────────────────────────────────────────
+
+function ManagerWarningsSection({
+  managerWarnings,
+}: {
+  managerWarnings: import("@/server/services/schedule.service").ManagerCoverageGap[];
+}) {
+  return (
+    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+      <h4 className="text-sm font-medium text-amber-700 dark:text-amber-300 flex items-center gap-2">
+        <AlertTriangle className="h-4 w-4" />
+        Manager Coverage Gaps ({managerWarnings.length} days)
+      </h4>
+      <p className="text-xs text-amber-600 dark:text-amber-400 pl-5">
+        The following time periods have no manager coverage during store hours:
+      </p>
+      <div className="pl-5 space-y-1.5 mt-1">
+        {managerWarnings.map((warning, index) => (
+          <div key={index} className="text-xs text-amber-600 dark:text-amber-400">
+            <span className="font-medium mr-1">{warning.day}:</span>
+            {warning.gaps
+              .map(
+                (gap) =>
+                  `${formatTimeString(gap.start)} - ${formatTimeString(gap.end)}`
+              )
+              .join(", ")}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }

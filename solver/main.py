@@ -31,6 +31,7 @@ SCALE = 60
 # The coverage weights remain static hard-constraints disguised as soft constraints.
 W_MIN_SHORTFALL = 100000000  # 100,000,000
 W_PREF_SHORTFALL = 10000000  # 10,000,000
+W_MGR_SHORTFALL = 100000000  # 100,000,000
 W_MIN_HOURS_SHORTFALL = 5 * SCALE  # 300 -- penalise staff below their weekly minimum
 
 
@@ -171,6 +172,8 @@ class _FlatSlot:
         "station",
         "start_time",
         "end_time",
+        "start_minutes",
+        "end_minutes",
         "min_staff",
         "preferred_staff",
         "duration_minutes",
@@ -186,6 +189,8 @@ class _FlatSlot:
         station: str,
         start_time: str,
         end_time: str,
+        start_minutes: int,
+        end_minutes: int,
         min_staff: int,
         preferred_staff: int,
         duration_minutes: int,
@@ -198,6 +203,8 @@ class _FlatSlot:
         self.station = station
         self.start_time = start_time
         self.end_time = end_time
+        self.start_minutes = start_minutes
+        self.end_minutes = end_minutes
         self.min_staff = min_staff
         self.preferred_staff = preferred_staff
         self.duration_minutes = duration_minutes
@@ -205,7 +212,7 @@ class _FlatSlot:
 
 
 class _StaffEntry:
-    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "min_minutes", "existing_minutes", "resolved_rate")
+    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "min_minutes", "existing_minutes", "resolved_rate", "is_manager")
 
     def __init__(
         self,
@@ -216,6 +223,7 @@ class _StaffEntry:
         min_minutes: int,
         existing_minutes: int,
         resolved_rate: float,
+        is_manager: bool,
     ):
         self.idx = idx
         self.staff_id = staff_id
@@ -224,6 +232,7 @@ class _StaffEntry:
         self.min_minutes = min_minutes
         self.existing_minutes = existing_minutes
         self.resolved_rate = resolved_rate
+        self.is_manager = is_manager
 
 
 class _CandidateMeta:
@@ -310,6 +319,7 @@ def _transform_input(
                 if cand.staffId not in staff_id_to_idx:
                     s_idx = len(staff_entries)
                     staff_id_to_idx[cand.staffId] = s_idx
+                    is_mgr = any(r.lower() in ["manager", "gm", "km", "agm", "shift leader"] for r in cand.roles)
                     staff_entries.append(
                         _StaffEntry(
                             idx=s_idx,
@@ -325,6 +335,7 @@ def _transform_input(
                                 req.existingWeekHours.get(cand.staffId, 0) * 60
                             ),
                             resolved_rate=resolved_rates[cand.staffId],
+                            is_manager=is_mgr,
                         )
                     )
                     staff_to_slots[s_idx] = []
@@ -353,6 +364,8 @@ def _transform_input(
                     station=sc.slot.station,
                     start_time=sc.slot.startTime,
                     end_time=sc.slot.endTime,
+                    start_minutes=_time_to_minutes(sc.slot.startTime),
+                    end_minutes=_time_to_minutes(sc.slot.endTime),
                     min_staff=sc.slot.minStaff,
                     preferred_staff=sc.slot.preferredStaff,
                     duration_minutes=dur,
@@ -526,6 +539,50 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
             == slot.preferred_staff
         )
 
+    # 1.5) Global Manager Coverage per Atomic Interval
+    mgr_shortfalls: list[cp_model.IntVar] = []
+    
+    # Group slots by day
+    slots_by_day = {}
+    for slot in flat_slots:
+        slots_by_day.setdefault(slot.day_index, []).append(slot)
+        
+    for day_idx, day_slots in slots_by_day.items():
+        # 1. Extract unique time points for this day
+        time_points = set()
+        for slot in day_slots:
+            time_points.add(slot.start_minutes)
+            time_points.add(slot.end_minutes)
+        sorted_times = sorted(list(time_points))
+        
+        # 2. Iterate over adjacent intervals
+        for i in range(len(sorted_times) - 1):
+            t1 = sorted_times[i]
+            t2 = sorted_times[i + 1]
+            
+            # Find slots actively covering this interval
+            active_slots = [
+                s for s in day_slots 
+                if s.start_minutes <= t1 and s.end_minutes >= t2
+            ]
+            
+            if not active_slots:
+                continue
+                
+            # Collect all decision variables for candidates who are managers in these active slots
+            manager_vars = []
+            for slot in active_slots:
+                for s_idx in slot.candidate_staff_idxs:
+                    if staff_entries[s_idx].is_manager:
+                        manager_vars.append(x[(s_idx, slot.idx)])
+            
+            # Create a shortfall slack variable for this specific interval
+            shortfall_var = model.new_int_var(0, 1, f"mgr_shortfall_{day_idx}_{t1}_{t2}")
+            mgr_shortfalls.append(shortfall_var)
+            
+            # Constraint: at least 1 manager across all active slots, or shortfall is 1
+            model.add(sum(manager_vars) + shortfall_var >= 1)
+
     # 2) Hours tracking: h[s] = existingMinutes + sum(duration * x[s,t])
     for staff in staff_entries:
         slot_idxs = staff_to_slots.get(staff.idx, [])
@@ -622,6 +679,9 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     for slot in flat_slots:
         obj_terms.append(-W_MIN_SHORTFALL * smin[slot.idx])
         obj_terms.append(-W_PREF_SHORTFALL * spref[slot.idx])
+
+    for shortfall_var in mgr_shortfalls:
+        obj_terms.append(-W_MGR_SHORTFALL * shortfall_var)
 
     # Min-hours shortfall penalty
     for staff in staff_entries:
