@@ -53,17 +53,44 @@ export function AIAssistantPanel({ locationId }: AIAssistantPanelProps) {
         </Button>
       </SheetTrigger>
 
-      <SheetContent className="flex flex-col p-0">
-        <div className="border-b border-stone-300 px-4 py-3 pr-10 dark:border-white/10 sm:px-5">
-          <SheetTitle className="sr-only">AI Assistant</SheetTitle>
-          <SheetDescription className="text-sm text-muted-foreground">
+      <SheetContent className="flex flex-col gap-0 p-0">
+        {/* Gradient header — uses real amber/rose hex values */}
+        <div
+          className="relative flex items-center gap-3 overflow-hidden border-b border-black/5 px-5 py-4 dark:border-white/10"
+          style={{ background: "linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(225,29,72,0.06) 60%, transparent 100%)" }}
+        >
+          {/* Ambient glow blob */}
+          <div
+            className="pointer-events-none absolute -left-4 -top-6 h-24 w-24 rounded-full opacity-20 blur-2xl"
+            style={{ background: "linear-gradient(135deg, #f59e0b, #e11d48)" }}
+          />
+
+          {/* Gradient avatar */}
+          <div className="relative z-10 shrink-0">
+            <div className="ai-gradient flex h-9 w-9 items-center justify-center rounded-xl shadow-sm">
+              <Bot className="h-[18px] w-[18px] text-white" />
+            </div>
+            {/* Online dot */}
+            <span className="absolute -bottom-0.5 -right-0.5 flex h-2.5 w-2.5 items-center justify-center rounded-full bg-background ring-1 ring-background">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+          </div>
+
+          <div className="relative z-10 min-w-0">
+            <SheetTitle className="text-sm font-semibold leading-none tracking-tight">
+              Sous
+            </SheetTitle>
+            <p className="mt-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+              Online · Scheduling assistant
+            </p>
+          </div>
+
+          <SheetDescription className="sr-only">
             Ask about schedule insights, staffing, and shift changes.
           </SheetDescription>
         </div>
 
-        <div className="flex-1 p-3 sm:p-4">
-          <ChatShell locationId={locationId} viewportContext={viewportContext} />
-        </div>
+        <ChatShell locationId={locationId} viewportContext={viewportContext} />
       </SheetContent>
     </Sheet>
   );

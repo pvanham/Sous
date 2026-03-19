@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
-import { Loader2, RotateCcw } from "lucide-react";
+import { Loader2, RotateCcw, Sparkles } from "lucide-react";
 import { useAIChat } from "@/hooks/use-ai-chat";
 import type { ViewportContext } from "@/lib/validations/viewport-context.schema";
 import { MessageBubble } from "@/components/ai-chat/MessageBubble";
@@ -16,6 +16,13 @@ export interface ChatShellProps {
 }
 
 const MAX_MESSAGE_LENGTH = 4000;
+
+const SUGGESTION_CHIPS = [
+  { label: "Who's working today?", emoji: "📅" },
+  { label: "Any open shifts this week?", emoji: "🔓" },
+  { label: "Show me this week's schedule", emoji: "📋" },
+  { label: "Any pending time-off requests?", emoji: "✉️" },
+];
 
 function extractText(message: UIMessage): string {
   return message.parts
@@ -33,6 +40,27 @@ function getLastUserMessageText(messages: UIMessage[]): string | null {
     if (text) return text;
   }
   return null;
+}
+
+/** Three bouncing dots — a friendlier "thinking" indicator */
+function ThinkingDots() {
+  return (
+    <div className="flex items-center gap-2 py-1">
+      <div className="flex gap-1">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500"
+            style={{
+              animation: "sousBounceDot 1.2s ease-in-out infinite",
+              animationDelay: `${i * 0.2}s`,
+            }}
+          />
+        ))}
+      </div>
+      <span className="text-xs text-muted-foreground">Sous is thinking…</span>
+    </div>
+  );
 }
 
 export function ChatShell({ locationId, conversationId, viewportContext }: ChatShellProps) {
@@ -62,17 +90,16 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
   function handleScroll() {
     const container = scrollContainerRef.current;
     if (!container) return;
-
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
     shouldAutoScrollRef.current = distanceFromBottom < 48;
   }
 
-  function handleSend() {
-    const content = draft.trim();
-    if (!content || isLoading || status === "error") return;
-    if (content.length > MAX_MESSAGE_LENGTH) return;
-    sendMessage(content);
+  function handleSend(content?: string) {
+    const text = (content ?? draft).trim();
+    if (!text || isLoading || status === "error") return;
+    if (text.length > MAX_MESSAGE_LENGTH) return;
+    sendMessage(text);
     setDraft("");
   }
 
@@ -84,15 +111,70 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
   }
 
   return (
-    <section className="flex h-[calc(100vh-10rem)] min-h-[540px] w-full flex-col rounded border border-stone-300 bg-background dark:border-white/10">
+    <section className="flex min-h-0 flex-1 flex-col">
+      {/* Bounce keyframe injected once */}
+      <style>{`
+        @keyframes sousBounceDot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.5; }
+          30% { transform: translateY(-4px); opacity: 1; }
+        }
+      `}</style>
+
+      {/* Message list */}
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 space-y-4 overflow-y-auto p-3 sm:p-4"
+        className="flex-1 space-y-4 overflow-y-auto p-4"
       >
         {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-            Ask your AI assistant anything about your schedule, staff, or shifts.
+          <div className="flex h-full flex-col items-center justify-center gap-6 px-4 py-8 text-center">
+
+            {/* Gradient avatar */}
+            <div className="relative">
+              <div className="ai-gradient flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg">
+                <Sparkles className="h-7 w-7 text-white" />
+              </div>
+              {/* Glow halo using a blurred copy underneath */}
+              <div
+                className="pointer-events-none absolute inset-0 -z-10 rounded-2xl blur-xl opacity-40"
+                style={{ background: "linear-gradient(135deg, #f59e0b, #e11d48)" }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-base font-semibold tracking-tight text-foreground">
+                Hi, I&apos;m{" "}
+                {/* Gradient text using background-clip with real hex colors */}
+                <span
+                  style={{
+                    background: "linear-gradient(135deg, #f59e0b, #e11d48)",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    backgroundClip: "text",
+                  }}
+                >
+                  Sous
+                </span>
+              </p>
+              <p className="mx-auto max-w-[220px] text-xs leading-relaxed text-muted-foreground">
+                Your scheduling assistant. Ask me about your team, shifts, and schedule.
+              </p>
+            </div>
+
+            {/* Suggestion chips */}
+            <div className="flex flex-wrap justify-center gap-2">
+              {SUGGESTION_CHIPS.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  onClick={() => handleSend(chip.label)}
+                  className="flex items-center gap-1.5 rounded-full border border-stone-200 bg-card px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 hover:shadow-md hover:-translate-y-0.5 dark:border-white/10 dark:hover:border-amber-500/40 dark:hover:bg-amber-900/20 dark:hover:text-amber-400"
+                >
+                  <span>{chip.emoji}</span>
+                  {chip.label}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           messages.map((message) => (
@@ -106,16 +188,12 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
           ))
         )}
 
-        {isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="size-4 animate-spin" />
-            Assistant is thinking...
-          </div>
-        ) : null}
+        {isLoading ? <ThinkingDots /> : null}
       </div>
 
+      {/* Error banner */}
       {error || status === "error" ? (
-        <div className="mx-3 mb-3 rounded border border-destructive/30 bg-destructive/10 px-3 py-2 sm:mx-4 sm:mb-4">
+        <div className="mx-4 mb-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm text-destructive">Something went wrong. Please try again.</p>
             <Button
@@ -135,7 +213,7 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
       <ChatInput
         value={draft}
         onChange={setDraft}
-        onSend={handleSend}
+        onSend={() => handleSend()}
         isLoading={isLoading}
         disabled={status === "error"}
       />
