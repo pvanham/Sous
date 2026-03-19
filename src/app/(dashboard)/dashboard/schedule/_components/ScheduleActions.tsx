@@ -276,87 +276,85 @@ export function ScheduleActions({
   const isClearing = clearMutation.isPending;
 
   return (
-    <div className="mb-4 flex items-center justify-between">
-      <div className="flex items-center gap-3">
-        <ScheduleStatusBadge status={schedule.status} />
+    <div className="flex items-center gap-2 flex-nowrap">
+      <ScheduleStatusBadge status={schedule.status} />
 
-        {/* Generate Schedule Button (AI) */}
-        {schedule.status === "DRAFT" && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setGenerateDialogOpen(true)}
-            disabled={schedule.status !== "DRAFT"}
-          >
-            <Sparkles className="mr-2 h-4 w-4" />
-            Generate Schedule
-          </Button>
-        )}
-
-        {/* Publish/Unpublish Button */}
-        {schedule.status === "DRAFT" ? (
-          <Button
-            size="sm"
-            onClick={handlePublishClick}
-            disabled={isPublishing || shifts.length === 0}
-          >
-            {isPublishing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="mr-2 h-4 w-4" />
-            )}
-            Publish Schedule
-          </Button>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => unpublishMutation.mutate()}
-            disabled={isPublishing}
-          >
-            {isPublishing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Undo2 className="mr-2 h-4 w-4" />
-            )}
-            Unpublish
-          </Button>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        {/* Clear Week Button */}
+      {/* Generate Schedule Button (AI) */}
+      {schedule.status === "DRAFT" && (
         <Button
-          variant="outline"
           size="sm"
-          onClick={() => setClearDialogOpen(true)}
-          disabled={isClearing || shifts.length === 0}
-          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          onClick={() => setGenerateDialogOpen(true)}
+          disabled={schedule.status !== "DRAFT"}
+          className="border-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md transition-all hover:opacity-90 hover:shadow-lg dark:from-indigo-600 dark:via-purple-600 dark:to-pink-600 whitespace-nowrap"
         >
-          <Trash2 className="mr-2 h-4 w-4" />
-          Clear Week
+          <Sparkles className="mr-2 h-4 w-4" />
+          Generate Schedule
         </Button>
+      )}
 
-        {/* Copy Week Dropdown */}
-        <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={isCopying}>
-              {isCopying ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Copy className="mr-2 h-4 w-4" />
-              )}
-              Copy Week
-              <ChevronDown className="ml-2 h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleCopyFromPreviousWeek}>
-              Copy from Previous Week
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {/* Publish/Unpublish Button */}
+      {schedule.status === "DRAFT" ? (
+        <Button
+          size="sm"
+          onClick={handlePublishClick}
+          disabled={isPublishing || shifts.length === 0}
+          className="whitespace-nowrap"
+        >
+          {isPublishing ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="mr-2 h-4 w-4" />
+          )}
+          Publish Schedule
+        </Button>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => unpublishMutation.mutate()}
+          disabled={isPublishing}
+          className="whitespace-nowrap"
+        >
+          {isPublishing ? (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          ) : (
+            <Undo2 className="mr-2 h-4 w-4" />
+          )}
+          Unpublish
+        </Button>
+      )}
+
+      {/* Clear Week Button — ml-auto pushes it (and Copy) to the far right */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setClearDialogOpen(true)}
+        disabled={isClearing || shifts.length === 0}
+        className="ml-auto text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        Clear Week
+      </Button>
+
+      {/* Copy Week Dropdown */}
+      <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" size="sm" disabled={isCopying} className="whitespace-nowrap">
+            {isCopying ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Copy className="mr-2 h-4 w-4" />
+            )}
+            Copy Week
+            <ChevronDown className="ml-2 h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handleCopyFromPreviousWeek}>
+            Copy from Previous Week
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {/* Clear Week Confirmation Dialog */}
       <ClearWeekDialog
