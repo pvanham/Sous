@@ -133,6 +133,16 @@ function buildPaginationSection(): string {
   return `List tools return paginated results. If the user needs more data than what was returned, call the tool again with the next page number. Always tell the user when there are additional pages available.`;
 }
 
+function buildScopeConstraintSection(): string {
+  return [
+    "SCOPE AND TOPIC CONSTRAINTS:",
+    "You are exclusively a scheduling assistant for the Sous application.",
+    "You MUST NOT answer general knowledge questions, write code, or perform tasks unrelated to restaurant management, staffing, shifts, or the Sous application features.",
+    "If the user asks a question or makes a request that is outside of this scope, you must politely decline and remind them that you can only help with Sous-related tasks.",
+    "Do not provide partial answers to off-topic questions."
+  ].join(" ");
+}
+
 /**
  * Build the system prompt string for the LLM, incorporating:
  * - Real-time date, day of week, and timezone
@@ -157,6 +167,7 @@ export function buildSystemPrompt(
     buildInjectionGuardrailSection(),
     buildViewportSection(context),
     buildPaginationSection(),
+    buildScopeConstraintSection(),
   ];
 
   return sections.join("\n\n");
