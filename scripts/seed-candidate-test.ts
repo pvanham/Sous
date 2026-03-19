@@ -48,6 +48,7 @@ const TEST_KITCHEN_CONFIG: KitchenConfigInput = {
   name: "CandidateTest Kitchen",
   stations: ["Grill", "Prep", "Assembly", "Dish"],
   roles: ["Cook", "Lead Cook", "Manager"],
+  managerRoles: ["Manager"],
   operatingHours: {
     monday: { isOpen: true, open: "06:00", close: "22:00" },
     tuesday: { isOpen: true, open: "06:00", close: "22:00" },

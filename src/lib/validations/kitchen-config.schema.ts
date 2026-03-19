@@ -93,6 +93,7 @@ export const kitchenConfigSchema = z.object({
   roles: z
     .array(z.string().min(1, "Role name cannot be empty"))
     .min(1, "At least one role is required"),
+  managerRoles: z.array(z.string()),
   operatingHours: weeklyOperatingHoursSchema,
   minTimeOffAdvanceDays: z.number().int().min(0),
   aiSettings: aiSettingsSchema,
@@ -116,6 +117,7 @@ export const defaultKitchenConfigValues: KitchenConfigInput = {
   name: "",
   stations: [""],
   roles: [""],
+  managerRoles: [],
   operatingHours: {
     monday: { isOpen: true, open: "09:00", close: "22:00" },
     tuesday: { isOpen: true, open: "09:00", close: "22:00" },

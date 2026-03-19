@@ -42,6 +42,7 @@ export interface KitchenConfigDTO {
   name: string;
   stations: string[];
   roles: string[];
+  managerRoles: string[];
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
   aiSettings: AISettingsDTO;
@@ -59,6 +60,7 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): Kitc
     name: doc.name,
     stations: doc.stations,
     roles: doc.roles,
+    managerRoles: doc.managerRoles || [],
     operatingHours: doc.operatingHours,
     minTimeOffAdvanceDays: doc.minTimeOffAdvanceDays ?? 7,
     aiSettings: doc.aiSettings

@@ -23,14 +23,20 @@ export interface ManagerCoverageGap {
  * Check if a staff member has a manager role.
  * Matches case-insensitively against common manager role patterns.
  */
-function isManager(staff: StaffDTO): boolean {
+function isManager(staff: StaffDTO, managerRoles: string[]): boolean {
+  if (managerRoles && managerRoles.length > 0) {
+    return staff.roles.some((role) => managerRoles.includes(role));
+  }
+  
+  // Fallback to strict hardcoded checks if no manager roles configured
   return staff.roles.some(
     (role) =>
       role.toLowerCase().includes("manager") ||
       role.toLowerCase() === "gm" ||
       role.toLowerCase() === "km" ||
       role.toLowerCase() === "agm" ||
-      role.toLowerCase() === "shift leader",
+      role.toLowerCase() === "shift leader" ||
+      role.toLowerCase() === "sous chef"
   );
 }
 
@@ -43,9 +49,10 @@ function findManagerGapsForDay(
   staff: StaffDTO[],
   storeOpen: string,
   storeClose: string,
+  managerRoles: string[]
 ): { start: string; end: string }[] {
   // Get manager staff IDs
-  const managerIds = new Set(staff.filter(isManager).map((s) => s.id));
+  const managerIds = new Set(staff.filter((s) => isManager(s, managerRoles)).map((s) => s.id));
 
   // Filter shifts to only manager shifts
   const managerShifts = shifts.filter((shift) => managerIds.has(shift.staffId));
@@ -417,6 +424,7 @@ export const ScheduleService = {
         staff,
         storeHours.open,
         storeHours.close,
+        config.managerRoles || []
       );
 
       if (gaps.length > 0) {

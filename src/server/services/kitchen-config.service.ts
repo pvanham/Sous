@@ -49,12 +49,15 @@ export const KitchenConfigService = {
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
 
+    const filteredRoles = data.roles.filter((r) => r.trim() !== "");
+
     const updateData: Record<string, unknown> = {
       orgId: orgObjectId,
       locationId: locationObjectId,
       name: data.name,
       stations: data.stations.filter((s) => s.trim() !== ""),
-      roles: data.roles.filter((r) => r.trim() !== ""),
+      roles: filteredRoles,
+      managerRoles: (data.managerRoles ?? []).filter((mr) => filteredRoles.includes(mr)),
       operatingHours: data.operatingHours,
       minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
     };

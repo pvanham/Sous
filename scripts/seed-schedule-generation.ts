@@ -72,6 +72,7 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
   name: "The Copper Ladle",
   stations: ["Grill", "Saute", "Prep", "Assembly", "Expo", "Dish"],
   roles: ["Executive Chef", "Sous Chef", "Line Cook", "Prep Cook", "Dishwasher"],
+  managerRoles: ["Executive Chef", "Sous Chef"],
   operatingHours: {
     monday:    { isOpen: true,  open: "07:00", close: "23:00" },
     tuesday:   { isOpen: true,  open: "07:00", close: "23:00" },

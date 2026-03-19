@@ -41,6 +41,7 @@ export interface IKitchenConfig {
   name: string;
   stations: string[];
   roles: string[];
+  managerRoles: string[];
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
   aiSettings: IAISettings;
@@ -98,6 +99,10 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
         validator: (v: string[]) => v.length > 0,
         message: "At least one role is required",
       },
+    },
+    managerRoles: {
+      type: [String],
+      default: [],
     },
     operatingHours: {
       monday: { type: OperatingHoursSchema, required: true },

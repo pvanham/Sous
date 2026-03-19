@@ -67,6 +67,7 @@ const TEST_KITCHEN_CONFIG: KitchenConfigInput = {
   name: "Sprint 3.7 Test Kitchen",
   stations: ["Grill", "Prep", "Assembly"],
   roles: ["Cook", "Lead Cook"],
+  managerRoles: ["Lead Cook"],
   operatingHours: {
     monday: { isOpen: true, open: "09:00", close: "21:00" },
     tuesday: { isOpen: true, open: "09:00", close: "21:00" },

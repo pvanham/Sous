@@ -73,6 +73,7 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
   name: "The Golden Fork",
   stations: ["Grill", "Saute", "Prep", "Expo"],
   roles: ["Head Chef", "Line Cook", "Prep Cook"],
+  managerRoles: ["Head Chef"],
   operatingHours: {
     monday:    { isOpen: true,  open: "08:00", close: "22:00" },
     tuesday:   { isOpen: true,  open: "08:00", close: "22:00" },

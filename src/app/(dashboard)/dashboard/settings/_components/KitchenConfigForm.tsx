@@ -10,6 +10,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Form,
@@ -73,6 +74,7 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
         stations:
           initialConfig.stations.length > 0 ? initialConfig.stations : [""],
         roles: initialConfig.roles.length > 0 ? initialConfig.roles : [""],
+        managerRoles: initialConfig.managerRoles || [],
         operatingHours: initialConfig.operatingHours,
         minTimeOffAdvanceDays: initialConfig.minTimeOffAdvanceDays ?? 7,
         aiSettings: initialConfig.aiSettings ?? {
@@ -333,24 +335,74 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 <FormField
                   control={form.control}
                   name={`roles.${index}`}
-                  render={({ field }) => (
+                  render={({ field: { value, onChange, ...rest } }) => (
                     <FormItem className="flex-1">
                       <FormControl>
                         <Input
                           placeholder="e.g., Cook, Sous Chef, Line Cook"
-                          {...field}
+                          {...rest}
+                          value={value}
+                          onChange={(e) => {
+                            const oldVal = value;
+                            const newVal = e.target.value;
+                            onChange(newVal);
+                            
+                            const currentManagerRoles = form.getValues("managerRoles") || [];
+                            if (oldVal && currentManagerRoles.includes(oldVal)) {
+                               form.setValue(
+                                 "managerRoles",
+                                 currentManagerRoles.map((r) => (r === oldVal ? newVal : r)),
+                                 { shouldDirty: true }
+                               );
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+                <div className="flex items-center space-x-2 px-3 h-10 border rounded-md">
+                  <Checkbox
+                    id={`manager-role-${index}`}
+                    checked={(form.watch("managerRoles") || []).includes(form.watch(`roles.${index}`) || "")}
+                    onCheckedChange={(checked) => {
+                      const currentRole = form.watch(`roles.${index}`);
+                      if (!currentRole) return;
+                      
+                      const currentManagerRoles = form.getValues("managerRoles") || [];
+                      if (checked) {
+                        if (!currentManagerRoles.includes(currentRole)) {
+                          form.setValue("managerRoles", [...currentManagerRoles, currentRole], { shouldDirty: true });
+                        }
+                      } else {
+                        form.setValue("managerRoles", currentManagerRoles.filter(r => r !== currentRole), { shouldDirty: true });
+                      }
+                    }}
+                  />
+                  <label htmlFor={`manager-role-${index}`} className="text-sm font-medium leading-none cursor-pointer">
+                    Manager
+                  </label>
+                </div>
                 {rolesArray.fields.length > 1 && (
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon"
-                    onClick={() => rolesArray.remove(index)}
+                    onClick={() => {
+                      const removedRole = form.getValues(`roles.${index}`);
+                      rolesArray.remove(index);
+                      if (removedRole) {
+                        const currentManagerRoles = form.getValues("managerRoles") || [];
+                        if (currentManagerRoles.includes(removedRole)) {
+                          form.setValue(
+                            "managerRoles",
+                            currentManagerRoles.filter((r) => r !== removedRole),
+                            { shouldDirty: true }
+                          );
+                        }
+                      }
+                    }}
                   >
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
