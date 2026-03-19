@@ -30,32 +30,11 @@ export function ViewSwitcher({
   onDayChange,
 }: ViewSwitcherProps) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      {/* View Mode Tabs */}
-      <Tabs
-        value={currentView}
-        onValueChange={(value) => onViewChange(value as ScheduleViewType)}
-      >
-        <TabsList>
-          <TabsTrigger value="staff" className="gap-2">
-            <Users className="h-4 w-4" />
-            <span className="hidden sm:inline font-sans">Staff View</span>
-          </TabsTrigger>
-          <TabsTrigger value="time" className="gap-2">
-            <Clock className="h-4 w-4" />
-            <span className="hidden sm:inline font-sans">Time View</span>
-          </TabsTrigger>
-          <TabsTrigger value="day" className="gap-2">
-            <LayoutGrid className="h-4 w-4" />
-            <span className="hidden sm:inline font-sans">Day View</span>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
-
-      {/* Day Selector - Only shown in Day View */}
-      {currentView === "day" && onDayChange && (
-        <div className="flex items-center gap-1 overflow-x-auto pb-1">
-          {weekDays.map((day) => {
+    <div className="flex w-full items-center gap-3">
+      {/* Day Selector - grows from the left; only rendered in Day View */}
+      <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto pb-1">
+        {currentView === "day" && onDayChange &&
+          weekDays.map((day) => {
             const isSelected =
               selectedDay &&
               day.toDateString() === selectedDay.toDateString();
@@ -65,14 +44,36 @@ export function ViewSwitcher({
                 variant={isSelected ? "default" : "outline"}
                 size="sm"
                 onClick={() => onDayChange(day)}
-                className="min-w-[60px] whitespace-nowrap font-mono"
+                className="min-w-[60px] shrink-0 whitespace-nowrap font-mono"
               >
                 {formatDayLabel(day)}
               </Button>
             );
           })}
-        </div>
-      )}
+      </div>
+
+      {/* View Mode Tabs — always pinned to the right */}
+      <div className="ml-auto shrink-0">
+        <Tabs
+          value={currentView}
+          onValueChange={(value) => onViewChange(value as ScheduleViewType)}
+        >
+          <TabsList>
+            <TabsTrigger value="staff" className="gap-2">
+              <Users className="h-4 w-4" />
+              <span className="hidden sm:inline font-sans">Staff View</span>
+            </TabsTrigger>
+            <TabsTrigger value="time" className="gap-2">
+              <Clock className="h-4 w-4" />
+              <span className="hidden sm:inline font-sans">Time View</span>
+            </TabsTrigger>
+            <TabsTrigger value="day" className="gap-2">
+              <LayoutGrid className="h-4 w-4" />
+              <span className="hidden sm:inline font-sans">Day View</span>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
     </div>
   );
 }

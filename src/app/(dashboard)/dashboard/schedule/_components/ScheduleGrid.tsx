@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { CalendarDays, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { getOrCreateScheduleForWeek } from "@/server/actions/schedule.actions";
@@ -371,44 +371,69 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   };
 
   return (
-    <div className="space-y-4">
-      {/* Schedule Header with navigation */}
-      <ScheduleHeader
-        weekStart={currentWeek}
-        onPrevWeek={handlePrevWeek}
-        onNextWeek={handleNextWeek}
-        isLoading={isLoading}
-      />
+    <div className="space-y-6">
+      {/* Page Header Card with embedded week navigator */}
+      <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-background/50 px-6 py-4 shadow-sm backdrop-blur-xl sm:px-8 sm:py-5">
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-pink-500/10 opacity-70" />
+        <div className="relative flex items-center justify-between gap-4">
+          {/* Title */}
+          <div className="flex items-center gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+              <CalendarDays className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
+                Team Schedule
+              </h1>
+              <p className="text-sm text-muted-foreground">
+                Manage and optimize weekly shift schedules for your team
+              </p>
+            </div>
+          </div>
+          {/* Week navigator — lives in the header */}
+          <ScheduleHeader
+            weekStart={currentWeek}
+            onPrevWeek={handlePrevWeek}
+            onNextWeek={handleNextWeek}
+            isLoading={isLoading}
+          />
+        </div>
+      </div>
 
-      {/* Schedule Actions (Publish, Copy Week, Clear Week) and Week Summary */}
+      {/* Action Bar */}
       {!isLoading && schedule && (
-        <>
+        <div className="overflow-x-auto">
           <ScheduleActions
             schedule={schedule}
             shifts={shifts}
             weekStart={currentWeek}
             onStatusChange={handleStatusChange}
           />
-          <WeekSummary shifts={shifts} />
-        </>
+        </div>
       )}
 
-      {/* Station Legend and View Switcher */}
+      {/* Summary Card */}
+      {!isLoading && schedule && (
+        <WeekSummary shifts={shifts} />
+      )}
+
+      {/* View Switcher & Legend */}
       {!isLoading && (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          {/* Station Color Legend */}
-          {config?.stations && config.stations.length > 0 && (
-            <StationLegend stations={config.stations} />
-          )}
-          
-          {/* View Switcher */}
-          <ViewSwitcher
-            currentView={currentView}
-            onViewChange={handleViewChange}
-            weekDays={weekDays}
-            selectedDay={selectedDay}
-            onDayChange={handleDayChange}
-          />
+        <div className="flex flex-col gap-4 rounded-xl border border-border/50 bg-background/50 p-3 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+          <div className="flex items-center overflow-x-auto">
+            {config?.stations && config.stations.length > 0 && (
+              <StationLegend stations={config.stations} />
+            )}
+          </div>
+          <div className="flex shrink-0">
+            <ViewSwitcher
+              currentView={currentView}
+              onViewChange={handleViewChange}
+              weekDays={weekDays}
+              selectedDay={selectedDay}
+              onDayChange={handleDayChange}
+            />
+          </div>
         </div>
       )}
 

@@ -46,7 +46,7 @@ export function WeekSummary({ shifts }: WeekSummaryProps) {
   const staffScheduled = countUniqueStaff(shifts);
 
   return (
-    <Card className="mb-4">
+    <Card>
       <CardContent className="py-4">
         <div className="flex items-center justify-around gap-6">
           {/* Total Shifts */}
