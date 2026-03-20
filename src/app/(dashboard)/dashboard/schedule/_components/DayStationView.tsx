@@ -1,14 +1,13 @@
 "use client";
 
 import { useMemo, useState, useEffect, useRef } from "react";
-import { Plus, AlertCircle } from "lucide-react";
+import { Plus } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import {
   formatTimeString,
   generateTimeSlots,
   getDisplayTimeRange,
-  getStoreHoursForDay,
   extractTimeString,
   getTimePositionPercent,
   getDurationHeightPercent,
@@ -247,49 +246,6 @@ function StationShiftBlock({
   );
 }
 
-/**
- * Check if a station has coverage gaps during operating hours.
- */
-function hasGaps(
-  shifts: ShiftDTO[],
-  earliest: string,
-  latest: string,
-): boolean {
-  if (shifts.length === 0) return true;
-
-  // Sort shifts by start time
-  const sorted = [...shifts].sort(
-    (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
-  );
-
-  const [startHour, startMin] = earliest.split(":").map(Number);
-  const [endHour, endMin] = latest.split(":").map(Number);
-
-  const operatingStart = startHour * 60 + startMin;
-  const operatingEnd = endHour * 60 + endMin;
-
-  // Check if first shift starts after operating hours begin
-  const firstShiftStart = new Date(sorted[0].start);
-  const firstShiftMinutes =
-    firstShiftStart.getHours() * 60 + firstShiftStart.getMinutes();
-  if (firstShiftMinutes > operatingStart + 30) return true; // 30 min tolerance
-
-  // Check for gaps between shifts
-  for (let i = 0; i < sorted.length - 1; i++) {
-    const currentEnd = new Date(sorted[i].end);
-    const nextStart = new Date(sorted[i + 1].start);
-    const gap = (nextStart.getTime() - currentEnd.getTime()) / (1000 * 60);
-    if (gap > 30) return true; // More than 30 min gap
-  }
-
-  // Check if last shift ends before operating hours end
-  const lastShiftEnd = new Date(sorted[sorted.length - 1].end);
-  const lastShiftMinutes =
-    lastShiftEnd.getHours() * 60 + lastShiftEnd.getMinutes();
-  if (lastShiftMinutes < operatingEnd - 30) return true; // 30 min tolerance
-
-  return false;
-}
 
 /**
  * DayStationView - Station-based view for a single day.
@@ -370,11 +326,6 @@ export function DayStationView({
     return getDisplayTimeRange(config.operatingHours, dayShifts);
   }, [config, dayShifts]);
 
-  // Get actual store hours for the selected day (no buffer) for coverage warnings
-  const storeHours = useMemo(() => {
-    if (!config?.operatingHours) return null;
-    return getStoreHoursForDay(config.operatingHours, selectedDay);
-  }, [config, selectedDay]);
 
   // Generate time slots for Y-axis labels (every 30 minutes)
   const timeSlots = useMemo(
@@ -387,8 +338,8 @@ export function DayStationView({
     [dayShifts, stations],
   );
 
-  // Height per slot (30 minutes = 40px)
-  const slotHeight = 40;
+  // Height per slot (30 minutes = 28px)
+  const slotHeight = 28;
   const totalHeight = timeSlots.length * slotHeight;
 
   if (stations.length === 0) {
@@ -425,24 +376,12 @@ export function DayStationView({
             Time
           </div>
           {stations.map((station) => {
-            const stationShifts = shiftsByStation.get(station) || [];
-            // Only check for gaps during actual store hours (not buffered range)
-            // If store is closed on this day, no coverage warning needed
-            const hasCoverageGaps = storeHours
-              ? hasGaps(stationShifts, storeHours.open, storeHours.close)
-              : false;
-
             return (
               <div
                 key={station}
                 className="font-sans font-semibold uppercase tracking-widest text-[10px] text-center p-2 flex items-center justify-center gap-2 text-stone-500 dark:text-stone-400"
               >
                 <span>{station}</span>
-                {hasCoverageGaps && (
-                  <span title="Coverage gaps detected during store hours">
-                    <AlertCircle className="h-4 w-4 text-amber-600" />
-                  </span>
-                )}
               </div>
             );
           })}

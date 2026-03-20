@@ -31,117 +31,117 @@ const stationColorMap: Record<string, StationColorScheme> = {
   Grill: {
     bg: "bg-amber-700/10",
     text: "text-amber-800",
-    darkBg: "dark:bg-amber-700/10",
-    darkText: "dark:text-amber-400",
-    border: "border-l-4 border-amber-700",
+    darkBg: "dark:bg-amber-500/20",
+    darkText: "dark:text-amber-200",
+    border: "border-l-4 border-amber-500",
   },
   Sauté: {
     bg: "bg-orange-700/10",
     text: "text-orange-800",
-    darkBg: "dark:bg-orange-700/10",
-    darkText: "dark:text-orange-400",
-    border: "border-l-4 border-orange-700",
+    darkBg: "dark:bg-orange-500/20",
+    darkText: "dark:text-orange-200",
+    border: "border-l-4 border-orange-500",
   },
   Fry: {
-    bg: "bg-yellow-700/10",
+    bg: "bg-yellow-600/10",
     text: "text-yellow-800",
-    darkBg: "dark:bg-yellow-700/10",
-    darkText: "dark:text-yellow-400",
-    border: "border-l-4 border-yellow-700",
+    darkBg: "dark:bg-yellow-500/20",
+    darkText: "dark:text-yellow-200",
+    border: "border-l-4 border-yellow-400",
   },
 
   // Prep stations - Sage/Green earth tones
   Prep: {
     bg: "bg-emerald-700/10",
     text: "text-emerald-800",
-    darkBg: "dark:bg-emerald-700/10",
-    darkText: "dark:text-emerald-400",
-    border: "border-l-4 border-emerald-700",
+    darkBg: "dark:bg-emerald-500/20",
+    darkText: "dark:text-emerald-200",
+    border: "border-l-4 border-emerald-500",
   },
   Salad: {
     bg: "bg-teal-700/10",
     text: "text-teal-800",
-    darkBg: "dark:bg-teal-700/10",
-    darkText: "dark:text-teal-400",
-    border: "border-l-4 border-teal-700",
+    darkBg: "dark:bg-teal-500/20",
+    darkText: "dark:text-teal-200",
+    border: "border-l-4 border-teal-500",
   },
 
   // Assembly & Service - Slate/Cool tones
   Assembly: {
     bg: "bg-slate-600/10",
     text: "text-slate-700",
-    darkBg: "dark:bg-slate-600/10",
-    darkText: "dark:text-slate-300",
-    border: "border-l-4 border-slate-600",
+    darkBg: "dark:bg-blue-500/20",
+    darkText: "dark:text-blue-200",
+    border: "border-l-4 border-blue-500",
   },
   Service: {
     bg: "bg-stone-600/10",
     text: "text-stone-700",
-    darkBg: "dark:bg-stone-600/10",
-    darkText: "dark:text-stone-300",
-    border: "border-l-4 border-stone-600",
+    darkBg: "dark:bg-stone-500/20",
+    darkText: "dark:text-stone-200",
+    border: "border-l-4 border-stone-400",
   },
   Expo: {
     bg: "bg-zinc-600/10",
     text: "text-zinc-700",
-    darkBg: "dark:bg-zinc-600/10",
-    darkText: "dark:text-zinc-300",
-    border: "border-l-4 border-zinc-600",
+    darkBg: "dark:bg-violet-500/20",
+    darkText: "dark:text-violet-200",
+    border: "border-l-4 border-violet-500",
   },
 
   // Specialty stations - Mustard/Warm accents
   Pastry: {
-    bg: "bg-amber-600/10",
-    text: "text-amber-700",
-    darkBg: "dark:bg-amber-600/10",
-    darkText: "dark:text-amber-300",
-    border: "border-l-4 border-amber-600",
+    bg: "bg-pink-600/10",
+    text: "text-pink-800",
+    darkBg: "dark:bg-pink-500/20",
+    darkText: "dark:text-pink-200",
+    border: "border-l-4 border-pink-500",
   },
   Bar: {
     bg: "bg-rose-700/10",
     text: "text-rose-800",
-    darkBg: "dark:bg-rose-700/10",
-    darkText: "dark:text-rose-400",
-    border: "border-l-4 border-rose-700",
+    darkBg: "dark:bg-rose-500/20",
+    darkText: "dark:text-rose-200",
+    border: "border-l-4 border-rose-500",
   },
   Bakery: {
     bg: "bg-yellow-600/10",
     text: "text-yellow-700",
-    darkBg: "dark:bg-yellow-600/10",
-    darkText: "dark:text-yellow-300",
-    border: "border-l-4 border-yellow-600",
+    darkBg: "dark:bg-lime-500/20",
+    darkText: "dark:text-lime-200",
+    border: "border-l-4 border-lime-500",
   },
 
   // Front of house - Neutral/Cool tones
   Register: {
     bg: "bg-stone-500/10",
     text: "text-stone-700",
-    darkBg: "dark:bg-stone-500/10",
-    darkText: "dark:text-stone-300",
-    border: "border-l-4 border-stone-500",
+    darkBg: "dark:bg-cyan-500/20",
+    darkText: "dark:text-cyan-200",
+    border: "border-l-4 border-cyan-500",
   },
   Host: {
     bg: "bg-slate-500/10",
     text: "text-slate-700",
-    darkBg: "dark:bg-slate-500/10",
-    darkText: "dark:text-slate-300",
-    border: "border-l-4 border-slate-500",
+    darkBg: "dark:bg-indigo-500/20",
+    darkText: "dark:text-indigo-200",
+    border: "border-l-4 border-indigo-500",
   },
 
   // Default/General
   General: {
     bg: "bg-stone-500/10",
     text: "text-stone-700",
-    darkBg: "dark:bg-stone-500/10",
-    darkText: "dark:text-stone-300",
-    border: "border-l-4 border-stone-500",
+    darkBg: "dark:bg-stone-500/20",
+    darkText: "dark:text-stone-200",
+    border: "border-l-4 border-stone-400",
   },
   default: {
     bg: "bg-stone-500/10",
     text: "text-stone-700",
-    darkBg: "dark:bg-stone-500/10",
-    darkText: "dark:text-stone-300",
-    border: "border-l-4 border-stone-500",
+    darkBg: "dark:bg-stone-500/20",
+    darkText: "dark:text-stone-200",
+    border: "border-l-4 border-stone-400",
   },
 };
 
@@ -174,13 +174,13 @@ function getColorFromPool(station: string): StationColorScheme {
   const colorIndex = Math.abs(hash) % colorPool.length;
   const color = colorPool[colorIndex];
 
-  // Use 700 shade for borders and 10% opacity for backgrounds (muted)
+  // Use 500 shade for borders, 10% light / 20% dark opacity for backgrounds
   return {
     bg: `bg-${color}-700/10`,
     text: `text-${color}-800`,
-    darkBg: `dark:bg-${color}-700/10`,
-    darkText: `dark:text-${color}-400`,
-    border: `border-l-4 border-${color}-700`,
+    darkBg: `dark:bg-${color}-500/20`,
+    darkText: `dark:text-${color}-200`,
+    border: `border-l-4 border-${color}-500`,
   };
 }
 

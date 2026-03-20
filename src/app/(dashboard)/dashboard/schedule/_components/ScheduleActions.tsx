@@ -285,7 +285,7 @@ export function ScheduleActions({
           size="sm"
           onClick={() => setGenerateDialogOpen(true)}
           disabled={schedule.status !== "DRAFT"}
-          className="border-0 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white shadow-md transition-all hover:opacity-90 hover:shadow-lg dark:from-indigo-600 dark:via-purple-600 dark:to-pink-600 whitespace-nowrap"
+          className="ai-gradient border-0 text-white shadow-md transition-all whitespace-nowrap"
         >
           <Sparkles className="mr-2 h-4 w-4" />
           Generate Schedule

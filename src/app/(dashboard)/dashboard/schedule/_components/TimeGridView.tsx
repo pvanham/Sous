@@ -302,8 +302,8 @@ export function TimeGridView({
     [earliest, latest],
   );
 
-  // Height per slot (30 minutes = 40px)
-  const slotHeight = 40;
+  // Height per slot (30 minutes = 28px)
+  const slotHeight = 28;
   const totalHeight = timeSlots.length * slotHeight;
 
   return (

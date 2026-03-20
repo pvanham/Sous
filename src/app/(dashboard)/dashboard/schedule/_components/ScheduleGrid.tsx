@@ -24,6 +24,8 @@ import { ScheduleActions } from "./ScheduleActions";
 import { WeekSummary } from "./WeekSummary";
 import { StationLegend } from "./StationLegend";
 import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
+import { Button } from "@/components/ui/button";
+import { formatDayLabel } from "@/lib/utils/date";
 import { StaffGridView } from "./StaffGridView";
 import { TimeGridView } from "./TimeGridView";
 import { DayStationView } from "./DayStationView";
@@ -374,11 +376,11 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     <div className="space-y-6">
       {/* Page Header Card with embedded week navigator */}
       <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-background/50 px-6 py-4 shadow-sm backdrop-blur-xl sm:px-8 sm:py-5">
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-pink-500/10 opacity-70" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/10 via-primary/5 to-primary/10 opacity-70" />
         <div className="relative flex items-center justify-between gap-4">
           {/* Title */}
           <div className="flex items-center gap-4">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 shadow-md">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/70 shadow-md">
               <CalendarDays className="h-5 w-5 text-white" />
             </div>
             <div>
@@ -419,20 +421,42 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
       {/* View Switcher & Legend */}
       {!isLoading && (
-        <div className="flex flex-col gap-4 rounded-xl border border-border/50 bg-background/50 p-3 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border/50 bg-background/50 px-3 py-2 shadow-sm">
           <div className="flex items-center overflow-x-auto">
             {config?.stations && config.stations.length > 0 && (
               <StationLegend stations={config.stations} />
             )}
           </div>
-          <div className="flex shrink-0">
+          <div className="shrink-0">
             <ViewSwitcher
               currentView={currentView}
               onViewChange={handleViewChange}
-              weekDays={weekDays}
-              selectedDay={selectedDay}
-              onDayChange={handleDayChange}
             />
+          </div>
+        </div>
+      )}
+
+      {/* Day Selector — only shown in Day View, sits above the grid */}
+      {!isLoading && currentView === "day" && (
+        <div className="flex items-center gap-3 overflow-x-auto px-1 py-1">
+          <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Day:</span>
+          <div className="flex gap-1 overflow-x-auto">
+            {weekDays.map((day) => {
+              const isSelected =
+                selectedDay &&
+                day.toDateString() === selectedDay.toDateString();
+              return (
+                <Button
+                  key={day.toISOString()}
+                  variant={isSelected ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => handleDayChange(day)}
+                  className="min-w-[64px] shrink-0 whitespace-nowrap font-mono"
+                >
+                  {formatDayLabel(day)}
+                </Button>
+              );
+            })}
           </div>
         </div>
       )}
