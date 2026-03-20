@@ -218,12 +218,46 @@ export function getStationTextClasses(station: string): string {
   return `${scheme.text} ${scheme.darkText}`;
 }
 
-/**
- * Get the border class only
- */
 export function getStationBorderClass(station: string): string {
   const scheme = stationColorMap[station] ?? getColorFromPool(station);
   return scheme.border;
+}
+
+/**
+ * Get a solid hex color for a station (for use with inline styles).
+ * Maps station border colors to their hex equivalents.
+ */
+const stationHexColors: Record<string, string> = {
+  Grill: "#f59e0b",      // amber-500
+  Sauté: "#f97316",      // orange-500
+  Fry: "#facc15",        // yellow-400
+  Prep: "#10b981",       // emerald-500
+  Salad: "#14b8a6",      // teal-500
+  Assembly: "#3b82f6",   // blue-500
+  Service: "#a8a29e",    // stone-400
+  Expo: "#8b5cf6",       // violet-500
+  Pastry: "#ec4899",     // pink-500
+  Bar: "#f43f5e",        // rose-500
+  Bakery: "#84cc16",     // lime-500
+  Register: "#06b6d4",   // cyan-500
+  Host: "#6366f1",       // indigo-500
+  General: "#a8a29e",    // stone-400
+};
+
+const hexColorPool = [
+  "#f59e0b", "#f97316", "#facc15", "#10b981", "#14b8a6",
+  "#64748b", "#a8a29e", "#71717a", "#f43f5e",
+];
+
+export function getStationDotColor(station: string): string {
+  if (stationHexColors[station]) return stationHexColors[station];
+  // Deterministic hash for unknown stations
+  let hash = 0;
+  for (let i = 0; i < station.length; i++) {
+    hash = (hash << 5) - hash + station.charCodeAt(i);
+    hash = hash & hash;
+  }
+  return hexColorPool[Math.abs(hash) % hexColorPool.length];
 }
 
 // Legacy exports for backward compatibility

@@ -8,6 +8,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 
+import { getStationDotColor } from "@/lib/utils/station-colors";
+
 import {
   Dialog,
   DialogContent,
@@ -547,7 +549,13 @@ export function ShiftFormDialog({
                       <SelectContent>
                         {config?.stations.map((station) => (
                           <SelectItem key={station} value={station}>
-                            {station}
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                                style={{ backgroundColor: getStationDotColor(station) }}
+                              />
+                              {station}
+                            </span>
                           </SelectItem>
                         ))}
                       </SelectContent>
