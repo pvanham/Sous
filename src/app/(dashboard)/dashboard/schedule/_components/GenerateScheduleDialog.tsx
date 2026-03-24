@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2,
@@ -246,6 +246,14 @@ export function GenerateScheduleDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        {/* Universal gradient for AI icons */}
+        <svg width="0" height="0" className="absolute">
+          <linearGradient id="ai-icon-gradient" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#f59f0b" offset="0%" />
+            <stop stopColor="#e11d48" offset="100%" />
+          </linearGradient>
+        </svg>
+
         {step === "readiness" && (
           <ReadinessStep
             readiness={readiness ?? null}
@@ -266,7 +274,7 @@ export function GenerateScheduleDialog({
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Cpu className="h-5 w-5 text-blue-500" />
+                <Cpu className="h-5 w-5" style={{ stroke: "url(#ai-icon-gradient)" }} />
                 Generated Schedule
               </DialogTitle>
               <DialogDescription>
@@ -327,7 +335,7 @@ function ReadinessStep({
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <Cpu className="h-5 w-5 text-blue-500" />
+          <Cpu className="h-5 w-5" style={{ stroke: "url(#ai-icon-gradient)" }} />
           Generate Schedule
         </DialogTitle>
         <DialogDescription>
@@ -427,12 +435,61 @@ interface GeneratingStepProps {
   weekLabel: string;
 }
 
+const GENERATION_STEPS = [
+  { message: "Analyzing labor requirements...", duration: 800 },
+  { message: "Checking staff availability...", duration: 800 },
+  { message: "Loading kitchen configuration...", duration: 600 },
+  { message: "Running constraints solver...", duration: 1500 },
+  { message: "Balancing schedule constraints...", duration: 1500 },
+  { message: "Optimizing shift assignments...", duration: 1500 },
+  { message: "Finalizing schedule...", duration: 1000 },
+];
+
 function GeneratingStep({ weekLabel }: GeneratingStepProps) {
+  const [stepIndex, setStepIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    let currentStep = 0;
+    
+    // Total estimated time to reach 95%
+    const totalEstimatedTime = GENERATION_STEPS.reduce((sum, step) => sum + step.duration, 0);
+
+    const startTime = Date.now();
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      
+      // Calculate progress (cap at 98% until actually finished)
+      const newProgress = Math.min((elapsed / totalEstimatedTime) * 100, 98);
+      setProgress(newProgress);
+
+      // Determine current step
+      let stepTime = 0;
+      let nextStepIndex = 0;
+      for (let i = 0; i < GENERATION_STEPS.length; i++) {
+        stepTime += GENERATION_STEPS[i].duration;
+        if (elapsed > stepTime) {
+          nextStepIndex = i + 1;
+        } else {
+          break;
+        }
+      }
+      
+      if (nextStepIndex < GENERATION_STEPS.length && nextStepIndex !== currentStep) {
+        currentStep = nextStepIndex;
+        setStepIndex(currentStep);
+      }
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <Cpu className="h-5 w-5 text-blue-500" />
+          <Cpu className="h-5 w-5 animate-pulse" style={{ stroke: "url(#ai-icon-gradient)" }} />
           Generating Schedule
         </DialogTitle>
         <DialogDescription>
@@ -440,17 +497,42 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
         </DialogDescription>
       </DialogHeader>
 
-      <div className="flex flex-col items-center justify-center py-12 space-y-4">
-        <div className="relative">
-          <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+      <div className="flex flex-col items-center justify-center py-12 space-y-10">
+        <div className="relative flex items-center justify-center">
+          {/* Subtle pinging outer ring */}
+          <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-amber-500 duration-1000" />
+          <div className="absolute inset-2 rounded-full animate-ping opacity-20 bg-rose-500 delay-300 duration-1000" />
+          {/* Center icon container */}
+          <div className="h-24 w-24 rounded-full bg-amber-500/5 flex items-center justify-center relative shadow-inner overflow-hidden border border-amber-500/20">
+             <div className="absolute inset-0 bg-amber-500/10 blur-xl animate-pulse" />
+             <Cpu className="h-12 w-12 animate-[bounce_2s_infinite]" style={{ stroke: "url(#ai-icon-gradient)" }} />
+          </div>
         </div>
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium">
-            Building schedule using availability, preferences, and
-            constraints...
-          </p>
-          <p className="text-xs text-muted-foreground">
-            This typically takes a few seconds.
+        
+        <div className="w-full max-w-sm space-y-3">
+          <div className="flex justify-between text-sm font-medium">
+            <span className="text-muted-foreground animate-pulse">
+              {GENERATION_STEPS[stepIndex]?.message || "Refining schedule..."}
+            </span>
+            <span className="text-amber-600 dark:text-amber-500 font-mono">
+              {Math.round(progress)}%
+            </span>
+          </div>
+          
+          <div className="h-2.5 w-full bg-muted rounded-full overflow-hidden border shadow-inner">
+            <div 
+              className="h-full ai-gradient transition-all duration-200 ease-out relative"
+              style={{ width: `${progress}%` }}
+            >
+              <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite] -translate-x-full" 
+                   style={{ background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent)' }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="text-center">
+          <p className="text-xs text-muted-foreground opacity-80">
+            Balancing constraints, availability, and labor requirements...
           </p>
         </div>
       </div>

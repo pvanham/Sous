@@ -1,10 +1,10 @@
 "use client";
 
-import { Users, Clock, LayoutGrid } from "lucide-react";
+import { Users, Clock, LayoutGrid, List } from "lucide-react";
 
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export type ScheduleViewType = "staff" | "time" | "day";
+export type ScheduleViewType = "staff" | "time" | "day" | "list";
 
 interface ViewSwitcherProps {
   currentView: ScheduleViewType;
@@ -28,13 +28,17 @@ export function ViewSwitcher({ currentView, onViewChange }: ViewSwitcherProps) {
           <Users className="h-4 w-4" />
           <span className="hidden sm:inline font-sans">Staff View</span>
         </TabsTrigger>
-        <TabsTrigger value="time" className="gap-2">
-          <Clock className="h-4 w-4" />
-          <span className="hidden sm:inline font-sans">Week View</span>
+        <TabsTrigger value="list" className="gap-2">
+          <List className="h-4 w-4" />
+          <span className="hidden sm:inline font-sans">List View</span>
         </TabsTrigger>
         <TabsTrigger value="day" className="gap-2">
           <LayoutGrid className="h-4 w-4" />
           <span className="hidden sm:inline font-sans">Day View</span>
+        </TabsTrigger>
+        <TabsTrigger value="time" className="gap-2">
+          <Clock className="h-4 w-4" />
+          <span className="hidden sm:inline font-sans">Week View</span>
         </TabsTrigger>
       </TabsList>
     </Tabs>

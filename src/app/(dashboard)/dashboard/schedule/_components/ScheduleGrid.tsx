@@ -31,6 +31,7 @@ import { TimeGridView } from "./TimeGridView";
 import { DayStationView } from "./DayStationView";
 import { ShiftFormDialog } from "./ShiftFormDialog";
 import { ShiftDeleteConfirm } from "./ShiftDeleteConfirm";
+import { ScheduleListView } from "./ScheduleListView";
 
 // Query keys for TanStack Query
 const scheduleKeys = {
@@ -216,8 +217,8 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
   // View change handler
   const handleViewChange = (view: ScheduleViewType) => {
     setCurrentView(view);
-    // Reset selected day to first day of week when switching to day view
-    if (view === "day") {
+    // Reset selected day to first day of week when switching to day view or list view
+    if (view === "day" || view === "list") {
       setSelectedDay(weekDays[0]);
     }
   };
@@ -246,6 +247,14 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
       date,
       startTime,
       allowStaffSelection: true,
+    });
+  };
+
+  // Dialog handlers for List View
+  const handleDeleteShiftFromList = (shift: ShiftDTO) => {
+    setDeleteConfirmState({
+      open: true,
+      shift,
     });
   };
 
@@ -367,6 +376,16 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
             onEditShift={handleEditShift}
           />
         );
+      case "list":
+        return (
+          <ScheduleListView
+            scheduleId={schedule.id}
+            shifts={shifts}
+            staff={allStaff}
+            selectedDay={selectedDay}
+            onDeleteShift={handleDeleteShiftFromList}
+          />
+        );
       default:
         return null;
     }
@@ -436,8 +455,8 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </div>
       )}
 
-      {/* Day Selector — only shown in Day View, sits above the grid */}
-      {!isLoading && currentView === "day" && (
+      {/* Day Selector — only shown in Day/List View, sits above the grid */}
+      {!isLoading && (currentView === "day" || currentView === "list") && (
         <div className="flex items-center gap-3 overflow-x-auto px-1 py-1">
           <span className="shrink-0 text-xs font-semibold uppercase tracking-wider text-muted-foreground/60">Day:</span>
           <div className="flex gap-1 overflow-x-auto">
