@@ -416,7 +416,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
       {/* Summary Card */}
       {!isLoading && schedule && (
-        <WeekSummary shifts={shifts} />
+        <WeekSummary shifts={shifts} staff={allStaff} />
       )}
 
       {/* View Switcher & Legend */}

@@ -1,12 +1,14 @@
 "use client";
 
-import { Clock, Users, CalendarDays } from "lucide-react";
+import { Clock, Users, CalendarDays, DollarSign } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
 import type { ShiftDTO } from "@/types/shift";
+import type { StaffDTO } from "@/types/staff";
 
 interface WeekSummaryProps {
   shifts: ShiftDTO[];
+  staff?: StaffDTO[];
 }
 
 /**
@@ -36,14 +38,31 @@ function countUniqueStaff(shifts: ShiftDTO[]): number {
 }
 
 /**
+ * Calculates the total labor cost based on shifts and staff hourly rates.
+ */
+function calculateLaborCost(shifts: ShiftDTO[], staff: StaffDTO[] = []): number {
+  const staffMap = new Map(staff.map((s) => [s.id, s]));
+  const totalCost = shifts.reduce((acc, shift) => {
+    const start = new Date(shift.start).getTime();
+    const end = new Date(shift.end).getTime();
+    const hours = (end - start) / (1000 * 60 * 60);
+    const hourlyRate = staffMap.get(shift.staffId)?.hourlyRate || 0;
+    return acc + (hours * hourlyRate);
+  }, 0);
+
+  return totalCost;
+}
+
+/**
  * WeekSummary - Displays aggregate statistics for the current week's schedule.
- * Shows total shifts, total hours, and number of staff members scheduled.
+ * Shows total shifts, total hours, number of staff members scheduled, and total labor cost.
  * Uses Warm Industrial styling with monospace numbers.
  */
-export function WeekSummary({ shifts }: WeekSummaryProps) {
+export function WeekSummary({ shifts, staff }: WeekSummaryProps) {
   const totalShifts = shifts.length;
   const totalHours = calculateTotalHours(shifts);
   const staffScheduled = countUniqueStaff(shifts);
+  const laborCost = calculateLaborCost(shifts, staff);
 
   return (
     <Card>
@@ -99,6 +118,32 @@ export function WeekSummary({ shifts }: WeekSummaryProps) {
               </p>
             </div>
           </div>
+
+          {/* Divider */}
+          {staff !== undefined && (
+            <div className="h-12 w-px bg-stone-300 dark:bg-white/10" />
+          )}
+
+          {/* Labor Cost */}
+          {staff !== undefined && (
+            <div className="flex items-center gap-3">
+              <div className="rounded bg-blue-700/15 p-2">
+                <DollarSign className="h-5 w-5 text-blue-700 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-sm text-stone-500 dark:text-stone-400">
+                  Total Cost
+                </p>
+                <p className="text-2xl font-mono font-semibold tabular-nums text-stone-900 dark:text-stone-100">
+                  {new Intl.NumberFormat("en-US", {
+                    style: "currency",
+                    currency: "USD",
+                    maximumFractionDigits: 0,
+                  }).format(laborCost)}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

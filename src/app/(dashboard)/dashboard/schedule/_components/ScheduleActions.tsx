@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Send, Copy, ChevronDown, Loader2, Undo2, Trash2, Sparkles } from "lucide-react";
+import { Send, Copy, ChevronDown, Loader2, Undo2, Trash2, Sparkles, Activity } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 import { ClearWeekDialog } from "./ClearWeekDialog";
 import { ManagerCoverageWarningDialog } from "./ManagerCoverageWarningDialog";
 import { GenerateScheduleDialog } from "./GenerateScheduleDialog";
+import { ScheduleHealthDialog } from "./ScheduleHealthDialog";
 
 // Query keys for TanStack Query - must match ScheduleGrid
 const scheduleKeys = {
@@ -63,6 +64,7 @@ export function ScheduleActions({
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
+  const [healthDialogOpen, setHealthDialogOpen] = useState(false);
   const [managerWarnings, setManagerWarnings] = useState<ManagerCoverageGap[]>(
     [],
   );
@@ -292,6 +294,18 @@ export function ScheduleActions({
         </Button>
       )}
 
+      {/* Schedule Health Button */}
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setHealthDialogOpen(true)}
+        disabled={shifts.length === 0}
+        className="whitespace-nowrap"
+      >
+        <Activity className="mr-2 h-4 w-4" />
+        Health
+      </Button>
+
       {/* Publish/Unpublish Button */}
       {schedule.status === "DRAFT" ? (
         <Button
@@ -381,6 +395,15 @@ export function ScheduleActions({
         schedule={schedule}
         weekStart={weekStart}
         onAccept={handleGenerationAccept}
+      />
+
+      {/* Schedule Health Dialog */}
+      <ScheduleHealthDialog
+        open={healthDialogOpen}
+        onOpenChange={setHealthDialogOpen}
+        schedule={schedule}
+        shifts={shifts}
+        weekStart={weekStart}
       />
     </div>
   );
