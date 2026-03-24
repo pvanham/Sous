@@ -2,11 +2,59 @@
 
 import * as React from "react";
 import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog";
+import { motion, AnimatePresence } from "framer-motion";
 
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
-const AlertDialog = AlertDialogPrimitive.Root;
+let lastClickPosition: { x: number; y: number } | null = null;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "mousedown",
+    (e) => {
+      lastClickPosition = { x: e.clientX, y: e.clientY };
+    },
+    true
+  );
+}
+
+const AlertDialogContext = React.createContext<{
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}>({ open: false, setOpen: () => {} });
+
+const AlertDialog = ({
+  open,
+  defaultOpen,
+  onOpenChange,
+  ...props
+}: React.ComponentProps<typeof AlertDialogPrimitive.Root>) => {
+  const [internalOpen, setInternalOpen] = React.useState(defaultOpen || false);
+  const isControlled = open !== undefined;
+  const currentOpen = isControlled ? open : internalOpen;
+
+  const handleOpenChange = React.useCallback(
+    (value: boolean) => {
+      if (!isControlled) {
+        setInternalOpen(value);
+      }
+      onOpenChange?.(value);
+    },
+    [isControlled, onOpenChange]
+  );
+
+  return (
+    <AlertDialogContext.Provider
+      value={{ open: currentOpen, setOpen: handleOpenChange }}
+    >
+      <AlertDialogPrimitive.Root
+        open={currentOpen}
+        onOpenChange={handleOpenChange}
+        {...props}
+      />
+    </AlertDialogContext.Provider>
+  );
+};
 
 const AlertDialogTrigger = AlertDialogPrimitive.Trigger;
 
@@ -16,42 +64,98 @@ const AlertDialogOverlay = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
-  <AlertDialogPrimitive.Overlay
+  <motion.div
+    key="overlay"
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    exit={{ opacity: 0 }}
+    transition={{ duration: 0.2 }}
     className={cn(
-      "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-      className,
+      "fixed inset-0 z-50 bg-black/60 backdrop-blur-sm",
+      className
     )}
-    {...props}
-    ref={ref}
-  />
+  >
+    <AlertDialogPrimitive.Overlay forceMount ref={ref} {...props} className="w-full h-full" />
+  </motion.div>
 ));
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
-  <AlertDialogPortal>
-    <AlertDialogOverlay />
-    <AlertDialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        // Position & Layout
-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 p-6",
-        // Light mode - Unbleached paper with stone border (no shadow)
-        "bg-card border border-stone-300",
-        // Dark mode - stone-800 with white/10 border (no shadow)
-        "dark:bg-card dark:border-white/10",
-        // Animation
-        "duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]",
-        // Sharp corners (Industrial)
-        "rounded",
-        className,
-      )}
-      {...props}
-    />
-  </AlertDialogPortal>
-));
+>(({ className, children, ...props }, ref) => {
+  const { open } = React.useContext(AlertDialogContext);
+
+  return (
+    <AlertDialogPortal forceMount>
+      <AnimatePresence>
+        {open && <AlertDialogOverlay key="overlay" />}
+        {open && (
+            <motion.div
+              key="content"
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              variants={{
+                hidden: {
+                  opacity: 0,
+                  scale: 0.8,
+                  x: lastClickPosition
+                    ? `calc(-50% + ${
+                        lastClickPosition.x -
+                        (typeof window !== "undefined"
+                          ? window.innerWidth / 2
+                          : 0)
+                      }px)`
+                    : "-50%",
+                  y: lastClickPosition
+                    ? `calc(-50% + ${
+                        lastClickPosition.y -
+                        (typeof window !== "undefined"
+                          ? window.innerHeight / 2
+                          : 0)
+                      }px)`
+                    : "-48%",
+                },
+                visible: {
+                  opacity: 1,
+                  scale: 1,
+                  x: "-50%",
+                  y: "-50%",
+                },
+              }}
+              transition={{
+                type: "spring",
+                damping: 25,
+                stiffness: 300,
+                opacity: { duration: 0.2 },
+              }}
+              className={cn(
+                // Position & Layout
+                "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg gap-4 p-6",
+                // Light mode - Unbleached paper with stone border (no shadow)
+                "bg-card border border-stone-300",
+                // Dark mode - stone-800 with white/10 border (no shadow)
+                "dark:bg-card dark:border-white/10",
+                // Sharp corners (Industrial)
+                "rounded",
+                className
+              )}
+            >
+              <AlertDialogPrimitive.Content 
+                forceMount 
+                ref={ref} 
+                className="w-full h-full flex flex-col gap-4 outline-none" 
+                {...props}
+              >
+                {children}
+              </AlertDialogPrimitive.Content>
+            </motion.div>
+        )}
+      </AnimatePresence>
+    </AlertDialogPortal>
+  );
+});
 AlertDialogContent.displayName = AlertDialogPrimitive.Content.displayName;
 
 const AlertDialogHeader = ({
@@ -61,7 +165,7 @@ const AlertDialogHeader = ({
   <div
     className={cn(
       "flex flex-col space-y-2 text-center sm:text-left",
-      className,
+      className
     )}
     {...props}
   />
@@ -75,7 +179,7 @@ const AlertDialogFooter = ({
   <div
     className={cn(
       "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
-      className,
+      className
     )}
     {...props}
   />
@@ -90,7 +194,7 @@ const AlertDialogTitle = React.forwardRef<
     ref={ref}
     className={cn(
       "text-lg font-semibold text-stone-900 dark:text-stone-100",
-      className,
+      className
     )}
     {...props}
   />
@@ -131,7 +235,7 @@ const AlertDialogCancel = React.forwardRef<
     className={cn(
       buttonVariants({ variant: "outline" }),
       "mt-2 sm:mt-0",
-      className,
+      className
     )}
     {...props}
   />
