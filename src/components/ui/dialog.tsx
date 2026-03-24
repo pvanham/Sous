@@ -147,7 +147,7 @@ const DialogContent = React.forwardRef<
               <DialogPrimitive.Content 
                 forceMount 
                 ref={ref} 
-                className="w-full h-full flex flex-col gap-4 outline-none" 
+                className="col-span-1 row-span-1 grid gap-4 w-full outline-none" 
                 {...props}
               >
                 {children}

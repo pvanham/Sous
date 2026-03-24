@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UtensilsCrossed, Bot, Calendar, Users } from "lucide-react";
+import { UtensilsCrossed, Bot, Calendar, Users, MapPin } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard/settings/kitchen", label: "Kitchen", icon: UtensilsCrossed },
+  { href: "/dashboard/settings/locations", label: "Locations", icon: MapPin },
   { href: "/dashboard/settings/team", label: "Team / Invites", icon: Users },
   { href: "/dashboard/settings/ai", label: "AI Settings", icon: Bot },
   { href: "/dashboard/settings/schedule-generation", label: "Schedule Generation", icon: Calendar },

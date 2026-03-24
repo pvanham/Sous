@@ -44,6 +44,7 @@ export function LocationSwitcher({
       const result = await switchActiveLocation(newLocationId);
       if (result.success) {
         toast.success("Location switched successfully.");
+        window.location.reload();
       } else {
         toast.error("Failed to switch location.");
       }

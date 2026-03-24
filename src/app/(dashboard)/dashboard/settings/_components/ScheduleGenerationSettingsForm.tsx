@@ -15,6 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Card } from "@/components/ui/card";
 import { ArrayRankingField } from "./ArrayRankingField";
 
 import {
@@ -56,6 +57,10 @@ export function ScheduleGenerationSettingsForm({
     resolver: zodResolver(scheduleGenerationSettingsSchema),
     defaultValues: initialSettings ?? defaultValues,
   });
+
+  const resetFormToOriginal = () => {
+    form.reset(initialSettings ?? defaultValues);
+  };
 
   const allowClopening = form.watch("allowClopening");
 
@@ -266,9 +271,31 @@ export function ScheduleGenerationSettingsForm({
           )}
         />
 
-        <Button type="submit" disabled={saveMutation.isPending}>
-          {saveMutation.isPending ? "Saving..." : "Save Settings"}
-        </Button>
+        {form.formState.isDirty && (
+          <div className="sticky bottom-6 z-50 mt-8 animate-in slide-in-from-bottom-4 fade-in">
+            <Card className="flex items-center justify-between p-4 shadow-xl border-primary/20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+              <div className="flex flex-col">
+                <span className="font-medium">Unsaved Changes</span>
+                <span className="text-sm text-muted-foreground">
+                  Don't forget to save your settings
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetFormToOriginal}
+                  disabled={saveMutation.isPending}
+                >
+                  Discard
+                </Button>
+                <Button type="submit" disabled={saveMutation.isPending}>
+                  {saveMutation.isPending ? "Saving..." : "Save Settings"}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
       </form>
     </Form>
   );

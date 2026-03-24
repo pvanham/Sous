@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Form,
   FormControl,
@@ -243,13 +243,13 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 max-w-3xl">
         {/* Restaurant Name */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Restaurant Info</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Restaurant Info</h3>
+            <p className="text-sm text-muted-foreground">Basic information about your establishment.</p>
+          </div>
             <FormField
               control={form.control}
               name="name"
@@ -263,13 +263,15 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 </FormItem>
               )}
             />
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Stations */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Stations</CardTitle>
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="flex flex-row items-center justify-between">
+            <div className="space-y-0.5">
+              <h3 className="text-lg font-medium">Stations</h3>
+              <p className="text-sm text-muted-foreground">Define the physical workstations in your kitchen.</p>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -279,8 +281,8 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
               <Plus className="mr-1 h-4 w-4" />
               Add Station
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
+          </div>
+          <div className="space-y-3 pt-2">
             {stationsArray.fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2">
                 <FormField
@@ -312,13 +314,16 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 {form.formState.errors.stations.root.message}
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Roles */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Roles</CardTitle>
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="flex flex-row items-center justify-between">
+            <div className="space-y-0.5">
+              <h3 className="text-lg font-medium">Roles</h3>
+              <p className="text-sm text-muted-foreground">Define staff positions and responsibilities.</p>
+            </div>
             <Button
               type="button"
               variant="outline"
@@ -328,8 +333,8 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
               <Plus className="mr-1 h-4 w-4" />
               Add Role
             </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
+          </div>
+          <div className="space-y-3 pt-2">
             {rolesArray.fields.map((field, index) => (
               <div key={field.id} className="flex items-center gap-2">
                 <FormField
@@ -414,15 +419,15 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 {form.formState.errors.roles.root.message}
               </p>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
         {/* Time-Off Policy */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Time-Off Policy</CardTitle>
-          </CardHeader>
-          <CardContent>
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Time-Off Policy</h3>
+            <p className="text-sm text-muted-foreground">Configure rules for staff time-off requests.</p>
+          </div>
             <FormField
               control={form.control}
               name="minTimeOffAdvanceDays"
@@ -452,15 +457,15 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 </FormItem>
               )}
             />
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Operating Hours */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Operating Hours</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Operating Hours</h3>
+            <p className="text-sm text-muted-foreground">Set your kitchen's open and close times for scheduling.</p>
+          </div>
+          <div className="space-y-4 pt-2">
             {DAYS_OF_WEEK.map((day) => (
               <div
                 key={day}
@@ -525,13 +530,35 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 )}
               </div>
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        {/* Submit Button */}
-        <Button type="submit" disabled={isPending} className="w-full">
-          {isPending ? "Saving..." : "Save Configuration"}
-        </Button>
+        {/* Sticky Save Bar */}
+        {form.formState.isDirty && (
+          <div className="sticky bottom-6 z-50 mt-8 animate-in slide-in-from-bottom-4 fade-in">
+            <Card className="flex items-center justify-between p-4 shadow-xl border-primary/20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+              <div className="flex flex-col">
+                <span className="font-medium">Unsaved Changes</span>
+                <span className="text-sm text-muted-foreground mr-4">
+                  Don't forget to save your settings
+                </span>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={resetFormToOriginal}
+                  disabled={isPending}
+                >
+                  Discard
+                </Button>
+                <Button type="submit" disabled={isPending}>
+                  {isPending ? "Saving..." : "Save Configuration"}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
       </form>
 
       {/* Warning Dialog for Station/Role Removal */}

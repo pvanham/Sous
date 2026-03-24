@@ -124,6 +124,10 @@ export async function createLocation(
     // 5. Service call
     const location = await LocationService.create(org.id, data);
 
+    // Revalidate the layout so the LocationSwitcher updates immediately with the new location
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath("/", "layout");
+
     // 6. Return response
     return { success: true, data: location };
   } catch (error) {

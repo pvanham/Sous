@@ -343,6 +343,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   // Render the appropriate view based on currentView
   const renderView = () => {
+    if (!schedule) return null;
     switch (currentView) {
       case "staff":
         return (
