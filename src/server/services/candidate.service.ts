@@ -125,6 +125,41 @@ function filterByExistingShifts(
 }
 
 /**
+ * Count how many existing shifts already cover a specific slot.
+ * A shift "covers" a slot when it is on the same station AND its time range
+ * fully contains the slot's time range (shift starts <= slot start AND
+ * shift ends >= slot end).
+ *
+ * @param existingShifts - All existing shifts for the relevant period
+ * @param date - The target date for the slot
+ * @param station - The station required for the slot
+ * @param startTime - Slot start time in HH:MM format
+ * @param endTime - Slot end time in HH:MM format
+ * @returns Number of existing shifts that fully cover this slot
+ */
+function countExistingCoverage(
+  existingShifts: ShiftDTO[],
+  date: Date,
+  station: string,
+  startTime: string,
+  endTime: string,
+): number {
+  const slotStart = combineDateTime(date, startTime);
+  const slotEnd = combineDateTime(date, endTime);
+
+  return existingShifts.filter((shift) => {
+    const shiftStart = new Date(shift.start);
+    const shiftEnd = new Date(shift.end);
+    // Must match station AND fully cover the slot time range
+    return (
+      shift.station === station &&
+      shiftStart <= slotStart &&
+      shiftEnd >= slotEnd
+    );
+  }).length;
+}
+
+/**
  * Calculate total hours each staff member has scheduled in the current week.
  *
  * @param staffIds - Set of staff IDs to calculate for
@@ -450,6 +485,18 @@ export const CandidateService = {
       const proposedEnd = combineDateTime(date, req.endTime);
       const slotDuration = getSlotDurationHours(req.startTime, req.endTime);
 
+      // Count existing shifts that already cover this slot so the solver
+      // only tries to fill the remaining positions.
+      const existingCoverage = countExistingCoverage(
+        existingShifts,
+        date,
+        req.station,
+        req.startTime,
+        req.endTime,
+      );
+      const adjustedMinStaff = Math.max(0, req.minStaff - existingCoverage);
+      const adjustedPreferredStaff = Math.max(0, req.preferredStaff - existingCoverage);
+
       // Filter 1: Availability -- find staff whose single daily availability window covers this slot
       // Each staff member has at most one availability record per day with a continuous time range
       const slotAvailability = dayAvailability.filter(
@@ -539,12 +586,12 @@ export const CandidateService = {
           station: req.station,
           startTime: req.startTime,
           endTime: req.endTime,
-          minStaff: req.minStaff,
-          preferredStaff: req.preferredStaff,
+          minStaff: adjustedMinStaff,
+          preferredStaff: adjustedPreferredStaff,
           priority: req.priority,
         },
         candidates,
-        hasSufficientCandidates: candidates.length >= req.minStaff,
+        hasSufficientCandidates: candidates.length >= adjustedMinStaff,
       };
     });
 

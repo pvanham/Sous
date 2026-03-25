@@ -58,7 +58,8 @@ type DialogStep =
   | "readiness"
   | "generating"
   | "preview"
-  | "failure";
+  | "failure"
+  | "fully-scheduled";
 
 // ────────────────────────────────────────────────────────────
 // Query keys
@@ -148,21 +149,26 @@ export function GenerateScheduleDialog({
     onSuccess: (data) => {
       setGeneratedSchedule(data);
 
-      const totalRequired =
+      const trueTotalRequired =
         data.days.reduce(
           (sum, day) =>
             sum +
             day.assignments.length +
             day.unfilledSlots.reduce((s, slot) => s + slot.needed, 0),
           0
-        ) || 1;
-      const totalFilled = data.metadata.totalShiftsCreated;
-      const fillRate = totalFilled / totalRequired;
+        );
 
-      if (totalFilled === 0 || fillRate < 0.5) {
-        setStep("failure");
+      if (trueTotalRequired === 0) {
+        setStep("fully-scheduled");
       } else {
-        setStep("preview");
+        const totalFilled = data.metadata.totalShiftsCreated;
+        const fillRate = totalFilled / trueTotalRequired;
+
+        if (totalFilled === 0 || fillRate < 0.5) {
+          setStep("failure");
+        } else {
+          setStep("preview");
+        }
       }
     },
     onError: () => {
@@ -300,6 +306,13 @@ export function GenerateScheduleDialog({
             isAccepting={acceptMutation.isPending}
             onSavePartial={handleSavePartial}
             onRegenerate={handleGenerate}
+            onCancel={() => handleOpenChange(false)}
+          />
+        )}
+
+        {step === "fully-scheduled" && (
+          <FullyScheduledStep
+            weekLabel={weekLabel}
             onCancel={() => handleOpenChange(false)}
           />
         )}
@@ -757,3 +770,48 @@ function ReadinessIssueRow({ issue }: { issue: ReadinessIssue }) {
     </div>
   );
 }
+
+// ────────────────────────────────────────────────────────────
+// Fully Scheduled Step
+// ────────────────────────────────────────────────────────────
+
+interface FullyScheduledStepProps {
+  weekLabel: string;
+  onCancel: () => void;
+}
+
+function FullyScheduledStep({ weekLabel, onCancel }: FullyScheduledStepProps) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-emerald-500" />
+          Schedule Complete
+        </DialogTitle>
+        <DialogDescription>
+          No new shifts needed for {weekLabel}
+        </DialogDescription>
+      </DialogHeader>
+
+      <div className="flex flex-col items-center justify-center py-10 text-center space-y-4">
+        <div className="h-16 w-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+        </div>
+        <div className="space-y-2 max-w-sm">
+          <p className="font-medium">All Requirements Met</p>
+          <p className="text-sm text-muted-foreground">
+            All the shift slots for this week have already been filled by existing shifts. 
+            If you wanted to regenerate the schedule from scratch, you should clear the week schedule first.
+          </p>
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button onClick={onCancel}>
+          Close
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+

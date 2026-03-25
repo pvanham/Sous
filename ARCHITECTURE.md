@@ -25,5 +25,8 @@ Architectural explanation of the Phase 3 schedule generation feature, which reli
 ### 5. [API Routes and Testing](docs/architecture/05-api-and-testing.md)
 Mandates that `app/api/...` routes strictly serve as external webhooks (e.g., Twilio validation), and explains the `scripts/` end-to-end integration testing flow.
 
+### 6. [Framer Motion and Dialogs](docs/architecture/06-framer-motion-dialogs.md)
+Detailed architecture explaining the "Flexbox Wrapper Pattern" required to animate Radix UI global dialogs without triggering layout conflicts, scroll-locks, or React.Children.only crashes.
+
 ---
 *Last Updated: March 2026*
