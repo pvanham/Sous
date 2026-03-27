@@ -7,15 +7,21 @@ import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { listLocations } from "@/server/actions/location.actions";
+import type { MemberRole } from "@/server/models/OrganizationMember";
 
-const navItems = [
+const baseNavItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/schedule", label: "Schedule", icon: Calendar },
   { href: "/dashboard/staff", label: "Staff", icon: Users },
   { href: "/dashboard/labor", label: "Shift Slots", icon: ClipboardList },
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
-  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];
+
+/** Settings is visible to owners and managers, hidden from shift_leads */
+function getNavItems(role: MemberRole) {
+  if (role === "shift_lead") return baseNavItems;
+  return [...baseNavItems, { href: "/dashboard/settings", label: "Settings", icon: Settings }];
+}
 
 export default async function DashboardLayout({
   children,
@@ -26,6 +32,7 @@ export default async function DashboardLayout({
   const ctx = await getLocationContext(userId);
   const result = await listLocations();
   const locations = result.success ? result.data : [];
+  const navItems = getNavItems(ctx.role);
 
   return (
     <div className="min-h-screen bg-background text-foreground">

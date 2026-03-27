@@ -6,9 +6,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { OTPInput } from "@/components/ui/otp-input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Bot, Loader2 } from "lucide-react";
+import { Bot, Loader2, ArrowLeft } from "lucide-react";
 import type { EmailCodeFactor } from "@clerk/types";
+
+type SignInStep = "credentials" | "second-factor" | "forgot-email" | "forgot-code" | "forgot-reset";
 
 export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
@@ -17,10 +21,12 @@ export default function SignInPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  const [showEmailCode, setShowEmailCode] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [step, setStep] = useState<SignInStep>("credentials");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
+  // ── Credential sign-in ──────────────────────────────────────────
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isLoaded) return;
@@ -46,7 +52,7 @@ export default function SignInPage() {
             strategy: "email_code",
             emailAddressId: emailCodeFactor.emailAddressId,
           });
-          setShowEmailCode(true);
+          setStep("second-factor");
         } else {
           setError("Required verification method is not available.");
         }
@@ -61,6 +67,7 @@ export default function SignInPage() {
     }
   };
 
+  // ── 2FA email code ──────────────────────────────────────────────
   const handleEmailCode = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isLoaded) return;
@@ -86,6 +93,78 @@ export default function SignInPage() {
     }
   };
 
+  // ── Forgot password: send code ──────────────────────────────────
+  const handleForgotSendCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setIsLoading(true);
+    setError("");
+
+    try {
+      await signIn.create({
+        strategy: "reset_password_email_code",
+        identifier: email,
+      });
+      setStep("forgot-code");
+    } catch (err: any) {
+      setError(err.errors?.[0]?.message || "Could not send reset code. Check your email.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Forgot password: verify code ────────────────────────────────
+  const handleForgotVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const result = await signIn.attemptFirstFactor({
+        strategy: "reset_password_email_code",
+        code,
+      });
+
+      if (result.status === "needs_new_password") {
+        setStep("forgot-reset");
+        setCode("");
+      } else {
+        setError("Unexpected state. Please try again.");
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.message || "Invalid code.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Forgot password: set new password ───────────────────────────
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isLoaded) return;
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const result = await signIn.resetPassword({
+        password: newPassword,
+      });
+
+      if (result.status === "complete") {
+        await setActive({ session: result.createdSessionId });
+        router.push("/dashboard");
+      } else {
+        setError("Unable to reset password. Please try again.");
+      }
+    } catch (err: any) {
+      setError(err.errors?.[0]?.message || "Password reset failed.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ── Google OAuth ────────────────────────────────────────────────
   const handleGoogleAuth = () => {
     if (!isLoaded) return;
     signIn.authenticateWithRedirect({
@@ -95,7 +174,15 @@ export default function SignInPage() {
     });
   };
 
-  if (showEmailCode) {
+  const resetToCredentials = () => {
+    setStep("credentials");
+    setCode("");
+    setNewPassword("");
+    setError("");
+  };
+
+  // ── 2FA View ────────────────────────────────────────────────────
+  if (step === "second-factor") {
     return (
       <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
         <CardHeader className="space-y-1 text-center">
@@ -111,16 +198,11 @@ export default function SignInPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleEmailCode} className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                type="text"
-                placeholder="Enter 6-digit code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                className="text-center tracking-widest text-lg"
-              />
-            </div>
+            <OTPInput
+              value={code}
+              onChange={setCode}
+              disabled={isLoading}
+            />
             {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
             <Button
               type="submit"
@@ -132,10 +214,156 @@ export default function SignInPage() {
             </Button>
           </form>
         </CardContent>
+        <CardFooter className="justify-center border-t pt-6">
+          <button
+            type="button"
+            onClick={resetToCredentials}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to sign in
+          </button>
+        </CardFooter>
       </Card>
     );
   }
 
+  // ── Forgot Password: Email ──────────────────────────────────────
+  if (step === "forgot-email") {
+    return (
+      <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
+        <CardHeader className="space-y-1 text-center">
+          <div className="w-full flex justify-center mb-2">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              <Bot className="h-6 w-6 text-primary-foreground" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Reset your password</CardTitle>
+          <CardDescription>
+            Enter your email and we&apos;ll send you a reset code
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleForgotSendCode} className="space-y-4">
+            <Input
+              id="forgot-email"
+              type="email"
+              placeholder="name@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+            {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || !email}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Send Reset Code
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="justify-center border-t pt-6">
+          <button
+            type="button"
+            onClick={resetToCredentials}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to sign in
+          </button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // ── Forgot Password: Code Verification ──────────────────────────
+  if (step === "forgot-code") {
+    return (
+      <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
+        <CardHeader className="space-y-1 text-center">
+          <div className="w-full flex justify-center mb-2">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              <Bot className="h-6 w-6 text-primary-foreground" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Check your email</CardTitle>
+          <CardDescription>
+            We sent a reset code to {email}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleForgotVerifyCode} className="space-y-4">
+            <OTPInput
+              value={code}
+              onChange={setCode}
+              disabled={isLoading}
+            />
+            {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || code.length < 6}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Verify Code
+            </Button>
+          </form>
+        </CardContent>
+        <CardFooter className="justify-center border-t pt-6">
+          <button
+            type="button"
+            onClick={resetToCredentials}
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to sign in
+          </button>
+        </CardFooter>
+      </Card>
+    );
+  }
+
+  // ── Forgot Password: New Password ───────────────────────────────
+  if (step === "forgot-reset") {
+    return (
+      <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
+        <CardHeader className="space-y-1 text-center">
+          <div className="w-full flex justify-center mb-2">
+            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
+              <Bot className="h-6 w-6 text-primary-foreground" />
+            </div>
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight">Set new password</CardTitle>
+          <CardDescription>
+            Choose a strong password for your account
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleResetPassword} className="space-y-4">
+            <PasswordInput
+              placeholder="New password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              required
+            />
+            {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading || !newPassword}
+            >
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Reset Password
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── Main Credentials View ───────────────────────────────────────
   return (
     <Card className="w-full shadow-2xl backdrop-blur-3xl border-border">
       <CardHeader className="space-y-1 text-center">
@@ -199,15 +427,26 @@ export default function SignInPage() {
               required
             />
           </div>
-          <div className="space-y-2">
-            <Input
+          <div className="space-y-1">
+            <PasswordInput
               id="password"
-              type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setError("");
+                  setStep("forgot-email");
+                }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Forgot password?
+              </button>
+            </div>
           </div>
           {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
           <Button 

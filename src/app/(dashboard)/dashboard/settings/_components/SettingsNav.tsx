@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UtensilsCrossed, Bot, Calendar, Users, MapPin } from "lucide-react";
+import { UtensilsCrossed, Bot, Calendar, Users, MapPin, CreditCard } from "lucide-react";
+import type { MemberRole } from "@/server/models/OrganizationMember";
 
-const navItems = [
+const baseNavItems = [
   { href: "/dashboard/settings/kitchen", label: "Kitchen", icon: UtensilsCrossed },
   { href: "/dashboard/settings/locations", label: "Locations", icon: MapPin },
   { href: "/dashboard/settings/team", label: "Team / Invites", icon: Users },
@@ -12,8 +13,15 @@ const navItems = [
   { href: "/dashboard/settings/schedule-generation", label: "Schedule Generation", icon: Calendar },
 ];
 
-export function SettingsNav() {
+const billingItem = { href: "/dashboard/settings/billing", label: "Billing", icon: CreditCard };
+
+export function SettingsNav({ role }: { role: MemberRole }) {
   const pathname = usePathname();
+
+  // Billing is only visible to owners
+  const navItems = role === "owner"
+    ? [...baseNavItems, billingItem]
+    : baseNavItems;
 
   return (
     <nav className="w-48 shrink-0 border-r border-stone-300 dark:border-white/10 pr-6">

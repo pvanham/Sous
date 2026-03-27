@@ -7,6 +7,8 @@ export interface IOrganization {
   subscriptionTier: "free" | "pro" | "enterprise";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +43,13 @@ const OrganizationSchema = new Schema<IOrganizationDocument>(
     stripeSubscriptionId: {
       type: String,
       sparse: true,
+    },
+    cancelAtPeriodEnd: {
+      type: Boolean,
+      default: false,
+    },
+    currentPeriodEnd: {
+      type: Date,
     },
   },
   {

@@ -11,6 +11,8 @@ export interface OrganizationDTO {
   subscriptionTier: "free" | "pro" | "enterprise";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
+  cancelAtPeriodEnd?: boolean;
+  currentPeriodEnd?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,9 +36,11 @@ export function toOrganizationDTO(
     id: String(doc._id),
     ownerId: doc.ownerId,
     name: doc.name,
-    subscriptionTier: doc.subscriptionTier,
+    subscriptionTier: doc.subscriptionTier || "free",
     stripeCustomerId: doc.stripeCustomerId,
     stripeSubscriptionId: doc.stripeSubscriptionId,
+    cancelAtPeriodEnd: doc.cancelAtPeriodEnd,
+    currentPeriodEnd: doc.currentPeriodEnd,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

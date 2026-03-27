@@ -1,13 +1,33 @@
 "use client";
 
 import { useSignUp } from "@clerk/nextjs";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { OTPInput } from "@/components/ui/otp-input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bot, Loader2 } from "lucide-react";
+
+/** Simple password strength calculation */
+function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
+  if (!pw) return { score: 0, label: "", color: "" };
+
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^a-zA-Z0-9]/.test(pw)) score++;
+
+  if (score <= 1) return { score: 1, label: "Weak", color: "bg-red-500" };
+  if (score <= 2) return { score: 2, label: "Fair", color: "bg-amber-500" };
+  if (score <= 3) return { score: 3, label: "Good", color: "bg-yellow-500" };
+  if (score <= 4) return { score: 4, label: "Strong", color: "bg-emerald-500" };
+  return { score: 5, label: "Very strong", color: "bg-emerald-600" };
+}
 
 export default function SignUpPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
@@ -22,6 +42,8 @@ export default function SignUpPage() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const strength = useMemo(() => getPasswordStrength(password), [password]);
 
   // Form submission handler
   const handleSignUp = async (e: React.FormEvent) => {
@@ -108,16 +130,11 @@ export default function SignUpPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleVerify} className="space-y-4">
-            <div className="space-y-2">
-              <Input
-                type="text"
-                placeholder="Enter 6-digit code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                className="text-center tracking-widest text-lg"
-              />
-            </div>
+            <OTPInput
+              value={code}
+              onChange={setCode}
+              disabled={isLoading}
+            />
             {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
             <Button 
               type="submit" 
@@ -220,19 +237,42 @@ export default function SignUpPage() {
             />
           </div>
           <div className="space-y-2">
-            <Input
+            <PasswordInput
               id="password"
-              type="password"
               placeholder="Create a password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            {/* Password strength indicator */}
+            {password && (
+              <div className="space-y-1">
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((level) => (
+                    <div
+                      key={level}
+                      className={`h-1 flex-1 rounded-full transition-colors ${
+                        level <= strength.score
+                          ? strength.color
+                          : "bg-stone-200 dark:bg-stone-700"
+                      }`}
+                    />
+                  ))}
+                </div>
+                <p className={`text-xs ${
+                  strength.score <= 1 ? "text-red-500" :
+                  strength.score <= 2 ? "text-amber-500" :
+                  strength.score <= 3 ? "text-yellow-600 dark:text-yellow-500" :
+                  "text-emerald-600 dark:text-emerald-500"
+                }`}>
+                  {strength.label}
+                </p>
+              </div>
+            )}
           </div>
           <div className="space-y-2">
-            <Input
+            <PasswordInput
               id="confirmPassword"
-              type="password"
               placeholder="Confirm password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

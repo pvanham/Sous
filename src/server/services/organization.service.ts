@@ -86,6 +86,40 @@ export const OrganizationService = {
   },
 
   /**
+   * Update subscription-related fields on an organization.
+   * @param orgId - Organization document ID
+   * @param data - Stripe billing fields to update
+   * @returns Updated OrganizationDTO or null if not found
+   */
+  async updateSubscription(
+    orgId: string,
+    data: {
+      stripeCustomerId?: string;
+      stripeSubscriptionId?: string | null;
+      subscriptionTier?: "free" | "pro" | "enterprise";
+      cancelAtPeriodEnd?: boolean;
+      currentPeriodEnd?: Date | null;
+    }
+  ): Promise<OrganizationDTO | null> {
+    const updateData: Record<string, unknown> = {};
+
+    if (data.stripeCustomerId !== undefined) updateData.stripeCustomerId = data.stripeCustomerId;
+    if (data.stripeSubscriptionId !== undefined) updateData.stripeSubscriptionId = data.stripeSubscriptionId;
+    if (data.subscriptionTier !== undefined) updateData.subscriptionTier = data.subscriptionTier;
+    if (data.cancelAtPeriodEnd !== undefined) updateData.cancelAtPeriodEnd = data.cancelAtPeriodEnd;
+    if (data.currentPeriodEnd !== undefined) updateData.currentPeriodEnd = data.currentPeriodEnd;
+
+    const doc = await Organization.findByIdAndUpdate(
+      orgId,
+      { $set: updateData },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toOrganizationDTO(doc);
+  },
+
+  /**
    * Delete an organization by ID.
    * @param orgId - Organization document ID
    * @returns true if deleted, false if not found

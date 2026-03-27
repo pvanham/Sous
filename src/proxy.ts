@@ -9,6 +9,7 @@ const isPublicRoute = createRouteMatcher([
   "/sign-up(.*)",
   "/api/webhooks/clerk(.*)",
   "/api/webhooks/twilio(.*)",
+  "/api/webhooks/stripe(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, request) => {
