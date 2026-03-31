@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Info, Loader2 } from "lucide-react";
 
 import { listLaborRequirements } from "@/server/actions/labor-requirement.actions";
@@ -38,13 +38,17 @@ interface LaborGridProps {
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
 export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps) {
-  const queryClient = useQueryClient();
+  // Dialog state — kept as a single object so station/day/requirement are
+  // always in sync when the dialog opens (avoids React batching timing issues).
+  const [dialogState, setDialogState] = useState<{
+    open: boolean;
+    station: string;
+    dayOfWeek: number;
+    requirement: LaborRequirementDTO | null;
+  }>({ open: false, station: "", dayOfWeek: 1, requirement: null });
 
-  // Dialog state
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRequirement, setSelectedRequirement] = useState<LaborRequirementDTO | null>(null);
-  const [defaultStation, setDefaultStation] = useState<string>("");
-  const [defaultDayOfWeek, setDefaultDayOfWeek] = useState<number>(1);
+  /** Increments on each cell click so RequirementFormDialog remounts with correct defaultValues. */
+  const [formDialogKey, setFormDialogKey] = useState(0);
 
   // Bulk edit state
   const [bulkEditMode, setBulkEditMode] = useState(false);
@@ -117,17 +121,16 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
 
   // Handle cell click to open dialog (only in normal mode)
   const handleCellClick = (station: string, dayOfWeek: number, requirement?: LaborRequirementDTO) => {
-    if (bulkEditMode) return; // Ignore in bulk edit mode
-    setDefaultStation(station);
-    setDefaultDayOfWeek(dayOfWeek);
-    setSelectedRequirement(requirement ?? null);
-    setDialogOpen(true);
+    if (bulkEditMode) return;
+    setDialogState({ open: true, station, dayOfWeek, requirement: requirement ?? null });
+    setFormDialogKey((k) => k + 1);
   };
 
-  // Handle dialog close
-  const handleDialogClose = () => {
-    setDialogOpen(false);
-    setSelectedRequirement(null);
+  // Radix passes false when the user dismisses the dialog (overlay, Escape, etc.)
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setDialogState((prev) => ({ ...prev, open: false, requirement: null }));
+    }
   };
 
   // Bulk edit handlers
@@ -335,13 +338,14 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
         </div>
       </div>
 
-      {/* Form Dialog */}
+      {/* Form Dialog — key forces remount so useForm defaultValues match the clicked cell */}
       <RequirementFormDialog
-        open={dialogOpen}
-        onOpenChange={handleDialogClose}
-        requirement={selectedRequirement ?? undefined}
-        defaultStation={defaultStation}
-        defaultDayOfWeek={defaultDayOfWeek}
+        key={formDialogKey}
+        open={dialogState.open}
+        onOpenChange={handleDialogOpenChange}
+        requirement={dialogState.requirement ?? undefined}
+        defaultStation={dialogState.station}
+        defaultDayOfWeek={dialogState.dayOfWeek}
         stations={stations}
       />
 

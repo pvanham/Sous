@@ -99,7 +99,7 @@ export function ConfirmationCard({
   const [resolveError, setResolveError] = useState<string | null>(null);
 
   const { status } = proposal;
-  const config = statusConfig[status];
+  const config = statusConfig[status] ?? statusConfig.pending;
   const StatusIcon = config.icon;
 
   async function handleResolve(action: "approve" | "deny") {

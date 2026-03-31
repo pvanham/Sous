@@ -438,15 +438,15 @@ await (async () => {
       resolvedBy: null,
     },
   });
-  assert(schedResult.success === true, "Schedule generation placeholder: success is true");
+  assert(schedResult.success === false, "Schedule generation stub: success is false (not yet available)");
   assert(
-    schedResult.executionSummary.toLowerCase().includes("queued") ||
-      schedResult.executionSummary.toLowerCase().includes("phase 4"),
-    "Schedule generation placeholder: executionSummary mentions queued or Phase 4"
+    schedResult.executionSummary.toLowerCase().includes("not yet available") ||
+      schedResult.executionSummary.toLowerCase().includes("coming soon"),
+    "Schedule generation stub: executionSummary mentions not yet available"
   );
   assert(
-    (schedResult.data as { queued?: unknown })?.queued === true,
-    "Schedule generation placeholder: data.queued is true"
+    schedResult.errorCode === "execution_failed",
+    "Schedule generation stub: errorCode is 'execution_failed'"
   );
 
   // Malformed payload — missing shiftId

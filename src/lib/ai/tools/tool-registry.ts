@@ -1,12 +1,14 @@
 import type { AIToolDefinition } from "./tool-registry.types";
 import { defineTool } from "./tool-registry.types";
 import {
+  resolveScheduleParamsSchema,
   getScheduleHealthParamsSchema,
   getShiftRosterParamsSchema,
   getStaffSummaryParamsSchema,
   getTimeOffRequestsParamsSchema,
   proposeShiftSwapParamsSchema,
   proposeScheduleGenerationParamsSchema,
+  executeResolveSchedule,
   executeGetScheduleHealth,
   executeGetShiftRoster,
   executeGetStaffSummary,
@@ -17,9 +19,20 @@ import {
 
 const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
+    name: "resolve_schedule",
+    description:
+      "Resolve a date to its weekly schedule. Pass any date (ISO format) and the tool " +
+      "returns the scheduleId for that week, along with the week's status and shift count. " +
+      "ALWAYS call this tool first before calling get_shift_roster or get_schedule_health " +
+      "to ensure you are querying the correct week.",
+    requiredPermission: "schedule:read",
+    parameters: resolveScheduleParamsSchema,
+    execute: executeResolveSchedule,
+  }),
+  defineTool({
     name: "get_schedule_health",
     description:
-      "Analyze a schedule's health: total shifts, hours, overtime risks, manager coverage gaps, and unscheduled staff. If scheduleId is omitted, uses the most recent schedule.",
+      "Analyze a schedule's health: total shifts, hours, overtime risks, manager coverage gaps, and unscheduled staff. Requires a scheduleId from resolve_schedule. Falls back to most recent schedule if omitted, which may not be the week the user intended.",
     requiredPermission: "schedule:read",
     parameters: getScheduleHealthParamsSchema,
     execute: executeGetScheduleHealth,
@@ -27,7 +40,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "get_shift_roster",
     description:
-      "Get a paginated list of shifts for a schedule. Omit staffId to get ALL staff shifts; provide a specific staffId to filter to one person. Omit dayOfWeek to get all days; provide 0-6 (Mon-Sun) to filter to one day. If scheduleId is omitted, uses the most recent schedule. Never pass literal strings like 'all' for staffId — omit the field instead.",
+      "Get a paginated list of shifts for a schedule. Omit staffId to get ALL staff shifts; provide a specific staffId to filter to one person. Omit dayOfWeek to get all days; provide 0-6 (Mon-Sun) to filter to one day. Requires a scheduleId from resolve_schedule. Falls back to most recent schedule if omitted, which may not be the week the user intended. Never pass literal strings like 'all' for staffId — omit the field instead.",
     requiredPermission: "shift:read",
     parameters: getShiftRosterParamsSchema,
     execute: executeGetShiftRoster,

@@ -33,18 +33,36 @@ function buildTemporalSection(timezone: string): string {
     hour12: true,
   });
 
+  const isoDateFormatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+
   const formattedDate = dateFormatter.format(now);
   const formattedTime = timeFormatter.format(now);
+  const todayISO = isoDateFormatter.format(now);
 
   const dayOfWeek = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     weekday: "long",
   }).format(now);
 
+  const shortDay = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "short",
+  }).format(now);
+  const dayIndexMap: Record<string, number> = {
+    Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
+  };
+  const dayIndex = dayIndexMap[shortDay] ?? 0;
+
   return [
     `Current Time Context: Today is ${formattedDate}, ${formattedTime}.`,
-    `The day of the week is ${dayOfWeek}. The local timezone for this location is ${tz}.`,
-    `Use this to resolve ALL relative time queries such as "today", "tonight", "tomorrow", "next week", "this Monday", etc. When the user says "next week", calculate the Monday date of the following week from today's date.`,
+    `Today's ISO date is ${todayISO}. The day of the week is ${dayOfWeek}. The local timezone for this location is ${tz}.`,
+    `Today's day-of-week index for tool calls is ${dayIndex} (${dayOfWeek}) using the 0=Monday..6=Sunday system used by dayOfWeek parameters.`,
+    `Use this to resolve ALL relative time queries such as "today", "tonight", "tomorrow", "next week", "this Monday", etc. When the user says "next week", calculate the Monday date of the following week from today's date. When the user says "this week", use today's date.`,
   ].join("\n");
 }
 
@@ -63,11 +81,15 @@ function buildToolUsageSection(): string {
   return [
     "When calling a tool, use the exact parameter format specified.",
     "Never fabricate IDs.",
-    "For schedule tools, omit scheduleId unless the user explicitly asks for a specific week; the tool will default to the most recent schedule.",
+    "SCHEDULE LOOKUP WORKFLOW: Before calling get_shift_roster or get_schedule_health, ALWAYS call resolve_schedule first with the target date (ISO format) to get the correct scheduleId.",
+    "Use the date context above to convert the user's request ('this week', 'next Tuesday', 'today') into an ISO date string and pass it to resolve_schedule.",
+    "Then pass the returned scheduleId to the subsequent tool call.",
+    "Always tell the user which week the data is from (e.g. 'Here\\'s the schedule for the week of March 30...').",
+    "If resolve_schedule returns found: false, tell the user no schedule exists for that week — do NOT silently fall back to a different week.",
+    "IMPORTANT: The location ID is NOT a schedule ID. Never pass it as scheduleId.",
     "For staff-specific requests, call get_staff_summary first and use staffList to map names to staff IDs.",
     "For swap requests, call get_shift_roster to discover candidate shift IDs before calling propose_shift_swap.",
     "Do not ask the user for raw internal IDs unless ambiguity remains after tool-based lookup (for example, duplicate staff names).",
-    "IMPORTANT: The location ID is NOT a schedule ID. Never pass it as scheduleId. Always omit scheduleId to use the most recent schedule.",
     "When using get_shift_roster: omit staffId to get shifts for ALL staff; omit dayOfWeek to get ALL days. Never pass literal strings like 'all' or 'undefined' — simply omit the field.",
   ].join(" ");
 }

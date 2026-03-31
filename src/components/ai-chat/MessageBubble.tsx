@@ -53,6 +53,9 @@ export function MessageBubble({
 
   const isUser = message.role === "user";
   const text = extractMessageText(message).trim();
+
+  if (isUser && text.startsWith("[SYSTEM:")) return null;
+
   const proposalIds = isUser ? [] : extractProposalIds(message);
 
   return (

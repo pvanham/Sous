@@ -1,9 +1,8 @@
 "use client";
 
-import { Plus, Layers } from "lucide-react";
+import { Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
-import { timeRangesOverlap } from "@/lib/utils/time-overlap";
 import type { LaborRequirementDTO, LaborPriority } from "@/types/labor-requirement";
 
 interface RequirementCellProps {
@@ -57,27 +56,6 @@ function formatTimeRange(startTime: string, endTime: string): string {
   return `${formatTime(startTime)}-${formatTime(endTime)}`;
 }
 
-/**
- * Check if any shift slots in the array overlap with each other.
- */
-function hasOverlaps(requirements: LaborRequirementDTO[]): boolean {
-  for (let i = 0; i < requirements.length; i++) {
-    for (let j = i + 1; j < requirements.length; j++) {
-      if (
-        timeRangesOverlap(
-          requirements[i].startTime,
-          requirements[i].endTime,
-          requirements[j].startTime,
-          requirements[j].endTime
-        )
-      ) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 export function RequirementCell({
   station,
   dayOfWeek,
@@ -88,8 +66,6 @@ export function RequirementCell({
   onToggleSelect,
 }: RequirementCellProps) {
   const hasRequirements = requirements.length > 0;
-  const isMultiple = requirements.length > 1;
-  const overlapping = isMultiple && hasOverlaps(requirements);
 
   // In bulk edit mode, clicking the cell toggles selection
   const handleCellClick = () => {
@@ -145,14 +121,6 @@ export function RequirementCell({
   // Cell with shift slots
   const content = (
     <div className={cn("h-full px-1 py-1.5 flex flex-col gap-0.5", bulkEditMode && "pt-6")}>
-      {/* Overlap indicator badge */}
-      {overlapping && !bulkEditMode && (
-        <div className="flex items-center gap-1 px-1.5 pb-0.5 text-[10px] text-muted-foreground">
-          <Layers className="h-3 w-3" />
-          <span>Overlapping</span>
-        </div>
-      )}
-
       {requirements.map((req) => {
         const isZeroStaff = req.minStaff === 0 && req.preferredStaff === 0;
         const staffLabel = isZeroStaff

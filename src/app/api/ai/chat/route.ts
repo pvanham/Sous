@@ -204,9 +204,5 @@ export async function POST(req: Request) {
   });
 
   // 10. Return the streaming response
-  return result.toUIMessageStreamResponse({
-    headers: {
-      "X-Conversation-Id": resolvedConversationId,
-    },
-  });
+  return result.toUIMessageStreamResponse();
 }

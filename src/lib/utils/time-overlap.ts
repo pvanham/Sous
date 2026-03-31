@@ -1,8 +1,25 @@
 /**
- * Time overlap utility functions for labor requirements.
- * Used to validate that labor requirements don't have overlapping time ranges
- * for the same station/day combination.
+ * Time overlap and shift-duration helpers for labor requirements and scheduling.
  */
+
+/**
+ * Compute shift duration in hours from HH:MM time strings.
+ * Returns null if either time is empty/invalid or if end is not after start.
+ */
+export function computeShiftDurationHours(
+  startTime: string,
+  endTime: string
+): number | null {
+  if (!startTime || !endTime) return null;
+  const startMatch = startTime.match(/^(\d{2}):(\d{2})$/);
+  const endMatch = endTime.match(/^(\d{2}):(\d{2})$/);
+  if (!startMatch || !endMatch) return null;
+
+  const startMinutes = Number(startMatch[1]) * 60 + Number(startMatch[2]);
+  const endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+  if (endMinutes <= startMinutes) return null;
+  return (endMinutes - startMinutes) / 60;
+}
 
 /**
  * Check if two HH:MM time ranges overlap.

@@ -72,8 +72,9 @@ export function ScheduleGenerationSettingsForm({
       }
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast.success("Schedule generation settings saved!");
+      form.reset(variables);
       queryClient.invalidateQueries({ queryKey: ["kitchenConfig"] });
     },
     onError: (error: Error) => {
@@ -226,7 +227,7 @@ export function ScheduleGenerationSettingsForm({
                   How the solver handles scheduling shifts that push staff past the overtime threshold.
                 </FormDescription>
               </div>
-              <Select onValueChange={field.onChange} defaultValue={field.value}>
+              <Select onValueChange={field.onChange} value={field.value}>
                 <FormControl>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a policy" />

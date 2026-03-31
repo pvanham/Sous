@@ -1,4 +1,5 @@
 // Schemas
+export { resolveScheduleParamsSchema } from "./resolve-schedule.schema";
 export { getScheduleHealthParamsSchema } from "./get-schedule-health.schema";
 export { getShiftRosterParamsSchema } from "./get-shift-roster.schema";
 export { getStaffSummaryParamsSchema } from "./get-staff-summary.schema";
@@ -7,6 +8,7 @@ export { proposeShiftSwapParamsSchema } from "./propose-shift-swap.schema";
 export { proposeScheduleGenerationParamsSchema } from "./propose-schedule-generation.schema";
 
 // Handlers
+export { executeResolveSchedule } from "./resolve-schedule.handler";
 export { executeGetScheduleHealth } from "./get-schedule-health.handler";
 export { executeGetShiftRoster } from "./get-shift-roster.handler";
 export { executeGetStaffSummary } from "./get-staff-summary.handler";

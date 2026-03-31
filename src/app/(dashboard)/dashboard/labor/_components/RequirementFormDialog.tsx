@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertTriangle, Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import {
   Dialog,
@@ -35,7 +34,6 @@ import {
 
 import {
   laborRequirementSchema,
-  DAY_NAMES,
   type LaborRequirementInput,
 } from "@/lib/validations/labor-requirement.schema";
 import {
@@ -45,6 +43,7 @@ import {
 } from "@/server/actions/labor-requirement.actions";
 import type { LaborRequirementDTO } from "@/types/labor-requirement";
 import { laborRequirementKeys } from "./LaborGrid";
+import { ShiftLengthWarning } from "./ShiftLengthWarning";
 
 interface RequirementFormDialogProps {
   open: boolean;
@@ -85,24 +84,12 @@ export function RequirementFormDialog({
   const isEditMode = !!requirement;
   const queryClient = useQueryClient();
 
+  // LaborGrid passes key={formDialogKey} so this remounts on each open;
+  // defaultValues therefore match the clicked cell (create) or slot (edit).
   const form = useForm<LaborRequirementInput>({
     resolver: zodResolver(laborRequirementSchema),
-    defaultValues: {
-      dayOfWeek: defaultDayOfWeek,
-      station: defaultStation,
-      startTime: "09:00",
-      endTime: "17:00",
-      minStaff: 1,
-      preferredStaff: 1,
-      priority: "normal",
-    },
-  });
-
-  // Reset form when dialog opens/closes or requirement changes
-  useEffect(() => {
-    if (open) {
-      if (requirement) {
-        form.reset({
+    defaultValues: requirement
+      ? {
           dayOfWeek: requirement.dayOfWeek,
           station: requirement.station,
           startTime: requirement.startTime,
@@ -110,9 +97,8 @@ export function RequirementFormDialog({
           minStaff: requirement.minStaff,
           preferredStaff: requirement.preferredStaff,
           priority: requirement.priority,
-        });
-      } else {
-        form.reset({
+        }
+      : {
           dayOfWeek: defaultDayOfWeek,
           station: defaultStation,
           startTime: "09:00",
@@ -120,10 +106,8 @@ export function RequirementFormDialog({
           minStaff: 1,
           preferredStaff: 1,
           priority: "normal",
-        });
-      }
-    }
-  }, [open, requirement, defaultStation, defaultDayOfWeek, form]);
+        },
+  });
 
   // Create mutation
   const createMutation = useMutation({
@@ -401,45 +385,5 @@ export function RequirementFormDialog({
         </Form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ────────────────────────────────────────────────────────────
-// Shift Length Warning
-// ────────────────────────────────────────────────────────────
-
-/**
- * Compute shift duration in hours from HH:MM time strings.
- * Returns null if either time is empty or invalid.
- */
-function computeDuration(startTime: string, endTime: string): number | null {
-  if (!startTime || !endTime) return null;
-  const startMatch = startTime.match(/^(\d{2}):(\d{2})$/);
-  const endMatch = endTime.match(/^(\d{2}):(\d{2})$/);
-  if (!startMatch || !endMatch) return null;
-
-  const startMinutes = Number(startMatch[1]) * 60 + Number(startMatch[2]);
-  const endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
-  if (endMinutes <= startMinutes) return null;
-  return (endMinutes - startMinutes) / 60;
-}
-
-/**
- * Soft warning banner shown when a shift slot is shorter than 4 hours
- * or longer than 12 hours. Non-blocking — informational only.
- */
-function ShiftLengthWarning({ startTime, endTime }: { startTime: string; endTime: string }) {
-  const duration = computeDuration(startTime, endTime);
-  if (duration === null || (duration >= 4 && duration <= 12)) return null;
-
-  return (
-    <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-      <span>
-        {duration < 4
-          ? `This shift is only ${duration.toFixed(1)} hours. Shifts shorter than 4 hours are unusual and may be hard to fill.`
-          : `This shift is ${duration.toFixed(1)} hours. Shifts longer than 12 hours may cause scheduling issues.`}
-      </span>
-    </div>
   );
 }

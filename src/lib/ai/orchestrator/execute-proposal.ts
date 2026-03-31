@@ -148,8 +148,9 @@ async function executeScheduleGeneration(
   }
 
   return {
-    success: true,
-    executionSummary: `Schedule generation queued for week of ${weekStartDate}. Phase 4 will handle async execution.`,
-    data: { queued: true, weekStartDate },
+    success: false,
+    executionSummary: `Schedule generation is not yet available. This feature is coming soon.`,
+    error: "Schedule generation is not yet available. This feature is coming soon.",
+    errorCode: "execution_failed",
   };
 }

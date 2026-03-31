@@ -57,7 +57,8 @@ export async function executeTool(
   }
 
   try {
-    console.log(`[ToolExecutor] Calling '${toolName}'`, JSON.stringify(parseResult.data));
+    const paramKeys = Object.keys(parseResult.data as Record<string, unknown>).join(", ");
+    console.log(`[ToolExecutor] Calling '${toolName}' with keys: ${paramKeys}`);
 
     const result = await tool.execute(parseResult.data, context);
 

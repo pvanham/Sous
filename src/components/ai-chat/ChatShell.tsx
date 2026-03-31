@@ -97,7 +97,7 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
 
   function handleSend(content?: string) {
     const text = (content ?? draft).trim();
-    if (!text || isLoading || status === "error") return;
+    if (!text || isLoading) return;
     if (text.length > MAX_MESSAGE_LENGTH) return;
     sendMessage(text);
     setDraft("");
@@ -215,7 +215,6 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
         onChange={setDraft}
         onSend={() => handleSend()}
         isLoading={isLoading}
-        disabled={status === "error"}
       />
     </section>
   );

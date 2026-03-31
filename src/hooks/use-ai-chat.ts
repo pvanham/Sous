@@ -10,6 +10,7 @@ import type {
   ResolveProposalResponse,
 } from "@/types/ai-chat";
 import { PROPOSAL_TTL_MINUTES } from "@/lib/ai/constants";
+import { generateObjectId } from "@/lib/ai/client/generate-object-id";
 
 export interface UseAIChatOptions {
   viewportContext: ViewportContext;
@@ -57,6 +58,7 @@ export function useAIChat({
     Map<string, ChatProposal["status"]>
   >(() => initialProposalStatuses ?? new Map());
 
+  const stableConversationId = useRef(conversationId ?? generateObjectId());
   const viewportRef = useRef(viewportContext);
   viewportRef.current = viewportContext;
 
@@ -82,13 +84,13 @@ export function useAIChat({
               messages,
               message: lastUserText,
               viewportContext: viewportRef.current,
-              conversationId,
+              conversationId: stableConversationId.current,
               ...body,
             },
           };
         },
       }),
-    [conversationId]
+    []
   );
 
   const {

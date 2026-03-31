@@ -47,7 +47,8 @@ interface ScheduleHealthDialogProps {
 interface OvertimeAlert {
   staffName: string;
   totalHours: number;
-  maxHours: number;
+  /** Weekly hours above which overtime pay applies (e.g. FLSA 40h), from kitchen settings */
+  overtimeThresholdHours: number;
 }
 
 interface ClopeningAlert {
@@ -280,16 +281,21 @@ export function ScheduleHealthDialog({
       });
     }
 
-    // 2. Overtime alerts
+    // 2. Overtime alerts (hours beyond payroll OT threshold — default 40h — not contract max hours)
+    const overtimeThresholdHours =
+      config.scheduleGenerationSettings.overtimeThresholdHours ?? 40;
     const overtimeAlerts: OvertimeAlert[] = [];
     const uniqueStaff = new Set(shifts.map((s) => s.staffId));
     for (const staffId of uniqueStaff) {
       const staff = allStaff.find((s) => s.id === staffId);
       if (!staff) continue;
       const totalHours = Math.round(calculateStaffWeeklyHours(staffId, shifts) * 10) / 10;
-      const maxHours = staff.maxHoursPerWeek || 40;
-      if (totalHours > maxHours) {
-        overtimeAlerts.push({ staffName: staff.name, totalHours, maxHours });
+      if (totalHours > overtimeThresholdHours) {
+        overtimeAlerts.push({
+          staffName: staff.name,
+          totalHours,
+          overtimeThresholdHours,
+        });
       }
     }
 
@@ -344,11 +350,22 @@ export function ScheduleHealthDialog({
       totalRequired > 0 ? (totalFilled / totalRequired) * 100 : 100;
 
     // Calculate penalties with scaling and caps
-    // Cap manager penalty at 40 points
-    const managerPenalty = Math.min(40, managerWarnings.length * 10);
+    // 2 points per hour of uncovered manager time, capped at 40 points
+    const totalManagerGapHours = managerWarnings.reduce((sum, w) => {
+      const dayGapHours = w.gaps.reduce((gapSum, g) => {
+        const [sh, sm] = g.start.split(":").map(Number);
+        const [eh, em] = g.end.split(":").map(Number);
+        return gapSum + (eh + em / 60 - (sh + sm / 60));
+      }, 0);
+      return sum + dayGapHours;
+    }, 0);
+    const managerPenalty = Math.min(40, totalManagerGapHours * 2);
     
     // 2 points per hour of overtime, capped at 30 points
-    const totalOvertimeHours = overtimeAlerts.reduce((sum, a) => sum + (a.totalHours - a.maxHours), 0);
+    const totalOvertimeHours = overtimeAlerts.reduce(
+      (sum, a) => sum + (a.totalHours - a.overtimeThresholdHours),
+      0,
+    );
     const overtimePenalty = Math.min(30, totalOvertimeHours * 2);
     
     // Scale clopening penalty by how short the gap is (3 points per hour short), capped at 30 points
@@ -599,7 +616,9 @@ export function ScheduleHealthDialog({
             >
               {metrics.overtimeAlerts.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  No staff members are scheduled over their maximum hours.
+                  No one is scheduled beyond the overtime threshold (
+                  {config.scheduleGenerationSettings.overtimeThresholdHours ?? 40}
+                  h/week).
                 </p>
               ) : (
                 <div className="space-y-1.5">
@@ -610,7 +629,7 @@ export function ScheduleHealthDialog({
                     >
                       <span className="font-medium">{a.staffName}</span>
                       <span className="font-mono tabular-nums text-red-600 dark:text-red-400">
-                        {a.totalHours}h / {a.maxHours}h max
+                        {a.totalHours}h ({a.overtimeThresholdHours}h OT threshold)
                       </span>
                     </div>
                   ))}
