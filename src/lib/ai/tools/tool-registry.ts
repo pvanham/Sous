@@ -56,7 +56,9 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "get_time_off_requests",
     description:
-      "Get a paginated list of time-off requests within a date range, with optional status and staff filters.",
+      "Get a paginated list of time-off requests within a date range, with optional status and staff filters. " +
+      "ALWAYS use a wide date range covering both past and future (e.g. 6 months back through 6 months ahead) " +
+      "unless the user specifies an explicit date range. Pending requests can exist for any date.",
     requiredPermission: "staff:read",
     parameters: getTimeOffRequestsParamsSchema,
     execute: executeGetTimeOffRequests,

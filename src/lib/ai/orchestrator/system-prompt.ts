@@ -92,6 +92,7 @@ function buildToolUsageSection(): string {
     "For swap requests, call get_shift_roster to discover candidate shift IDs before calling propose_shift_swap.",
     "Do not ask the user for raw internal IDs unless ambiguity remains after tool-based lookup (for example, duplicate staff names).",
     "When using get_shift_roster: omit staffId to get shifts for ALL staff; omit dayOfWeek to get ALL days. Never pass literal strings like 'all' or 'undefined' — simply omit the field.",
+    "TIME-OFF REQUESTS: Always use a broad date range covering both past and future (e.g. 6 months back through 6 months ahead) unless the user specifies an explicit date range. Pending requests can exist for any date — do not assume they are only in the future.",
   ].join(" ");
 }
 

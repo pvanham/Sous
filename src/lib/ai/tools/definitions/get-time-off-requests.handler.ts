@@ -10,6 +10,10 @@ import { TimeOffRequestService } from "@/server/services/time-off-request.servic
 import { StaffService } from "@/server/services/staff.service";
 
 function parseISODate(value: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
   const date = new Date(value);
   return isNaN(date.getTime()) ? null : date;
 }
