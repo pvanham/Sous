@@ -63,6 +63,7 @@ function buildTemporalSection(timezone: string): string {
     `Today's ISO date is ${todayISO}. The day of the week is ${dayOfWeek}. The local timezone for this location is ${tz}.`,
     `Today's day-of-week index for tool calls is ${dayIndex} (${dayOfWeek}) using the 0=Monday..6=Sunday system used by dayOfWeek parameters.`,
     `Use this to resolve ALL relative time queries such as "today", "tonight", "tomorrow", "next week", "this Monday", etc. When the user says "next week", calculate the Monday date of the following week from today's date. When the user says "this week", use today's date.`,
+    `BARE WEEKDAY RULE: When the user mentions a weekday name without a qualifier (e.g. "Thursday" instead of "this Thursday" or "next Thursday"), ALWAYS resolve it to the next upcoming occurrence of that day on or after today's date. For example, if today is Tuesday March 31 and the user says "Thursday", that means Thursday April 2 — NOT Thursday March 27. Never pick a past date unless the user explicitly says "last Thursday" or "previous Thursday".`,
   ].join("\n");
 }
 
@@ -98,7 +99,7 @@ function buildProposalSection(): string {
   return [
     "PROPOSAL WORKFLOW: Tools prefixed with 'propose_' (e.g., propose_shift_swap, propose_schedule_generation) create proposals that require explicit user confirmation through the UI.",
     "When you call a propose_ tool, a confirmation card with Approve/Deny buttons is displayed to the user.",
-    "NEVER tell the user the action has been completed after calling a propose_ tool. Instead, say 'I\\'ve proposed [action]. Please review and approve or deny using the buttons above.'",
+    "NEVER tell the user the action has been completed after calling a propose_ tool. Instead, say 'I\\'ve proposed [action]. Please review and approve or deny using the buttons below.'",
     "The action is ONLY executed when the user clicks Approve. A text response like 'yes' or 'ok' does NOT approve the proposal — the user must use the button.",
     "If the user says 'yes' or 'do it' in text after a proposal, remind them to click the Approve button on the proposal card.",
   ].join(" ");

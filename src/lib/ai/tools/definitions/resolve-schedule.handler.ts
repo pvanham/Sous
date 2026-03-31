@@ -7,31 +7,39 @@ import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 
 /**
- * Compute the Monday (start-of-week) for a given date in a timezone.
- * Uses Intl to determine the local weekday, then subtracts days to reach Monday.
+ * Compute the Monday (start-of-week) for a given date.
+ *
+ * Uses the server-local timezone for all arithmetic, matching the convention
+ * used by date-fns startOfWeek() and ScheduleService.getByWeek() which both
+ * store/query weekStartDate as midnight in the server's local timezone.
  */
-function toMonday(date: Date, tz: string): Date {
-  const localDay = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    timeZone: tz,
-  }).format(date);
-
-  const dayMap: Record<string, number> = {
-    Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
-  };
-  const daysSinceMonday = dayMap[localDay] ?? 0;
-
+function toMonday(date: Date): Date {
+  const jsDay = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+  const daysSinceMonday = (jsDay + 6) % 7; // Convert to 0=Mon..6=Sun
   const monday = new Date(date);
   monday.setDate(monday.getDate() - daysSinceMonday);
   monday.setHours(0, 0, 0, 0);
   return monday;
 }
 
+/**
+ * Parse a date-only ISO string (e.g. "2026-03-31") as a local-timezone Date
+ * rather than UTC midnight. Falls back to standard Date parsing for
+ * non-date-only strings.
+ */
+function parseAsLocalDate(input: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input);
+  if (match) {
+    return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  }
+  return new Date(input);
+}
+
 export async function executeResolveSchedule(
   params: ResolveScheduleParams,
   context: ToolExecutionContext,
 ): Promise<ResolveScheduleResult> {
-  const parsed = new Date(params.weekDate);
+  const parsed = parseAsLocalDate(params.weekDate);
   if (isNaN(parsed.getTime())) {
     return {
       found: false,
@@ -43,14 +51,12 @@ export async function executeResolveSchedule(
     };
   }
 
-  const tz = context.timezone || "UTC";
-  const monday = toMonday(parsed, tz);
+  const monday = toMonday(parsed);
 
   const weekLabel = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: tz,
   }).format(monday);
 
   const weekStartDate = monday.toISOString();

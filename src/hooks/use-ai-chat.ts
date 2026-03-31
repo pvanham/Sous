@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
+import { useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
 import type { UIMessage } from "ai";
 import type { ViewportContext } from "@/lib/validations/viewport-context.schema";
@@ -53,6 +54,7 @@ export function useAIChat({
   conversationId,
   initialProposalStatuses,
 }: UseAIChatOptions): UseAIChatReturn {
+  const queryClient = useQueryClient();
   const [isResolving, setIsResolving] = useState(false);
   const [proposalStatuses, setProposalStatuses] = useState<
     Map<string, ChatProposal["status"]>
@@ -210,6 +212,11 @@ export function useAIChat({
           return next;
         });
 
+        if (action === "approve") {
+          queryClient.invalidateQueries({ queryKey: ["shifts"] });
+          queryClient.invalidateQueries({ queryKey: ["schedules"] });
+        }
+
         const toolName = proposal.toolName;
         const executionSummary = data.executionSummary ?? "";
         const loopBackText = `[SYSTEM: The user ${action}d the ${toolName} tool. ${executionSummary}]`;
@@ -221,7 +228,7 @@ export function useAIChat({
         setIsResolving(false);
       }
     },
-    [proposals, sdkSendMessage]
+    [proposals, sdkSendMessage, queryClient]
   );
 
   const errorMessage = sdkError?.message ?? null;
