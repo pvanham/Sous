@@ -75,8 +75,14 @@ function mapToRecord(map: Map<string, number>): Record<string, number> {
   return obj;
 }
 
-function serializeInput(input: WeekSolverInput): string {
-  const payload = {
+/**
+ * Plain-object payload matching the Python `SolveRequest` / async solver body
+ * (same shape as `POST /solve`). Used by CPSolverService and AsyncTaskService.
+ */
+export function buildSolverPayload(
+  input: WeekSolverInput,
+): Record<string, unknown> {
+  return {
     days: input.days.map((day) => ({
       dayIndex: day.dayIndex,
       dateStr: day.dateStr,
@@ -94,14 +100,20 @@ function serializeInput(input: WeekSolverInput): string {
     settings: input.scheduleGenerationSettings
       ? {
           allowClopening: input.scheduleGenerationSettings.allowClopening,
-          clopeningThresholdMinutes: input.scheduleGenerationSettings.minHoursBetweenShifts * 60,
-          overtimeThresholdHours: input.scheduleGenerationSettings.overtimeThresholdHours,
+          clopeningThresholdMinutes:
+            input.scheduleGenerationSettings.minHoursBetweenShifts * 60,
+          overtimeThresholdHours:
+            input.scheduleGenerationSettings.overtimeThresholdHours,
           overtimePolicy: input.scheduleGenerationSettings.overtimePolicy,
-          softConstraintPriority: input.scheduleGenerationSettings.softConstraintPriority,
+          softConstraintPriority:
+            input.scheduleGenerationSettings.softConstraintPriority,
         }
       : undefined,
   };
-  return JSON.stringify(payload);
+}
+
+function serializeInput(input: WeekSolverInput): string {
+  return JSON.stringify(buildSolverPayload(input));
 }
 
 // ────────────────────────────────────────────────────────────

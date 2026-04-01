@@ -587,20 +587,25 @@ function mergeTokenUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
 }
 
 /**
- * Phase 1 + Phase 2: Pre-fetch candidates for all days, then run the
- * week-level CP solver. Shared by both generateBaseWeekSchedule
- * and generateWeekSchedule to avoid code duplication.
+ * Phase 1: Pre-fetch candidates for all days and assemble `WeekSolverInput`.
+ * Shared by `prefetchAndSolve` and `buildWeekSolverInput`.
  */
-async function prefetchAndSolve(
+async function prefetchWeekCandidateData(
   context: SchedulingContext,
-): Promise<PrefetchAndSolveResult> {
+): Promise<{
+  weekDays: Date[];
+  skippedDayResults: GeneratedDaySchedule[];
+  allDayCandidates: WeekDayCandidates[];
+  dayContextMap: Map<number, DayContextInfo>;
+  weekHoursAccumulator: Map<string, number>;
+  weekSolverInput: WeekSolverInput;
+}> {
   const weekDays = getWeekDays(context.weekStart);
   const weekHoursAccumulator = initWeekHoursFromShifts(
     context.existingShifts,
     context.weekStart,
   );
 
-  // ── Phase 1: Pre-fetch candidates for ALL days ──
   const prefetchStart = Date.now();
   const allDayCandidates: WeekDayCandidates[] = [];
   const dayContextMap = new Map<number, DayContextInfo>();
@@ -688,7 +693,6 @@ async function prefetchAndSolve(
     `${LOG_PREFIX} Pre-fetch complete: ${allDayCandidates.length} active day(s) (${fmtMs(Date.now() - prefetchStart)})`,
   );
 
-  // ── Phase 2: Week-level deterministic solve ──
   const weekSolverInput: WeekSolverInput = {
     days: allDayCandidates,
     maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
@@ -696,6 +700,33 @@ async function prefetchAndSolve(
     existingWeekHours: new Map(weekHoursAccumulator),
     scheduleGenerationSettings: context.config.scheduleGenerationSettings,
   };
+
+  return {
+    weekDays,
+    skippedDayResults,
+    allDayCandidates,
+    dayContextMap,
+    weekHoursAccumulator,
+    weekSolverInput,
+  };
+}
+
+/**
+ * Phase 1 + Phase 2: Pre-fetch candidates for all days, then run the
+ * week-level CP solver. Shared by both generateBaseWeekSchedule
+ * and generateWeekSchedule to avoid code duplication.
+ */
+async function prefetchAndSolve(
+  context: SchedulingContext,
+): Promise<PrefetchAndSolveResult> {
+  const {
+    weekDays,
+    skippedDayResults,
+    allDayCandidates,
+    dayContextMap,
+    weekHoursAccumulator,
+    weekSolverInput,
+  } = await prefetchWeekCandidateData(context);
 
   const solverStart = Date.now();
   const { days: weekDaySchedules, overtimeSummary, totalCostCents, fallbackRatesUsed } = await CPSolverService.solveWeek(weekSolverInput);
@@ -882,6 +913,18 @@ export const SchedulingAgentService = {
       existingShifts,
       schedule,
     };
+  },
+
+  /**
+   * Phase 1: Pre-fetch candidates for all days and assemble `WeekSolverInput`
+   * for the CP-SAT solver (same payload shape as `CPSolverService.solveWeek`).
+   * Used by async schedule generation dispatch.
+   */
+  async buildWeekSolverInput(
+    context: SchedulingContext,
+  ): Promise<WeekSolverInput> {
+    const { weekSolverInput } = await prefetchWeekCandidateData(context);
+    return weekSolverInput;
   },
 
   /**
