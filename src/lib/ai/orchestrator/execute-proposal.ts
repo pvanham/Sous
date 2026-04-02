@@ -1,5 +1,7 @@
 import type { StoredProposal } from "@/types/conversation";
 import { buildOCCFilter, getStaleReason } from "./occ";
+import { AsyncTaskService } from "@/server/services/async-task.service";
+import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 
 export type ProposalErrorCode =
@@ -13,6 +15,8 @@ export interface ExecuteProposalInput {
   orgId: string;
   locationId: string;
   clerkUserId: string;
+  /** Required for `propose_schedule_generation` — links the async task to the conversation */
+  conversationId?: string;
 }
 
 export interface ExecuteProposalResult {
@@ -21,6 +25,10 @@ export interface ExecuteProposalResult {
   data?: unknown;
   error?: string;
   errorCode?: ProposalErrorCode;
+  /** If set, schedule generation was dispatched to the async solver; client should poll */
+  asyncTaskId?: string;
+  /** ISO timestamp — polling deadline for the async task */
+  asyncDeadline?: string;
 }
 
 /**
@@ -38,7 +46,7 @@ export async function executeProposal(
     case "propose_shift_swap":
       return executeShiftSwap(proposal, orgId, locationId);
     case "propose_schedule_generation":
-      return executeScheduleGeneration(proposal);
+      return executeScheduleGeneration(input);
     default:
       return {
         success: false,
@@ -134,9 +142,24 @@ async function executeShiftSwap(
   }
 }
 
+const ASYNC_SCHEDULE_SUCCESS_SUMMARY =
+  "Schedule generation has been dispatched to the solver. This typically takes 10-30 seconds.";
+
 async function executeScheduleGeneration(
-  proposal: StoredProposal,
+  input: ExecuteProposalInput,
 ): Promise<ExecuteProposalResult> {
+  const { proposal, orgId, locationId, clerkUserId, conversationId } = input;
+
+  if (!conversationId) {
+    return {
+      success: false,
+      executionSummary: "",
+      error:
+        "Malformed execution context for 'propose_schedule_generation': missing conversationId.",
+      errorCode: "malformed_payload",
+    };
+  }
+
   const weekStartDate = proposal.payload.weekStartDate;
   if (typeof weekStartDate !== "string") {
     return {
@@ -147,10 +170,65 @@ async function executeScheduleGeneration(
     };
   }
 
+  const weekStart = new Date(weekStartDate);
+  if (isNaN(weekStart.getTime())) {
+    return {
+      success: false,
+      executionSummary: "",
+      error:
+        "Malformed proposal payload for 'propose_schedule_generation': invalid 'weekStartDate'.",
+      errorCode: "malformed_payload",
+    };
+  }
+
+  const rawTemplate = proposal.payload.templateScheduleId;
+  let templateScheduleId: string | undefined;
+  if (typeof rawTemplate === "string" && rawTemplate.length > 0) {
+    templateScheduleId = rawTemplate;
+  }
+
+  let schedule;
+  try {
+    schedule = await ScheduleService.getOrCreateForWeek(
+      orgId,
+      locationId,
+      weekStart,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      executionSummary: "",
+      error: `Failed to dispatch schedule generation: ${message}`,
+      errorCode: "execution_failed",
+    };
+  }
+
+  const dispatch = await AsyncTaskService.dispatchScheduleGeneration({
+    proposalId: proposal.proposalId,
+    conversationId,
+    orgId,
+    locationId,
+    clerkUserId,
+    scheduleId: schedule.id,
+    weekStartDate,
+    ...(templateScheduleId ? { templateScheduleId } : {}),
+  });
+
+  if (!dispatch.dispatched) {
+    const detail = dispatch.error ?? "Unknown error";
+    return {
+      success: false,
+      executionSummary: "",
+      error: `Failed to dispatch schedule generation: ${detail}`,
+      errorCode: "execution_failed",
+    };
+  }
+
   return {
-    success: false,
-    executionSummary: `Schedule generation is not yet available. This feature is coming soon.`,
-    error: "Schedule generation is not yet available. This feature is coming soon.",
-    errorCode: "execution_failed",
+    success: true,
+    executionSummary: ASYNC_SCHEDULE_SUCCESS_SUMMARY,
+    asyncTaskId: dispatch.taskId,
+    asyncDeadline: dispatch.deadline.toISOString(),
   };
 }

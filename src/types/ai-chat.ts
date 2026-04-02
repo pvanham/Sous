@@ -21,4 +21,7 @@ export interface ResolveProposalResponse {
   executionSummary?: string;
   error?: string;
   message?: string;
+  async?: boolean;
+  asyncTaskId?: string;
+  asyncDeadline?: string;
 }

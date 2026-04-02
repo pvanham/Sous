@@ -423,8 +423,8 @@ await (async () => {
     "Unknown tool: error message contains 'Unknown proposal type'"
   );
 
-  // propose_schedule_generation with valid weekStartDate → Phase 3 placeholder
-  const schedResult = await executeProposal({
+  // propose_schedule_generation without conversationId → malformed_payload
+  const schedResultNoConv = await executeProposal({
     ...baseInput,
     proposal: {
       proposalId: "test-dispatch-sched",
@@ -438,15 +438,17 @@ await (async () => {
       resolvedBy: null,
     },
   });
-  assert(schedResult.success === false, "Schedule generation stub: success is false (not yet available)");
   assert(
-    schedResult.executionSummary.toLowerCase().includes("not yet available") ||
-      schedResult.executionSummary.toLowerCase().includes("coming soon"),
-    "Schedule generation stub: executionSummary mentions not yet available"
+    schedResultNoConv.success === false,
+    "Schedule generation without conversationId: success is false"
   );
   assert(
-    schedResult.errorCode === "execution_failed",
-    "Schedule generation stub: errorCode is 'execution_failed'"
+    schedResultNoConv.errorCode === "malformed_payload",
+    "Schedule generation without conversationId: errorCode is 'malformed_payload'"
+  );
+  assert(
+    schedResultNoConv.error?.includes("conversationId") ?? false,
+    "Schedule generation without conversationId: error mentions conversationId"
   );
 
   // Malformed payload — missing shiftId

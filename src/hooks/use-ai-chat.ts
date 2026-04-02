@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { DefaultChatTransport } from "ai";
@@ -10,8 +10,17 @@ import type {
   ChatProposal,
   ResolveProposalResponse,
 } from "@/types/ai-chat";
+import type { AsyncTaskStatus } from "@/types/async-task";
 import { PROPOSAL_TTL_MINUTES } from "@/lib/ai/constants";
 import { generateObjectId } from "@/lib/ai/client/generate-object-id";
+import {
+  pollTaskStatus,
+  type PollTaskResult,
+} from "@/lib/ai/client/poll-task-status";
+import {
+  buildAsyncTaskSystemMessage,
+  type AsyncTaskCompletionContext,
+} from "@/lib/ai/orchestrator/async-system-message";
 
 export interface UseAIChatOptions {
   viewportContext: ViewportContext;
@@ -31,6 +40,13 @@ export interface UseAIChatReturn {
     action: "approve" | "deny"
   ) => Promise<void>;
   isResolving: boolean;
+  /** The currently active async task, if any (e.g. schedule generation in flight) */
+  activeTask: {
+    taskId: string;
+    status: AsyncTaskStatus;
+    elapsedMs: number;
+    progressMessage: string;
+  } | null;
   stop: () => void;
   regenerate: () => void;
   setMessages: (
@@ -38,6 +54,108 @@ export interface UseAIChatReturn {
       | UIMessage[]
       | ((messages: UIMessage[]) => UIMessage[])
   ) => void;
+}
+
+const CLIENT_POLL_TIMEOUT_MESSAGE =
+  "Schedule generation timed out. Please try again.";
+
+const SERVER_TIMED_OUT_MESSAGE =
+  "Schedule generation timed out on the server. Please try again.";
+
+function isAbortError(e: unknown): boolean {
+  if (e instanceof DOMException && e.name === "AbortError") return true;
+  if (e instanceof Error && e.name === "AbortError") return true;
+  return false;
+}
+
+function pollResultToCompletionContext(
+  pollResult: PollTaskResult
+): AsyncTaskCompletionContext {
+  const data = pollResult.data as Record<string, unknown>;
+  const elapsedMs =
+    typeof data.elapsedMs === "number" && Number.isFinite(data.elapsedMs)
+      ? data.elapsedMs
+      : 0;
+
+  const status = pollResult.status;
+
+  if (status === "completed") {
+    const r = data.result as Record<string, unknown> | undefined;
+    return {
+      status: "completed",
+      taskType: "schedule_generation",
+      elapsedMs,
+      result: {
+        solverStatus: String(r?.solverStatus ?? "UNKNOWN"),
+        totalCostCents: Number(r?.totalCostCents ?? 0),
+        solveTimeMs: Number(r?.solveTimeMs ?? 0),
+        fallbackRatesUsed: Boolean(r?.fallbackRatesUsed),
+        overtimeWarnings: Array.isArray(r?.overtimeWarnings)
+          ? (r.overtimeWarnings as { staffName: string; hours: number }[])
+          : [],
+        totalShiftsGenerated: Number(r?.totalShiftsGenerated ?? 0),
+        totalUnfilledSlots: Number(r?.totalUnfilledSlots ?? 0),
+        summary: String(r?.summary ?? ""),
+      },
+    };
+  }
+
+  if (status === "infeasible") {
+    const r = data.result as Record<string, unknown> | undefined;
+    const relax = Array.isArray(r?.suggestedRelaxations)
+      ? (r.suggestedRelaxations as string[])
+      : [];
+    return {
+      status: "infeasible",
+      taskType: "schedule_generation",
+      elapsedMs,
+      result: {
+        solverStatus: "INFEASIBLE",
+        totalCostCents: 0,
+        solveTimeMs: 0,
+        fallbackRatesUsed: false,
+        overtimeWarnings: [],
+        totalShiftsGenerated: 0,
+        totalUnfilledSlots: 0,
+        summary: String(r?.summary ?? ""),
+        suggestedRelaxations: relax,
+      },
+    };
+  }
+
+  if (status === "failed" || status === "timed_out") {
+    const err = data.error as Record<string, unknown> | undefined;
+    let message = String(err?.message ?? "");
+    const retryable = err?.retryable === true;
+
+    if (status === "timed_out") {
+      if (message === CLIENT_POLL_TIMEOUT_MESSAGE) {
+        /* keep client-side timeout copy */
+      } else {
+        message = SERVER_TIMED_OUT_MESSAGE;
+      }
+    }
+
+    return {
+      status,
+      taskType: "schedule_generation",
+      elapsedMs,
+      error: {
+        message: message || "Schedule generation failed.",
+        retryable,
+      },
+    };
+  }
+
+  return {
+    status: "failed",
+    taskType: "schedule_generation",
+    elapsedMs,
+    error: {
+      message: "Schedule generation finished with an unknown status.",
+      retryable: true,
+    },
+  };
 }
 
 /**
@@ -56,6 +174,9 @@ export function useAIChat({
 }: UseAIChatOptions): UseAIChatReturn {
   const queryClient = useQueryClient();
   const [isResolving, setIsResolving] = useState(false);
+  const [activeTask, setActiveTask] = useState<UseAIChatReturn["activeTask"]>(
+    null
+  );
   const [proposalStatuses, setProposalStatuses] = useState<
     Map<string, ChatProposal["status"]>
   >(() => initialProposalStatuses ?? new Map());
@@ -63,6 +184,13 @@ export function useAIChat({
   const stableConversationId = useRef(conversationId ?? generateObjectId());
   const viewportRef = useRef(viewportContext);
   viewportRef.current = viewportContext;
+  const pollAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      pollAbortRef.current?.abort();
+    };
+  }, []);
 
   const transport = useMemo(
     () =>
@@ -219,6 +347,61 @@ export function useAIChat({
 
         const toolName = proposal.toolName;
         const executionSummary = data.executionSummary ?? "";
+
+        if (
+          action === "approve" &&
+          data.async === true &&
+          typeof data.asyncTaskId === "string" &&
+          data.asyncTaskId.length > 0
+        ) {
+          const taskId = data.asyncTaskId;
+          pollAbortRef.current?.abort();
+          const abort = new AbortController();
+          pollAbortRef.current = abort;
+
+          setActiveTask({
+            taskId,
+            status: "pending",
+            elapsedMs: 0,
+            progressMessage: "Generating schedule... (0s)",
+          });
+          setIsResolving(false);
+
+          try {
+            const pollResult = await pollTaskStatus({
+              taskId,
+              intervalMs: 3000,
+              maxDurationMs: 150_000,
+              signal: abort.signal,
+              onStatusUpdate: (taskStatus, elapsed) => {
+                setActiveTask({
+                  taskId,
+                  status: taskStatus,
+                  elapsedMs: elapsed,
+                  progressMessage: `Generating schedule... (${Math.round(elapsed / 1000)}s)`,
+                });
+              },
+            });
+
+            const ctx = pollResultToCompletionContext(pollResult);
+            const systemMessage = buildAsyncTaskSystemMessage(ctx);
+            await sdkSendMessage({ text: systemMessage });
+          } catch (err) {
+            if (!isAbortError(err)) {
+              console.error("[useAIChat] async task polling error:", err);
+              await sdkSendMessage({
+                text: `[SYSTEM: Schedule generation failed while waiting for results. Please try again.]`,
+              });
+            }
+          } finally {
+            setActiveTask(null);
+            if (pollAbortRef.current === abort) {
+              pollAbortRef.current = null;
+            }
+          }
+          return;
+        }
+
         const loopBackText = `[SYSTEM: The user ${action}d the ${toolName} tool. ${executionSummary}]`;
 
         await sdkSendMessage({ text: loopBackText });
@@ -241,6 +424,7 @@ export function useAIChat({
     proposals,
     resolveProposal,
     isResolving,
+    activeTask,
     stop,
     regenerate: () => regenerate(),
     setMessages,

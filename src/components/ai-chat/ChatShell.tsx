@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { UIMessage } from "ai";
-import { Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { RotateCcw, Sparkles } from "lucide-react";
 import { useAIChat } from "@/hooks/use-ai-chat";
 import type { ViewportContext } from "@/lib/validations/viewport-context.schema";
+import { AsyncTaskIndicator } from "@/components/ai-chat/AsyncTaskIndicator";
 import { MessageBubble } from "@/components/ai-chat/MessageBubble";
 import { ChatInput } from "@/components/ai-chat/ChatInput";
 import { Button } from "@/components/ui/button";
@@ -73,11 +74,19 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
     [locationId, viewportContext]
   );
 
-  const { messages, status, error, sendMessage, proposals, resolveProposal, isResolving } =
-    useAIChat({
-      viewportContext: mergedViewportContext,
-      conversationId,
-    });
+  const {
+    messages,
+    status,
+    error,
+    sendMessage,
+    proposals,
+    resolveProposal,
+    isResolving,
+    activeTask,
+  } = useAIChat({
+    viewportContext: mergedViewportContext,
+    conversationId,
+  });
 
   const isLoading = status === "submitted" || status === "streaming";
 
@@ -85,7 +94,7 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
     const container = scrollContainerRef.current;
     if (!container || !shouldAutoScrollRef.current) return;
     container.scrollTop = container.scrollHeight;
-  }, [messages, isLoading]);
+  }, [messages, isLoading, activeTask]);
 
   function handleScroll() {
     const container = scrollContainerRef.current;
@@ -187,6 +196,8 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
             />
           ))
         )}
+
+        {activeTask ? <AsyncTaskIndicator task={activeTask} /> : null}
 
         {isLoading ? <ThinkingDots /> : null}
       </div>

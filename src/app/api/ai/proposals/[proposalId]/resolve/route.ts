@@ -113,6 +113,7 @@ export async function POST(
     orgId,
     locationId,
     clerkUserId: userId,
+    conversationId: String(conversation._id),
   });
 
   if (result.errorCode === "stale_data") {
@@ -161,6 +162,18 @@ export async function POST(
       },
     }
   );
+
+  if (result.asyncTaskId) {
+    return NextResponse.json({
+      success: true,
+      proposalId,
+      action: "approved",
+      async: true,
+      asyncTaskId: result.asyncTaskId,
+      asyncDeadline: result.asyncDeadline,
+      executionSummary: result.executionSummary,
+    });
+  }
 
   return NextResponse.json({
     success: true,
