@@ -10,7 +10,10 @@ import type {
   ChatProposal,
   ResolveProposalResponse,
 } from "@/types/ai-chat";
-import type { AsyncTaskStatus } from "@/types/async-task";
+import type {
+  AsyncTaskConstraintRelaxationSuggestion,
+  AsyncTaskStatus,
+} from "@/types/async-task";
 import { PROPOSAL_TTL_MINUTES } from "@/lib/ai/constants";
 import { generateObjectId } from "@/lib/ai/client/generate-object-id";
 import {
@@ -47,6 +50,8 @@ export interface UseAIChatReturn {
     elapsedMs: number;
     progressMessage: string;
   } | null;
+  /** Task IDs → badge text after cascade (schedule accepted) */
+  collapsedTasks: Map<string, string>;
   stop: () => void;
   regenerate: () => void;
   setMessages: (
@@ -102,8 +107,24 @@ function pollResultToCompletionContext(
 
   if (status === "infeasible") {
     const r = data.result as Record<string, unknown> | undefined;
-    const relax = Array.isArray(r?.suggestedRelaxations)
-      ? (r.suggestedRelaxations as string[])
+    const relaxRaw = Array.isArray(r?.suggestedRelaxations)
+      ? r.suggestedRelaxations
+      : [];
+    const relax: AsyncTaskConstraintRelaxationSuggestion[] = [];
+    for (const item of relaxRaw) {
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        const o = item as Record<string, unknown>;
+        relax.push({
+          priority: Number(o.priority ?? 0),
+          category: String(o.category ?? ""),
+          suggestion: String(o.suggestion ?? ""),
+          currentValue: String(o.currentValue ?? ""),
+          recommendedValue: String(o.recommendedValue ?? ""),
+        });
+      }
+    }
+    const causes = Array.isArray(r?.likelyCauses)
+      ? (r.likelyCauses as string[])
       : [];
     return {
       status: "infeasible",
@@ -119,6 +140,7 @@ function pollResultToCompletionContext(
         totalUnfilledSlots: 0,
         summary: String(r?.summary ?? ""),
         suggestedRelaxations: relax,
+        likelyCauses: causes,
       },
     };
   }
@@ -180,6 +202,12 @@ export function useAIChat({
   const [proposalStatuses, setProposalStatuses] = useState<
     Map<string, ChatProposal["status"]>
   >(() => initialProposalStatuses ?? new Map());
+  const [collapsedMessages, setCollapsedMessages] = useState<
+    Map<string, string>
+  >(() => new Map());
+  const [collapsedTasks, setCollapsedTasks] = useState<Map<string, string>>(
+    () => new Map()
+  );
 
   const stableConversationId = useRef(conversationId ?? generateObjectId());
   const viewportRef = useRef(viewportContext);
@@ -272,6 +300,9 @@ export function useAIChat({
           Date.now() - new Date(createdAt).getTime() >
             PROPOSAL_TTL_MINUTES * 60_000;
 
+        const effectiveStatus =
+          overriddenStatus ?? (isExpiredByTTL ? "expired" : "pending");
+
         map.set(proposalId, {
           type: "write",
           proposalId,
@@ -283,13 +314,17 @@ export function useAIChat({
           },
           dataVersion: (output.dataVersion as string) ?? "",
           createdAt,
-          status: overriddenStatus ?? (isExpiredByTTL ? "expired" : "pending"),
+          status: effectiveStatus,
+          collapsedMessage:
+            effectiveStatus === "collapsed"
+              ? collapsedMessages.get(proposalId)
+              : undefined,
         });
       }
     }
 
     return map;
-  }, [messages, proposalStatuses]);
+  }, [messages, proposalStatuses, collapsedMessages]);
 
   const sendMessage = useCallback(
     (content: string) => {
@@ -337,8 +372,26 @@ export function useAIChat({
         setProposalStatuses((prev) => {
           const next = new Map(prev);
           next.set(proposalId, newStatus);
+          if (action === "approve" && data.cascadeState) {
+            next.set(data.cascadeState.collapseProposalId, "collapsed");
+          }
           return next;
         });
+
+        if (action === "approve" && data.cascadeState) {
+          const { collapseProposalId, collapseTaskId, collapsedMessage } =
+            data.cascadeState;
+          setCollapsedMessages((prev) => {
+            const next = new Map(prev);
+            next.set(collapseProposalId, collapsedMessage);
+            return next;
+          });
+          setCollapsedTasks((prev) => {
+            const next = new Map(prev);
+            next.set(collapseTaskId, collapsedMessage);
+            return next;
+          });
+        }
 
         if (action === "approve") {
           queryClient.invalidateQueries({ queryKey: ["shifts"] });
@@ -425,6 +478,7 @@ export function useAIChat({
     resolveProposal,
     isResolving,
     activeTask,
+    collapsedTasks,
     stop,
     regenerate: () => regenerate(),
     setMessages,

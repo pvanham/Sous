@@ -181,5 +181,6 @@ export async function POST(
     action: "approved",
     result: result.data,
     executionSummary: result.executionSummary,
+    ...(result.cascadeState ? { cascadeState: result.cascadeState } : {}),
   });
 }

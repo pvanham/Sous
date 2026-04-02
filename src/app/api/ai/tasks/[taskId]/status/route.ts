@@ -1,11 +1,16 @@
 import { auth } from "@clerk/nextjs/server";
+import { Types } from "mongoose";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { analyzeInfeasibility } from "@/lib/ai/orchestrator/infeasibility-analyzer";
 import AsyncTask from "@/server/models/AsyncTask";
 import { AsyncTaskService } from "@/server/services/async-task.service";
 import { StaffService } from "@/server/services/staff.service";
-import type { AsyncTaskDTO, AsyncTaskResult } from "@/types/async-task";
+import type {
+  AsyncTaskConstraintRelaxationSuggestion,
+  AsyncTaskDTO,
+} from "@/types/async-task";
 
 const RETRY_AFTER_SECONDS = "2";
 
@@ -60,14 +65,20 @@ function isRetryable(
   return true;
 }
 
-function getInfeasibleSuggestedRelaxations(
-  result: AsyncTaskResult | undefined
-): string[] {
-  if (!result) return [];
-  const r = result as AsyncTaskResult & {
-    suggestedRelaxations?: string[];
+const GENERIC_INFEASIBILITY_SUGGESTION: AsyncTaskConstraintRelaxationSuggestion =
+  {
+    priority: 99,
+    category: "staffing",
+    suggestion:
+      "The solver could not find a feasible solution. Please review your constraints and try again.",
+    currentValue: "Current scheduling rules",
+    recommendedValue: "Slightly relaxed constraints in one or more areas",
   };
-  return Array.isArray(r.suggestedRelaxations) ? r.suggestedRelaxations : [];
+
+function hasCachedInfeasibilityAnalysis(
+  suggestedRelaxations: AsyncTaskConstraintRelaxationSuggestion[] | undefined
+): boolean {
+  return Array.isArray(suggestedRelaxations) && suggestedRelaxations.length > 0;
 }
 
 export async function GET(
@@ -201,17 +212,78 @@ export async function GET(
   }
 
   if (task.status === "infeasible") {
-    const result = task.result;
     const summary =
-      result?.summary ??
+      task.result?.summary ??
       "The solver could not find a feasible schedule with the current constraints.";
+
+    let suggestedRelaxations: AsyncTaskConstraintRelaxationSuggestion[] =
+      task.result?.suggestedRelaxations ?? [];
+    let likelyCauses: string[] = task.result?.likelyCauses ?? [];
+
+    if (!hasCachedInfeasibilityAnalysis(suggestedRelaxations)) {
+      await dbConnect();
+      try {
+        const raw = await AsyncTask.findOne({
+          _id: new Types.ObjectId(taskId),
+          orgId: new Types.ObjectId(orgId),
+          clerkUserId: userId,
+        }).lean();
+
+        const inputPayload = raw?.inputPayload;
+        if (inputPayload && typeof inputPayload === "object" && !Array.isArray(inputPayload)) {
+          const analysis = await analyzeInfeasibility({
+            inputPayload: inputPayload as Record<string, unknown>,
+            orgId,
+            locationId,
+          });
+          suggestedRelaxations = analysis.suggestedRelaxations.map((s) => ({
+            priority: s.priority,
+            category: s.category,
+            suggestion: s.suggestion,
+            currentValue: s.currentValue,
+            recommendedValue: s.recommendedValue,
+          }));
+          likelyCauses = analysis.likelyCauses;
+        } else {
+          suggestedRelaxations = [GENERIC_INFEASIBILITY_SUGGESTION];
+          likelyCauses = [];
+        }
+
+        await AsyncTask.findByIdAndUpdate(taskId, {
+          $set: {
+            "result.suggestedRelaxations": suggestedRelaxations,
+            "result.likelyCauses": likelyCauses,
+          },
+        });
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : String(error);
+        console.warn(
+          `[AsyncTask] Infeasibility analysis failed, storing generic suggestion: ${msg}`
+        );
+        suggestedRelaxations = [GENERIC_INFEASIBILITY_SUGGESTION];
+        likelyCauses = [];
+        try {
+          await AsyncTask.findByIdAndUpdate(taskId, {
+            $set: {
+              "result.suggestedRelaxations": suggestedRelaxations,
+              "result.likelyCauses": likelyCauses,
+            },
+          });
+        } catch {
+          /* non-blocking */
+        }
+      }
+    }
+
     return NextResponse.json({
       taskId: task.id,
       status: "infeasible" as const,
       elapsedMs,
       result: {
         summary,
-        suggestedRelaxations: getInfeasibleSuggestedRelaxations(result),
+        suggestedRelaxations,
+        likelyCauses,
       },
     });
   }

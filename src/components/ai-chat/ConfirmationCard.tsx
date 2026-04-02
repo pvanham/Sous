@@ -88,6 +88,12 @@ const statusConfig: Record<
     cardClassName: "opacity-60",
     badge: { variant: "outline", label: "Expired" },
   },
+  collapsed: {
+    icon: CheckCircle2,
+    iconClassName: "text-emerald-600 dark:text-emerald-400",
+    cardClassName: "border-emerald-600/30 dark:border-emerald-400/20",
+    badge: { variant: "success", label: "Accepted" },
+  },
 };
 
 export function ConfirmationCard({
@@ -110,6 +116,24 @@ export function ConfirmationCard({
     } catch {
       setResolveError("Something went wrong. Please try again.");
     }
+  }
+
+  if (status === "collapsed") {
+    return (
+      <div
+        className="flex w-full max-w-md items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-950/5 px-3 py-2.5 text-sm text-foreground shadow-sm dark:border-emerald-400/20 dark:bg-emerald-950/20"
+        role="status"
+        aria-live="polite"
+      >
+        <CheckCircle2
+          className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-hidden
+        />
+        <span className="min-w-0 font-medium leading-snug">
+          {proposal.collapsedMessage ?? "Schedule accepted."}
+        </span>
+      </div>
+    );
   }
 
   return (

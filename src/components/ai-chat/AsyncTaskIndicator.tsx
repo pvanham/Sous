@@ -22,6 +22,9 @@ export interface AsyncTaskIndicatorProps {
     elapsedMs: number;
     progressMessage: string;
   };
+  /** Compact badge after schedule is saved (cascade) */
+  collapsed?: boolean;
+  collapsedMessage?: string;
 }
 
 const KNOWN_STATUSES: AsyncTaskStatus[] = [
@@ -41,7 +44,33 @@ function formatElapsed(ms: number): string {
   return `${m}m ${s}s`;
 }
 
-export function AsyncTaskIndicator({ task }: AsyncTaskIndicatorProps) {
+export function AsyncTaskIndicator({
+  task,
+  collapsed,
+  collapsedMessage,
+}: AsyncTaskIndicatorProps) {
+  if (collapsed) {
+    const text = collapsedMessage ?? "Schedule accepted.";
+    return (
+      <div
+        className="flex w-full justify-start"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <div
+          className="flex w-full max-w-md items-center gap-2 rounded-lg border border-emerald-600/30 bg-emerald-950/5 px-3 py-2.5 text-sm text-foreground shadow-sm dark:border-emerald-400/20 dark:bg-emerald-950/20"
+          role="status"
+        >
+          <CheckCircle2
+            className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden
+          />
+          <span className="min-w-0 font-medium leading-snug">{text}</span>
+        </div>
+      </div>
+    );
+  }
+
   const { status, progressMessage } = task;
   const isKnown = KNOWN_STATUSES.includes(status);
   const effectiveStatus: AsyncTaskStatus | "unknown" = isKnown

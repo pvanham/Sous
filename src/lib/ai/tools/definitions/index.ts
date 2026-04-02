@@ -6,6 +6,7 @@ export { getStaffSummaryParamsSchema } from "./get-staff-summary.schema";
 export { getTimeOffRequestsParamsSchema } from "./get-time-off-requests.schema";
 export { proposeShiftSwapParamsSchema } from "./propose-shift-swap.schema";
 export { proposeScheduleGenerationParamsSchema } from "./propose-schedule-generation.schema";
+export { proposeAcceptGeneratedScheduleParamsSchema } from "./propose-accept-generated-schedule.schema";
 
 // Handlers
 export { executeResolveSchedule } from "./resolve-schedule.handler";
@@ -15,3 +16,4 @@ export { executeGetStaffSummary } from "./get-staff-summary.handler";
 export { executeGetTimeOffRequests } from "./get-time-off-requests.handler";
 export { executeProposeShiftSwap } from "./propose-shift-swap.handler";
 export { executeProposeScheduleGeneration } from "./propose-schedule-generation.handler";
+export { executeProposeAcceptGeneratedSchedule } from "./propose-accept-generated-schedule.handler";

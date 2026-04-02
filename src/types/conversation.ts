@@ -1,4 +1,10 @@
-export type ProposalStatus = "pending" | "approved" | "denied" | "expired" | "stale";
+export type ProposalStatus =
+  | "pending"
+  | "approved"
+  | "denied"
+  | "expired"
+  | "stale"
+  | "collapsed";
 
 export interface StoredProposal {
   proposalId: string;

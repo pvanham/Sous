@@ -13,6 +13,15 @@ export type AsyncTaskStatus =
 
 export type AsyncTaskType = "schedule_generation";
 
+/** Cached infeasibility analysis (lazy, from Next.js — not written by Python solver). */
+export interface AsyncTaskConstraintRelaxationSuggestion {
+  priority: number;
+  category: string;
+  suggestion: string;
+  currentValue: string;
+  recommendedValue: string;
+}
+
 export interface AsyncTaskResult {
   /** Solver status string (e.g., "OPTIMAL", "FEASIBLE") */
   solverStatus: string;
@@ -30,6 +39,10 @@ export interface AsyncTaskResult {
   generatedDays: unknown[];
   /** Human-readable summary for the LLM */
   summary: string;
+  /** Constraint relaxation suggestions (only for infeasible, cached after first poll) */
+  suggestedRelaxations?: AsyncTaskConstraintRelaxationSuggestion[];
+  /** High-level likely causes (only for infeasible, cached with suggestions) */
+  likelyCauses?: string[];
 }
 
 export interface AsyncTaskError {

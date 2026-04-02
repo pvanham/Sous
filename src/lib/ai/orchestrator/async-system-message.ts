@@ -1,4 +1,7 @@
-import type { AsyncTaskType } from "@/types/async-task";
+import type {
+  AsyncTaskConstraintRelaxationSuggestion,
+  AsyncTaskType,
+} from "@/types/async-task";
 
 /** Shown when terminal status expects `result` but it is missing or unusable. */
 const FALLBACK_RESULT_UNAVAILABLE =
@@ -22,7 +25,8 @@ export interface AsyncTaskCompletionContext {
     totalShiftsGenerated: number;
     totalUnfilledSlots: number;
     summary: string;
-    suggestedRelaxations?: string[];
+    suggestedRelaxations?: AsyncTaskConstraintRelaxationSuggestion[];
+    likelyCauses?: string[];
   };
   /** Error data (for failed/timed_out) */
   error?: {
@@ -159,6 +163,21 @@ function buildCompletedMessage(ctx: AsyncTaskCompletionContext): string {
   return wrapSystemMessage(parts);
 }
 
+function formatRelaxationLine(
+  s: AsyncTaskConstraintRelaxationSuggestion
+): string {
+  const sug = typeof s.suggestion === "string" ? s.suggestion.trim() : "";
+  const cur =
+    typeof s.currentValue === "string" ? s.currentValue.trim() : "";
+  const rec =
+    typeof s.recommendedValue === "string" ? s.recommendedValue.trim() : "";
+  if (!sug) return "";
+  if (cur && rec) {
+    return `${sug} (currently: ${cur}; recommended: ${rec})`;
+  }
+  return sug;
+}
+
 function buildInfeasibleMessage(ctx: AsyncTaskCompletionContext): string {
   if (!isCompleteResult(ctx.result)) {
     return FALLBACK_RESULT_UNAVAILABLE;
@@ -171,8 +190,15 @@ function buildInfeasibleMessage(ctx: AsyncTaskCompletionContext): string {
       ? r.summary.trim()
       : "No feasible solution was found under the current constraints.";
 
-  const relaxations = Array.isArray(r.suggestedRelaxations)
-    ? r.suggestedRelaxations.filter((s) => typeof s === "string" && s.trim().length > 0)
+  const rawRelax = Array.isArray(r.suggestedRelaxations)
+    ? r.suggestedRelaxations
+    : [];
+  const relaxations: string[] = rawRelax
+    .map((item) => formatRelaxationLine(item))
+    .filter((line) => line.length > 0);
+
+  const causes = Array.isArray(r.likelyCauses)
+    ? r.likelyCauses.filter((c) => typeof c === "string" && c.trim().length > 0)
     : [];
 
   const parts: string[] = [
@@ -181,8 +207,15 @@ function buildInfeasibleMessage(ctx: AsyncTaskCompletionContext): string {
     `${summary}`,
   ];
 
+  if (causes.length > 0) {
+    const causeText = causes.map((c) => c.trim()).join(" ");
+    parts.push(`Likely contributing factors: ${causeText}`);
+  }
+
   if (relaxations.length > 0) {
-    const numbered = relaxations.map((s, i) => `${i + 1}) ${s.trim()}`).join(" ");
+    const numbered = relaxations
+      .map((s, i) => `${i + 1}) ${s}`)
+      .join(" ");
     parts.push(`Suggested relaxations: ${numbered}.`);
   }
 

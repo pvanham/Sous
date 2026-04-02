@@ -8,6 +8,7 @@ import {
   getTimeOffRequestsParamsSchema,
   proposeShiftSwapParamsSchema,
   proposeScheduleGenerationParamsSchema,
+  proposeAcceptGeneratedScheduleParamsSchema,
   executeResolveSchedule,
   executeGetScheduleHealth,
   executeGetShiftRoster,
@@ -15,6 +16,7 @@ import {
   executeGetTimeOffRequests,
   executeProposeShiftSwap,
   executeProposeScheduleGeneration,
+  executeProposeAcceptGeneratedSchedule,
 } from "./definitions";
 
 const TOOL_REGISTRY: AIToolDefinition[] = [
@@ -78,6 +80,14 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
     requiredPermission: "schedule:generate",
     parameters: proposeScheduleGenerationParamsSchema,
     execute: executeProposeScheduleGeneration,
+  }),
+  defineTool({
+    name: "propose_accept_generated_schedule",
+    description:
+      "Propose accepting a generated schedule from a completed solver task. Call this after the schedule solver has completed to let the user confirm and save the generated shifts.",
+    requiredPermission: "schedule:generate",
+    parameters: proposeAcceptGeneratedScheduleParamsSchema,
+    execute: executeProposeAcceptGeneratedSchedule,
   }),
 ];
 

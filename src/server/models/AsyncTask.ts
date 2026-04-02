@@ -24,6 +24,8 @@ const AsyncTaskResultSchema = new Schema(
     overtimeSummary: { type: Schema.Types.Mixed, required: true },
     generatedDays: { type: [Schema.Types.Mixed], default: [] },
     summary: { type: String, required: true },
+    suggestedRelaxations: { type: [Schema.Types.Mixed] },
+    likelyCauses: { type: [String] },
   },
   { _id: false }
 );

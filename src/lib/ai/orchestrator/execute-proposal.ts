@@ -1,8 +1,11 @@
 import type { StoredProposal } from "@/types/conversation";
+import { combineDateTime, parseDateString } from "@/lib/utils/date";
 import { buildOCCFilter, getStaleReason } from "./occ";
+import type { AcceptSchedulePayload } from "@/lib/ai/tools/definitions/propose-accept-generated-schedule.schema";
 import { AsyncTaskService } from "@/server/services/async-task.service";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
+import type { CreateShiftInput } from "@/types/shift";
 
 export type ProposalErrorCode =
   | "stale_data"
@@ -29,6 +32,12 @@ export interface ExecuteProposalResult {
   asyncTaskId?: string;
   /** ISO timestamp — polling deadline for the async task */
   asyncDeadline?: string;
+  /** Collapse related generation card + async indicator after accept-generated-schedule */
+  cascadeState?: {
+    collapseProposalId: string;
+    collapseTaskId: string;
+    collapsedMessage: string;
+  };
 }
 
 /**
@@ -47,6 +56,8 @@ export async function executeProposal(
       return executeShiftSwap(proposal, orgId, locationId);
     case "propose_schedule_generation":
       return executeScheduleGeneration(input);
+    case "propose_accept_generated_schedule":
+      return executeAcceptGeneratedSchedule(proposal, orgId, locationId);
     default:
       return {
         success: false,
@@ -231,4 +242,113 @@ async function executeScheduleGeneration(
     asyncTaskId: dispatch.taskId,
     asyncDeadline: dispatch.deadline.toISOString(),
   };
+}
+
+function formatWeekLabelForSummary(weekStartDate: Date | string): string {
+  const d =
+    weekStartDate instanceof Date
+      ? weekStartDate
+      : parseDateString(weekStartDate);
+  if (isNaN(d.getTime())) {
+    return weekStartDate instanceof Date
+      ? weekStartDate.toISOString().slice(0, 10)
+      : String(weekStartDate);
+  }
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  }).format(d);
+}
+
+async function executeAcceptGeneratedSchedule(
+  proposal: StoredProposal,
+  orgId: string,
+  locationId: string,
+): Promise<ExecuteProposalResult> {
+  const payload = proposal.payload as Partial<AcceptSchedulePayload>;
+
+  const scheduleId = typeof payload.scheduleId === "string" ? payload.scheduleId : "";
+  const shifts = Array.isArray(payload.shifts) ? payload.shifts : null;
+  const originatingProposalId =
+    typeof payload.originatingProposalId === "string"
+      ? payload.originatingProposalId
+      : "";
+  const originatingTaskId =
+    typeof payload.originatingTaskId === "string" ? payload.originatingTaskId : "";
+
+  if (!scheduleId || !shifts || shifts.length === 0) {
+    return {
+      success: false,
+      executionSummary: "",
+      error:
+        "Malformed proposal payload for 'propose_accept_generated_schedule': missing scheduleId or shifts.",
+      errorCode: "malformed_payload",
+    };
+  }
+
+  if (!originatingProposalId || !originatingTaskId) {
+    return {
+      success: false,
+      executionSummary: "",
+      error:
+        "Malformed proposal payload for 'propose_accept_generated_schedule': missing originatingProposalId or originatingTaskId.",
+      errorCode: "malformed_payload",
+    };
+  }
+
+  const schedule = await ScheduleService.getById(orgId, locationId, scheduleId);
+  if (!schedule) {
+    return {
+      success: false,
+      executionSummary: "",
+      error: "Schedule not found.",
+      errorCode: "execution_failed",
+    };
+  }
+
+  const createInputs: CreateShiftInput[] = shifts.map((shift) => {
+    const date = parseDateString(shift.date);
+    const start = combineDateTime(date, shift.startTime);
+    const end = combineDateTime(date, shift.endTime);
+
+    return {
+      orgId,
+      locationId,
+      scheduleId,
+      staffId: shift.staffId,
+      start,
+      end,
+      station: shift.station,
+      notes: "",
+    };
+  });
+
+  try {
+    const result = await ShiftService.bulkCreate(createInputs);
+    const weekLabel = formatWeekLabelForSummary(schedule.weekStartDate);
+    const created = result.created;
+    const executionSummary = `Schedule saved: ${created} shift${created === 1 ? "" : "s"} created for the week of ${weekLabel}.`;
+
+    const collapsedMessage = `✅ Schedule Accepted — ${created} shift${created === 1 ? "" : "s"} saved`;
+
+    return {
+      success: true,
+      executionSummary,
+      data: result,
+      cascadeState: {
+        collapseProposalId: originatingProposalId,
+        collapseTaskId: originatingTaskId,
+        collapsedMessage,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return {
+      success: false,
+      executionSummary: "",
+      error: `Failed to save generated schedule: ${message}`,
+      errorCode: "execution_failed",
+    };
+  }
 }

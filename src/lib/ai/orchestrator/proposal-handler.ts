@@ -119,12 +119,21 @@ interface ScheduleGenPayloadShape {
   };
 }
 
+interface AcceptSchedulePayloadShape {
+  totalShiftsGenerated?: number;
+  totalCostCents?: number;
+}
+
 function buildSummary(proposal: ToolProposal): { action: string; details: string[] } {
   switch (proposal.toolName) {
     case "propose_shift_swap":
       return buildShiftSwapSummary(proposal.payload as ShiftSwapPayloadShape);
     case "propose_schedule_generation":
       return buildScheduleGenSummary(proposal.payload as ScheduleGenPayloadShape);
+    case "propose_accept_generated_schedule":
+      return buildAcceptScheduleSummary(
+        proposal.payload as AcceptSchedulePayloadShape,
+      );
     default:
       return buildFallbackSummary(proposal);
   }
@@ -178,6 +187,36 @@ function buildScheduleGenSummary(payload: ScheduleGenPayloadShape): {
   }
 
   return { action: "Schedule Generation", details };
+}
+
+function buildAcceptScheduleSummary(payload: AcceptSchedulePayloadShape): {
+  action: string;
+  details: string[];
+} {
+  const details: string[] = [];
+
+  const n =
+    typeof payload.totalShiftsGenerated === "number" &&
+    Number.isFinite(payload.totalShiftsGenerated)
+      ? payload.totalShiftsGenerated
+      : 0;
+  if (n > 0) {
+    details.push(`${n} shift${n === 1 ? "" : "s"}`);
+  }
+
+  const cents =
+    typeof payload.totalCostCents === "number" &&
+    Number.isFinite(payload.totalCostCents)
+      ? payload.totalCostCents
+      : 0;
+  details.push(
+    `Estimated cost: ${new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(cents / 100)}`,
+  );
+
+  return { action: "Accept Generated Schedule", details };
 }
 
 function buildFallbackSummary(proposal: ToolProposal): {

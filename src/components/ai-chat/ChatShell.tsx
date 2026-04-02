@@ -83,6 +83,7 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
     resolveProposal,
     isResolving,
     activeTask,
+    collapsedTasks,
   } = useAIChat({
     viewportContext: mergedViewportContext,
     conversationId,
@@ -94,7 +95,7 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
     const container = scrollContainerRef.current;
     if (!container || !shouldAutoScrollRef.current) return;
     container.scrollTop = container.scrollHeight;
-  }, [messages, isLoading, activeTask]);
+  }, [messages, isLoading, activeTask, collapsedTasks]);
 
   function handleScroll() {
     const container = scrollContainerRef.current;
@@ -197,7 +198,28 @@ export function ChatShell({ locationId, conversationId, viewportContext }: ChatS
           ))
         )}
 
-        {activeTask ? <AsyncTaskIndicator task={activeTask} /> : null}
+        {activeTask ? (
+          <AsyncTaskIndicator
+            task={activeTask}
+            collapsed={collapsedTasks.has(activeTask.taskId)}
+            collapsedMessage={collapsedTasks.get(activeTask.taskId)}
+          />
+        ) : null}
+        {!activeTask
+          ? [...collapsedTasks.entries()].map(([taskId, msg]) => (
+              <AsyncTaskIndicator
+                key={taskId}
+                task={{
+                  taskId,
+                  status: "completed",
+                  elapsedMs: 0,
+                  progressMessage: "",
+                }}
+                collapsed
+                collapsedMessage={msg}
+              />
+            ))
+          : null}
 
         {isLoading ? <ThinkingDots /> : null}
       </div>

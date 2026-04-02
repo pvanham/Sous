@@ -8,6 +8,8 @@ import type { ClientSafeProposal } from "@/lib/ai/orchestrator/proposal-handler"
  */
 export interface ChatProposal extends ClientSafeProposal {
   status: ProposalStatus;
+  /** Badge text when status is "collapsed" (cascade after accept-generated-schedule) */
+  collapsedMessage?: string;
 }
 
 /**
@@ -24,4 +26,10 @@ export interface ResolveProposalResponse {
   async?: boolean;
   asyncTaskId?: string;
   asyncDeadline?: string;
+  /** Present when approving propose_accept_generated_schedule — collapse related UI */
+  cascadeState?: {
+    collapseProposalId: string;
+    collapseTaskId: string;
+    collapsedMessage: string;
+  };
 }

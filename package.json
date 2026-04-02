@@ -20,7 +20,8 @@
     "seed:ai-test": "tsx scripts/seed-schedule-generation.ts",
     "cleanup:ai-test": "tsx scripts/seed-schedule-generation.ts --cleanup",
     "seed:favorable": "tsx scripts/seed-favorable-schedule.ts",
-    "cleanup:favorable": "tsx scripts/seed-favorable-schedule.ts --cleanup"
+    "cleanup:favorable": "tsx scripts/seed-favorable-schedule.ts --cleanup",
+    "test:phase-4": "tsx scripts/test-phase4.ts"
   },
   "keywords": [],
   "author": "",
