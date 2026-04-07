@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* ============================================
+   Sous Mobile — Design Tokens
+   Mirrors the web app's "Warm Industrial" system.
+   NativeWind uses these CSS variables at runtime.
+   ============================================ */
+
+:root {
+  --radius: 0.25rem;
+
+  /* Backgrounds */
+  --background: #ebe9e4;
+  --foreground: #44403c;
+
+  /* Cards & Surfaces */
+  --card: #f5f2ed;
+  --card-foreground: #44403c;
+  --popover: #f5f2ed;
+  --popover-foreground: #44403c;
+
+  /* Primary - Rust / Burnt Orange */
+  --primary: #b45309;
+  --primary-foreground: #fefce8;
+
+  /* Secondary */
+  --secondary: #e7e5e4;
+  --secondary-foreground: #1c1917;
+
+  /* Muted */
+  --muted: #e7e5e4;
+  --muted-foreground: #78716c;
+
+  /* Accent */
+  --accent: #d6d3d1;
+  --accent-foreground: #1c1917;
+
+  /* Destructive */
+  --destructive: #dc2626;
+  --destructive-foreground: #fef2f2;
+
+  /* Borders & Inputs */
+  --border: #d6d3d1;
+  --input: #d6d3d1;
+  --ring: #b45309;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #1c1917;
+    --foreground: #e7e5e4;
+
+    --card: #292524;
+    --card-foreground: #e7e5e4;
+    --popover: #292524;
+    --popover-foreground: #e7e5e4;
+
+    --primary: #d97706;
+    --primary-foreground: #1c1917;
+
+    --secondary: #44403c;
+    --secondary-foreground: #e7e5e4;
+
+    --muted: #44403c;
+    --muted-foreground: #a8a29e;
+
+    --accent: #44403c;
+    --accent-foreground: #e7e5e4;
+
+    --destructive: #f87171;
+    --destructive-foreground: #1c1917;
+
+    --border: #44403c;
+    --input: #44403c;
+    --ring: #d97706;
+  }
+}

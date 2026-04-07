@@ -1,0 +1,15 @@
+{
+  "name": "@sous/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./tailwind-preset.ts",
+  "types": "./tailwind-preset.ts",
+  "exports": {
+    "./tailwind-preset": "./tailwind-preset.ts"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  }
+}
