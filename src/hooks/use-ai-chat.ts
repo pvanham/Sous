@@ -74,7 +74,8 @@ function isAbortError(e: unknown): boolean {
 }
 
 function pollResultToCompletionContext(
-  pollResult: PollTaskResult
+  pollResult: PollTaskResult,
+  taskId?: string,
 ): AsyncTaskCompletionContext {
   const data = pollResult.data as Record<string, unknown>;
   const elapsedMs =
@@ -89,6 +90,7 @@ function pollResultToCompletionContext(
     return {
       status: "completed",
       taskType: "schedule_generation",
+      taskId,
       elapsedMs,
       result: {
         solverStatus: String(r?.solverStatus ?? "UNKNOWN"),
@@ -129,6 +131,7 @@ function pollResultToCompletionContext(
     return {
       status: "infeasible",
       taskType: "schedule_generation",
+      taskId,
       elapsedMs,
       result: {
         solverStatus: "INFEASIBLE",
@@ -161,6 +164,7 @@ function pollResultToCompletionContext(
     return {
       status,
       taskType: "schedule_generation",
+      taskId,
       elapsedMs,
       error: {
         message: message || "Schedule generation failed.",
@@ -172,6 +176,7 @@ function pollResultToCompletionContext(
   return {
     status: "failed",
     taskType: "schedule_generation",
+    taskId,
     elapsedMs,
     error: {
       message: "Schedule generation finished with an unknown status.",
@@ -424,7 +429,7 @@ export function useAIChat({
             const pollResult = await pollTaskStatus({
               taskId,
               intervalMs: 3000,
-              maxDurationMs: 150_000,
+              maxDurationMs: 195_000,
               signal: abort.signal,
               onStatusUpdate: (taskStatus, elapsed) => {
                 setActiveTask({
@@ -436,7 +441,7 @@ export function useAIChat({
               },
             });
 
-            const ctx = pollResultToCompletionContext(pollResult);
+            const ctx = pollResultToCompletionContext(pollResult, taskId);
             const systemMessage = buildAsyncTaskSystemMessage(ctx);
             await sdkSendMessage({ text: systemMessage });
           } catch (err) {

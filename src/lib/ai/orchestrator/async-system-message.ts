@@ -15,6 +15,8 @@ export interface AsyncTaskCompletionContext {
   status: "completed" | "infeasible" | "failed" | "timed_out";
   /** The task type */
   taskType: AsyncTaskType;
+  /** The async task ID (needed so the LLM can call propose_accept_generated_schedule) */
+  taskId?: string;
   /** Result data (for completed/infeasible) */
   result?: {
     solverStatus: string;
@@ -157,7 +159,9 @@ function buildCompletedMessage(ctx: AsyncTaskCompletionContext): string {
 
   parts.push("The generated schedule is ready for preview.");
   parts.push(
-    "Please summarize these results for the user in a natural, conversational tone."
+    "Summarize these results for the user, then immediately call propose_accept_generated_schedule"
+      + (ctx.taskId ? ` with taskId "${ctx.taskId}"` : "")
+      + " so the user can confirm and save the shifts."
   );
 
   return wrapSystemMessage(parts);

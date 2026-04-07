@@ -76,7 +76,9 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "propose_schedule_generation",
     description:
-      "Propose generating a new weekly schedule using the constraint solver. Returns a proposal for user confirmation.",
+      "Propose generating a new weekly schedule using the constraint solver. Only weekStartDate (ISO Monday date) is required. " +
+      "templateScheduleId and additionalInstructions are fully optional — omit them unless the user explicitly provides them. " +
+      "Do NOT ask the user for a template ID; just call the tool with weekStartDate. Returns a proposal for user confirmation.",
     requiredPermission: "schedule:generate",
     parameters: proposeScheduleGenerationParamsSchema,
     execute: executeProposeScheduleGeneration,

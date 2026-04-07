@@ -12,6 +12,8 @@ import type {
   AsyncTaskDTO,
 } from "@/types/async-task";
 
+const CP_SOLVER_URL = process.env.CP_SOLVER_URL ?? "http://localhost:8000";
+const SOLVER_POLL_TIMEOUT_MS = 3_000;
 const RETRY_AFTER_SECONDS = "2";
 
 /** Error codes that indicate the client should not retry the same operation blindly */
@@ -81,6 +83,54 @@ function hasCachedInfeasibilityAnalysis(
   return Array.isArray(suggestedRelaxations) && suggestedRelaxations.length > 0;
 }
 
+// ── Solver polling helpers ────────────────────────────────
+
+interface SolverJobResponse {
+  status: string;
+  result?: Record<string, unknown>;
+  error?: { message: string };
+}
+
+async function fetchSolverJobStatus(
+  taskId: string,
+): Promise<SolverJobResponse | null> {
+  try {
+    const res = await fetch(`${CP_SOLVER_URL}/jobs/${taskId}`, {
+      signal: AbortSignal.timeout(SOLVER_POLL_TIMEOUT_MS),
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) return null;
+    return (await res.json()) as SolverJobResponse;
+  } catch {
+    return null;
+  }
+}
+
+async function writeSolverResultToTask(
+  taskId: string,
+  solverJob: SolverJobResponse,
+): Promise<void> {
+  const now = new Date();
+  const update: Record<string, unknown> = {
+    status: solverJob.status,
+    completedAt: now,
+    updatedAt: now,
+  };
+  if (solverJob.result) {
+    update.result = solverJob.result;
+  }
+  if (solverJob.error) {
+    update.error = solverJob.error;
+  }
+  await AsyncTask.findByIdAndUpdate(taskId, { $set: update });
+}
+
+function deleteSolverJob(taskId: string): void {
+  fetch(`${CP_SOLVER_URL}/jobs/${taskId}`, { method: "DELETE" }).catch(
+    () => {},
+  );
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ taskId: string }> }
@@ -138,27 +188,61 @@ export async function GET(
     });
   }
 
-  const elapsedMs = computeElapsedMs(task);
+  let elapsedMs = computeElapsedMs(task);
+  let currentTask = task;
 
-  if (task.status === "pending" || task.status === "running") {
+  // Poll the solver's in-memory job store for progress when the DB still says pending/running
+  if (currentTask.status === "pending" || currentTask.status === "running") {
+    await dbConnect();
+    const solverJob = await fetchSolverJobStatus(taskId);
+
+    if (
+      solverJob &&
+      solverJob.status !== "pending" &&
+      solverJob.status !== "running"
+    ) {
+      await writeSolverResultToTask(taskId, solverJob);
+      deleteSolverJob(taskId);
+
+      const updated = await AsyncTaskService.getTaskStatus(
+        taskId,
+        orgId,
+        userId,
+      );
+      if (updated) {
+        currentTask = updated;
+        elapsedMs = computeElapsedMs(currentTask);
+      }
+    } else if (
+      solverJob?.status === "running" &&
+      currentTask.status === "pending"
+    ) {
+      await AsyncTask.findByIdAndUpdate(taskId, {
+        $set: { status: "running", dispatchedAt: new Date() },
+      });
+      currentTask = { ...currentTask, status: "running" };
+    }
+  }
+
+  if (currentTask.status === "pending" || currentTask.status === "running") {
     const headers = new Headers();
     headers.set("Retry-After", RETRY_AFTER_SECONDS);
     return NextResponse.json(
       {
-        taskId: task.id,
-        status: task.status,
+        taskId: currentTask.id,
+        status: currentTask.status,
         elapsedMs,
-        deadline: new Date(task.deadline).toISOString(),
+        deadline: new Date(currentTask.deadline).toISOString(),
       },
       { headers }
     );
   }
 
-  if (task.status === "completed") {
-    const result = task.result;
+  if (currentTask.status === "completed") {
+    const result = currentTask.result;
     if (!result) {
       return NextResponse.json({
-        taskId: task.id,
+        taskId: currentTask.id,
         status: "completed" as const,
         elapsedMs,
         result: {
@@ -194,7 +278,7 @@ export async function GET(
     );
 
     return NextResponse.json({
-      taskId: task.id,
+      taskId: currentTask.id,
       status: "completed" as const,
       elapsedMs,
       result: {
@@ -211,14 +295,14 @@ export async function GET(
     });
   }
 
-  if (task.status === "infeasible") {
+  if (currentTask.status === "infeasible") {
     const summary =
-      task.result?.summary ??
+      currentTask.result?.summary ??
       "The solver could not find a feasible schedule with the current constraints.";
 
     let suggestedRelaxations: AsyncTaskConstraintRelaxationSuggestion[] =
-      task.result?.suggestedRelaxations ?? [];
-    let likelyCauses: string[] = task.result?.likelyCauses ?? [];
+      currentTask.result?.suggestedRelaxations ?? [];
+    let likelyCauses: string[] = currentTask.result?.likelyCauses ?? [];
 
     if (!hasCachedInfeasibilityAnalysis(suggestedRelaxations)) {
       await dbConnect();
@@ -277,7 +361,7 @@ export async function GET(
     }
 
     return NextResponse.json({
-      taskId: task.id,
+      taskId: currentTask.id,
       status: "infeasible" as const,
       elapsedMs,
       result: {
@@ -288,18 +372,18 @@ export async function GET(
     });
   }
 
-  if (task.status === "failed" || task.status === "timed_out") {
+  if (currentTask.status === "failed" || currentTask.status === "timed_out") {
     const message =
-      task.status === "timed_out"
+      currentTask.status === "timed_out"
         ? "Schedule generation timed out before completion. Please try again."
-        : task.error?.message ?? "Schedule generation failed.";
+        : currentTask.error?.message ?? "Schedule generation failed.";
 
     return NextResponse.json({
-      taskId: task.id,
-      status: task.status,
+      taskId: currentTask.id,
+      status: currentTask.status,
       error: {
         message,
-        retryable: isRetryable(task.status, task.error),
+        retryable: isRetryable(currentTask.status, currentTask.error),
       },
       elapsedMs,
     });
@@ -307,8 +391,8 @@ export async function GET(
 
   // Exhaustive fallback (unknown status)
   return NextResponse.json({
-    taskId: task.id,
-    status: task.status,
+    taskId: currentTask.id,
+    status: currentTask.status,
     elapsedMs,
     error: {
       message: "Unknown task status.",

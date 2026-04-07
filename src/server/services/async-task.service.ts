@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
+import { getWeekStart, parseDateString } from "@/lib/utils/date";
 import AsyncTask from "@/server/models/AsyncTask";
 import { buildSolverPayload } from "@/server/services/cp-solver.service";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
@@ -50,30 +51,23 @@ export const AsyncTaskService = {
    * Sequence:
    * 1. Build WeekSolverInput via CandidateService/SchedulingAgentService.
    * 2. Create AsyncTask document (status: "pending").
-   * 3. POST to Python /solve-async with the payload + taskId + mongoUri.
+   * 3. POST to Python /solve-async with the payload + taskId.
    * 4. Verify 202 Accepted response.
    * 5. Return { dispatched: true, taskId, deadline }.
    *
-   * Python handles the rest: it updates the task to "running", solves,
-   * and updates to "completed"/"infeasible"/"failed" directly in MongoDB.
+   * The solver stores results in-memory. Node polls GET /jobs/:taskId
+   * to retrieve results and writes them back to MongoDB.
    */
   async dispatchScheduleGeneration(
     input: DispatchScheduleGenerationInput,
   ): Promise<DispatchResult> {
-    const mongoUri = process.env.MONGODB_URI;
-    if (!mongoUri) {
-      return {
-        dispatched: false,
-        taskId: "",
-        deadline: new Date(),
-        error:
-          "MONGODB_URI environment variable is not set. Cannot dispatch async task.",
-      };
-    }
-
     await dbConnect();
 
-    const weekStart = new Date(input.weekStartDate);
+    const weekStart = getWeekStart(
+      /^\d{4}-\d{2}-\d{2}$/.test(input.weekStartDate)
+        ? parseDateString(input.weekStartDate)
+        : new Date(input.weekStartDate),
+    );
     let context;
     try {
       context = await SchedulingAgentService.buildSchedulingContext(
@@ -142,13 +136,10 @@ export const AsyncTaskService = {
     }
 
     const taskIdStr = String(taskDoc._id);
-    const mongoDbName = process.env.MONGODB_DB_NAME ?? "sous";
 
     const body = JSON.stringify({
       ...solverPayload,
       taskId: taskIdStr,
-      mongoUri,
-      mongoDbName,
     });
 
     const url = `${CP_SOLVER_URL}/solve-async`;

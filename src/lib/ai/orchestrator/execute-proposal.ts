@@ -1,5 +1,5 @@
 import type { StoredProposal } from "@/types/conversation";
-import { combineDateTime, parseDateString } from "@/lib/utils/date";
+import { combineDateTime, getWeekStart, parseDateString } from "@/lib/utils/date";
 import { buildOCCFilter, getStaleReason } from "./occ";
 import type { AcceptSchedulePayload } from "@/lib/ai/tools/definitions/propose-accept-generated-schedule.schema";
 import { AsyncTaskService } from "@/server/services/async-task.service";
@@ -181,8 +181,10 @@ async function executeScheduleGeneration(
     };
   }
 
-  const weekStart = new Date(weekStartDate);
-  if (isNaN(weekStart.getTime())) {
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)
+    ? parseDateString(weekStartDate)
+    : new Date(weekStartDate);
+  if (isNaN(parsed.getTime())) {
     return {
       success: false,
       executionSummary: "",
@@ -191,6 +193,7 @@ async function executeScheduleGeneration(
       errorCode: "malformed_payload",
     };
   }
+  const weekStart = getWeekStart(parsed);
 
   const rawTemplate = proposal.payload.templateScheduleId;
   let templateScheduleId: string | undefined;

@@ -6,6 +6,7 @@ import type { ToolExecutionContext } from "../tool-registry.types";
 import type { ToolProposal } from "../tool-proposal.types";
 import { sanitizeUserText } from "../sanitize";
 import { computeDataVersion } from "@/lib/ai/orchestrator/occ";
+import { getWeekStart, parseDateString } from "@/lib/utils/date";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -22,8 +23,10 @@ function createWeekFormatter(tz: string) {
   });
 }
 
-function parseISODate(value: string): Date | null {
-  const date = new Date(value);
+function parseAsLocalDate(value: string): Date | null {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? parseDateString(value)
+    : new Date(value);
   return isNaN(date.getTime()) ? null : date;
 }
 
@@ -31,12 +34,13 @@ export async function executeProposeScheduleGeneration(
   params: ProposeScheduleGenerationParams,
   context: ToolExecutionContext
 ): Promise<ToolProposal<ScheduleGenerationPayload> | null> {
-  const weekStart = parseISODate(params.weekStartDate);
-  if (!weekStart) {
+  const parsed = parseAsLocalDate(params.weekStartDate);
+  if (!parsed) {
     throw new Error(
       "Invalid date format for weekStartDate. Expected ISO date string (e.g., '2026-03-17')."
     );
   }
+  const weekStart = getWeekStart(parsed);
 
   const [schedule, config, staff] = await Promise.all([
     ScheduleService.getByWeek(context.orgId, context.locationId, weekStart),
@@ -88,8 +92,10 @@ export async function executeProposeScheduleGeneration(
   const weekLabel = createWeekFormatter(tz).format(weekStart);
   const description = `Generate a new schedule for the week of ${weekLabel} with ${activeStaff.length} staff members`;
 
+  const normalizedWeekStart = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
+
   const payload: ScheduleGenerationPayload = {
-    weekStartDate: params.weekStartDate,
+    weekStartDate: normalizedWeekStart,
     templateScheduleId: params.templateScheduleId ?? null,
     additionalInstructions: sanitizeUserText(params.additionalInstructions),
     staffCount: activeStaff.length,

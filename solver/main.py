@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
-from datetime import datetime, timezone
 from typing import Optional
 
-from bson import ObjectId
-from fastapi import BackgroundTasks, FastAPI
+from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi.responses import Response
 from ortools.sat.python import cp_model
 from pydantic import BaseModel
 
@@ -106,7 +106,7 @@ class SolveRequest(BaseModel):
 
 class SolveAsyncRequest(BaseModel):
     """Extended request for async solving. Includes the standard
-    SolveRequest fields plus metadata for MongoDB write-back."""
+    SolveRequest fields plus a taskId for job tracking."""
 
     days: list[DayInput]
     maxHoursLookup: dict[str, float]
@@ -115,8 +115,6 @@ class SolveAsyncRequest(BaseModel):
     settings: Optional[ScheduleSettings] = None
 
     taskId: str
-    mongoUri: str
-    mongoDbName: str
 
 
 class SolveAsyncResponse(BaseModel):
@@ -836,16 +834,11 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
 
 
 # ────────────────────────────────────────────────────────────
-# Async solve -- background task + MongoDB write-back
+# Async solve -- in-memory job store (Node polls for results)
 # ────────────────────────────────────────────────────────────
 
-
-def _async_task_id_filter(task_id: str) -> dict:
-    """Match AsyncTask by ObjectId or string _id."""
-    try:
-        return {"_id": ObjectId(task_id)}
-    except Exception:
-        return {"_id": task_id}
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
 
 
 def _day_result_to_dict(day: DayResult) -> dict:
@@ -854,157 +847,89 @@ def _day_result_to_dict(day: DayResult) -> dict:
     return day.dict()
 
 
-def _terminal_update(
-    coll,
-    task_filter: dict,
-    *,
-    status: str,
-    now: datetime,
-    result: Optional[dict] = None,
-    error: Optional[dict] = None,
-) -> None:
+def _solve_and_store(req: SolveAsyncRequest) -> None:
+    """Run the solver in a background thread and store results in _jobs."""
+    task_id = req.taskId
+
+    with _jobs_lock:
+        _jobs[task_id] = {"status": "running"}
+
+    solve_req = SolveRequest(
+        days=req.days,
+        maxHoursLookup=req.maxHoursLookup,
+        minHoursLookup=req.minHoursLookup,
+        existingWeekHours=req.existingWeekHours,
+        settings=req.settings,
+    )
+
     try:
-        set_doc: dict = {
-            "status": status,
-            "completedAt": now,
-            "updatedAt": now,
+        response = _solve_schedule(solve_req)
+    except Exception as e:
+        logger.exception("Solver execution error for taskId=%s", task_id)
+        with _jobs_lock:
+            _jobs[task_id] = {
+                "status": "failed",
+                "error": {"message": f"Solver execution error: {str(e)}"},
+            }
+        return
+
+    total_assignments = sum(len(d.assignments) for d in response.days)
+    status_upper = response.status.upper()
+    generated_days = [_day_result_to_dict(d) for d in response.days]
+
+    if status_upper in ("OPTIMAL", "FEASIBLE"):
+        summary = (
+            f"{response.status}: {total_assignments} shifts across {len(response.days)} days. "
+            f"Objective: {response.objectiveValue}. "
+            f"Cost: ${response.totalCostCents / 100:.2f}. "
+            f"Solve time: {response.solveTimeMs}ms."
+        )
+        with _jobs_lock:
+            _jobs[task_id] = {
+                "status": "completed",
+                "result": {
+                    "solverStatus": response.status,
+                    "objectiveValue": response.objectiveValue,
+                    "solveTimeMs": response.solveTimeMs,
+                    "totalCostCents": response.totalCostCents,
+                    "fallbackRatesUsed": response.fallbackRatesUsed,
+                    "overtimeSummary": dict(response.overtimeSummary),
+                    "generatedDays": generated_days,
+                    "summary": summary,
+                },
+            }
+        return
+
+    if status_upper == "INFEASIBLE":
+        inf_summary = (
+            f"{response.status}: no feasible solution. "
+            f"{total_assignments} assignments, "
+            f"solve time {response.solveTimeMs}ms."
+        )
+        with _jobs_lock:
+            _jobs[task_id] = {
+                "status": "infeasible",
+                "result": {
+                    "solverStatus": response.status,
+                    "objectiveValue": response.objectiveValue,
+                    "solveTimeMs": response.solveTimeMs,
+                    "totalCostCents": response.totalCostCents,
+                    "fallbackRatesUsed": response.fallbackRatesUsed,
+                    "overtimeSummary": dict(response.overtimeSummary),
+                    "generatedDays": generated_days,
+                    "summary": inf_summary,
+                },
+                "error": {
+                    "message": "Solver returned INFEASIBLE: No solution exists for the given constraints.",
+                },
+            }
+        return
+
+    with _jobs_lock:
+        _jobs[task_id] = {
+            "status": "failed",
+            "error": {"message": f"Solver returned unexpected status: {response.status}"},
         }
-        if result is not None:
-            set_doc["result"] = result
-        if error is not None:
-            set_doc["error"] = error
-        update: dict = {"$set": set_doc}
-        unset: dict = {}
-        if error is None:
-            unset["error"] = ""
-        if result is None:
-            unset["result"] = ""
-        if unset:
-            update["$unset"] = unset
-        coll.update_one(task_filter, update)
-    except Exception as e:
-        logger.error("Failed to update task in database: %s", str(e))
-
-
-def _solve_and_update_task(req: SolveAsyncRequest) -> None:
-    from pymongo import MongoClient
-
-    client = None
-    try:
-        client = MongoClient(req.mongoUri, serverSelectionTimeoutMS=5000)
-        coll = client[req.mongoDbName]["asynctasks"]
-        task_filter = _async_task_id_filter(req.taskId)
-        now = datetime.now(timezone.utc)
-
-        res = coll.update_one(
-            task_filter,
-            {"$set": {"status": "running", "dispatchedAt": now, "updatedAt": now}},
-        )
-        if res.matched_count == 0:
-            logger.warning("Async task not found for taskId=%s", req.taskId)
-            return
-
-        solve_req = SolveRequest(
-            days=req.days,
-            maxHoursLookup=req.maxHoursLookup,
-            minHoursLookup=req.minHoursLookup,
-            existingWeekHours=req.existingWeekHours,
-            settings=req.settings,
-        )
-
-        try:
-            response = _solve_schedule(solve_req)
-        except Exception as e:
-            _terminal_update(
-                coll,
-                task_filter,
-                status="failed",
-                now=datetime.now(timezone.utc),
-                error={"message": f"Solver execution error: {str(e)}"},
-            )
-            return
-
-        total_assignments = sum(len(d.assignments) for d in response.days)
-        status_upper = response.status.upper()
-
-        if status_upper in ("OPTIMAL", "FEASIBLE"):
-            summary = (
-                f"{response.status}: {total_assignments} shifts across {len(response.days)} days. "
-                f"Objective: {response.objectiveValue}. "
-                f"Cost: ${response.totalCostCents / 100:.2f}. "
-                f"Solve time: {response.solveTimeMs}ms."
-            )
-            generated_days = [_day_result_to_dict(d) for d in response.days]
-            result_doc = {
-                "solverStatus": response.status,
-                "objectiveValue": response.objectiveValue,
-                "solveTimeMs": response.solveTimeMs,
-                "totalCostCents": response.totalCostCents,
-                "fallbackRatesUsed": response.fallbackRatesUsed,
-                "overtimeSummary": dict(response.overtimeSummary),
-                "generatedDays": generated_days,
-                "summary": summary,
-            }
-            _terminal_update(
-                coll,
-                task_filter,
-                status="completed",
-                now=datetime.now(timezone.utc),
-                result=result_doc,
-            )
-            return
-
-        if status_upper == "INFEASIBLE":
-            inf_summary = (
-                f"{response.status}: no feasible solution. "
-                f"{total_assignments} assignments, "
-                f"solve time {response.solveTimeMs}ms."
-            )
-            generated_days = [_day_result_to_dict(d) for d in response.days]
-            result_doc = {
-                "solverStatus": response.status,
-                "objectiveValue": response.objectiveValue,
-                "solveTimeMs": response.solveTimeMs,
-                "totalCostCents": response.totalCostCents,
-                "fallbackRatesUsed": response.fallbackRatesUsed,
-                "overtimeSummary": dict(response.overtimeSummary),
-                "generatedDays": generated_days,
-                "summary": inf_summary,
-            }
-            err_msg = (
-                "Solver returned INFEASIBLE: No solution exists for the given constraints."
-            )
-            try:
-                now_t = datetime.now(timezone.utc)
-                coll.update_one(
-                    task_filter,
-                    {
-                        "$set": {
-                            "status": "infeasible",
-                            "completedAt": now_t,
-                            "updatedAt": now_t,
-                            "result": result_doc,
-                            "error": {"message": err_msg},
-                        }
-                    },
-                )
-            except Exception as e:
-                logger.error("Failed to update task in database: %s", str(e))
-            return
-
-        fail_msg = f"Solver returned unexpected status: {response.status}"
-        _terminal_update(
-            coll,
-            task_filter,
-            status="failed",
-            now=datetime.now(timezone.utc),
-            error={"message": fail_msg},
-        )
-    except Exception as e:
-        logger.exception("Async solve background task failed: %s", e)
-    finally:
-        if client is not None:
-            client.close()
 
 
 # ────────────────────────────────────────────────────────────
@@ -1027,5 +952,23 @@ async def solve_async(
     req: SolveAsyncRequest,
     background_tasks: BackgroundTasks,
 ) -> SolveAsyncResponse:
-    background_tasks.add_task(_solve_and_update_task, req)
+    with _jobs_lock:
+        _jobs[req.taskId] = {"status": "pending"}
+    background_tasks.add_task(_solve_and_store, req)
     return SolveAsyncResponse(taskId=req.taskId)
+
+
+@app.get("/jobs/{task_id}")
+def get_job(task_id: str):
+    with _jobs_lock:
+        job = _jobs.get(task_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.delete("/jobs/{task_id}", status_code=204)
+def delete_job(task_id: str):
+    with _jobs_lock:
+        _jobs.pop(task_id, None)
+    return Response(status_code=204)

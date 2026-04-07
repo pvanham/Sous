@@ -106,6 +106,15 @@ function buildProposalSection(): string {
   ].join(" ");
 }
 
+function buildScheduleGenerationGuidanceSection(): string {
+  return [
+    "SCHEDULE GENERATION WORKFLOW: When the user asks to generate a schedule, call propose_schedule_generation with ONLY the weekStartDate (the Monday ISO date of the target week).",
+    "Do NOT ask the user for a template schedule ID or additional instructions unless they volunteer that information.",
+    "templateScheduleId and additionalInstructions are optional parameters — omit them entirely if the user has not mentioned them.",
+    "After the schedule is generated and the solver completes, summarize the results and then call propose_accept_generated_schedule so the user can confirm and save the shifts.",
+  ].join(" ");
+}
+
 function buildSwapGuidanceSection(): string {
   return [
     "SHIFT SWAP BEST PRACTICES: Before proposing a shift swap, verify the replacement candidate is suitable:",
@@ -187,6 +196,7 @@ export function buildSystemPrompt(
     buildPermissionSection(context),
     buildToolUsageSection(),
     buildProposalSection(),
+    buildScheduleGenerationGuidanceSection(),
     buildSwapGuidanceSection(),
     buildInjectionGuardrailSection(),
     buildViewportSection(context),

@@ -2,4 +2,3 @@ fastapi
 uvicorn[standard]
 ortools
 pydantic
-pymongo
