@@ -16,12 +16,14 @@
     "typecheck": "turbo typecheck"
   },
   "devDependencies": {
+    "lightningcss": "^1.30.1",
     "turbo": "^2.5.0"
   },
   "overrides": {
     "csstype": "3.2.3",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "expo-auth-session": "~7.0.10"
+    "expo-auth-session": "~7.0.10",
+    "lightningcss": "1.30.1"
   }
 }
