@@ -47,22 +47,15 @@ npm install
 
 ### 2. Environment variables
 
-Create a `.env.local` file in the project root with:
+This is a monorepo with two app targets. Each has its own `.env.example`
+documenting the full set of variables:
 
-```env
-# Required
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-MONGODB_URI=mongodb+srv://...
-OPENAI_API_KEY=sk-proj-...
+- Web: [`apps/web/.env.example`](apps/web/.env.example)
+- Mobile: [`apps/mobile/.env.example`](apps/mobile/.env.example)
 
-# Optional: Constraint solver (defaults to http://localhost:8000)
-CP_SOLVER_URL=http://localhost:8000
-
-# Optional: Twilio webhooks (Phase 4)
-# TWILIO_AUTH_TOKEN=...
-# NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+Copy each to `.env.local` (web) and `.env` (mobile) and fill in real
+values. Both apps must point at the **same** Clerk instance so users and
+sessions line up across web and mobile.
 
 ### 3. Run the dev server
 
@@ -70,7 +63,53 @@ CP_SOLVER_URL=http://localhost:8000
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) for the web dashboard.
+
+Start the mobile app (Expo) from `apps/mobile`:
+
+```bash
+cd apps/mobile
+npm run ios      # or: npm run android
+```
+
+### 4. (Recommended) Expose the Clerk webhook locally
+
+Clerk sends `user.created` / `user.deleted` events to
+`/api/webhooks/clerk`. Those events are what populate `OrganizationMember`
+and link `Staff.clerkUserId`. In local dev, Clerk can't reach
+`http://localhost:3000` directly, so run a tunnel:
+
+```bash
+# Install once: https://ngrok.com/download
+ngrok http 3000
+```
+
+Copy the forwarding URL (e.g. `https://abcd-1234.ngrok-free.app`) and in
+the Clerk Dashboard → **Webhooks**, point the endpoint at
+`https://abcd-1234.ngrok-free.app/api/webhooks/clerk`. Copy the signing
+secret into `CLERK_WEBHOOK_SECRET` in `apps/web/.env.local`.
+
+> Tip: `/api/me/membership` will **self-heal** missing memberships from
+> the Clerk user's `publicMetadata` or a pending invitation even without
+> the webhook running. The webhook is still required for `user.deleted`
+> cascade deletes.
+
+### 5. Create a test staff account
+
+1. Sign up for the web app and complete the onboarding to become an owner
+   of a new organization.
+2. In the dashboard, add a staff member and send them an invitation (or
+   invite yourself at a different email address).
+3. Open the invitation email and click the link — it lands on
+   `/sign-up?__clerk_ticket=...`. Set a password; the sign-up page uses
+   Clerk's `ticket` strategy so the invitation's metadata (role, org,
+   location) is copied onto the new user.
+4. Open the mobile app and sign in with the same email + password.
+
+If sign-up was completed without the ticket (e.g. plain `/sign-up`), the
+first call to `/api/me/membership` will detect the pending invitation for
+that email, provision the `OrganizationMember`, and revoke the
+invitation — so the user can still be unblocked on first mobile sign-in.
 
 ---
 

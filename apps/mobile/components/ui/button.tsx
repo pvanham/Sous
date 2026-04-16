@@ -59,7 +59,7 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
-      className={`flex-row items-center justify-center ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${isDisabled ? "opacity-50" : "active:opacity-80"} ${className}`}
+      className={`flex-row items-center justify-center active:opacity-80 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${isDisabled ? "opacity-50" : ""} ${className}`}
     >
       {loading ? (
         <ActivityIndicator

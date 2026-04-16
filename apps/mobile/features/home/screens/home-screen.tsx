@@ -1,6 +1,8 @@
-import { View, ScrollView, Pressable, ActivityIndicator } from "react-native";
-import { useUser } from "@clerk/clerk-expo";
+import { useCallback } from "react";
+import { View, ScrollView, Pressable, ActivityIndicator, Alert } from "react-native";
+import { useUser, useClerk } from "@clerk/clerk-expo";
 import { useQuery } from "@tanstack/react-query";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { NextShiftCard } from "../components/next-shift-card";
@@ -9,6 +11,20 @@ import { fetchNextShift, fetchAnnouncements } from "../api";
 
 export function HomeScreen() {
   const { user } = useUser();
+  const { signOut } = useClerk();
+
+  const handleSignOut = useCallback(() => {
+    Alert.alert("Sign out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: () => {
+          void signOut();
+        },
+      },
+    ]);
+  }, [signOut]);
 
   const shiftQuery = useQuery({
     queryKey: ["nextShift"],
@@ -34,11 +50,25 @@ export function HomeScreen() {
               {user?.firstName ?? "Chef"}
             </StyledText>
           </View>
-          <Pressable className="w-10 h-10 rounded-full bg-primary items-center justify-center">
-            <StyledText variant="label" className="text-primary-foreground text-sm">
-              {initials}
-            </StyledText>
-          </Pressable>
+          <View className="flex-row items-center gap-2">
+            <View className="w-10 h-10 rounded-full bg-primary items-center justify-center">
+              <StyledText
+                variant="label"
+                className="text-primary-foreground text-sm"
+              >
+                {initials}
+              </StyledText>
+            </View>
+            <Pressable
+              onPress={handleSignOut}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Sign out"
+              className="w-10 h-10 rounded-full bg-card border border-border items-center justify-center active:opacity-60"
+            >
+              <MaterialIcons name="logout" size={20} color="#78716c" />
+            </Pressable>
+          </View>
         </View>
 
         {shiftQuery.isLoading ? (
