@@ -91,7 +91,7 @@ The Action Layer acts as the bridge between the UI and the Backend Services. It 
 - `time-off-request.actions.ts`
 - `schedule-generation.actions.ts`
 - `user.actions.ts`
-- `invitation.actions.ts`
+- `invitation.actions.ts` — `inviteManager` (owner-only) and `inviteStaffToApp` (owner/manager) via Clerk invitations
 
 *(Note: `message.actions.ts` is planned for Phase 4)*
 

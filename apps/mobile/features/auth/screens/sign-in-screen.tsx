@@ -101,6 +101,14 @@ export function SignInScreen() {
             size="lg"
             className="mt-2"
           />
+
+          <StyledText
+            variant="caption"
+            className="text-muted-foreground text-center text-sm mt-4"
+          >
+            New staff member? Check your email for an invitation link to create
+            your account.
+          </StyledText>
         </View>
       </KeyboardAvoidingView>
     </ScreenWrapper>

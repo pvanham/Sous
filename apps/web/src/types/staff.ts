@@ -2,6 +2,7 @@
 export type {
   StaffSkill,
   StaffDTO,
+  InvitationStatus,
   StaffListParams,
   PaginatedStaffResult,
   ImportRowError,
@@ -24,6 +25,8 @@ export interface IStaff {
   preferredStations: string[];
   certifications: string[];
   hourlyRate: number;
+  clerkUserId?: string | null;
+  invitationStatus: import("@sous/types").InvitationStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -45,6 +48,8 @@ export function toStaffDTO(doc: IStaff & { _id: unknown }): import("@sous/types"
     preferredStations: doc.preferredStations,
     certifications: doc.certifications,
     hourlyRate: doc.hourlyRate,
+    clerkUserId: doc.clerkUserId ?? null,
+    invitationStatus: doc.invitationStatus ?? "not_invited",
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

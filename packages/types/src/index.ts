@@ -14,6 +14,8 @@ export interface StaffSkill {
   proficiency: 1 | 2 | 3 | 4 | 5;
 }
 
+export type InvitationStatus = "not_invited" | "pending" | "accepted";
+
 export interface StaffDTO {
   id: string;
   orgId: string;
@@ -29,6 +31,8 @@ export interface StaffDTO {
   preferredStations: string[];
   certifications: string[];
   hourlyRate: number;
+  clerkUserId?: string | null;
+  invitationStatus: InvitationStatus;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -213,7 +217,7 @@ export interface UpdateOrganizationInput {
 
 // ── Organization Member ──────────────────────────────────────
 
-export type MemberRole = "owner" | "manager" | "shift_lead";
+export type MemberRole = "owner" | "manager" | "shift_lead" | "staff";
 
 export interface OrganizationMemberDTO {
   id: string;

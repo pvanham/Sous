@@ -6,3 +6,9 @@ export const inviteManagerSchema = z.object({
 });
 
 export type InviteManagerInput = z.infer<typeof inviteManagerSchema>;
+
+export const inviteStaffSchema = z.object({
+  staffId: z.string().min(1, "Staff ID is required"),
+});
+
+export type InviteStaffInput = z.infer<typeof inviteStaffSchema>;

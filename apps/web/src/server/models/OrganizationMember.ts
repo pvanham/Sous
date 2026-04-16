@@ -1,7 +1,7 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 
 // Role type for organization members
-export type MemberRole = "owner" | "manager" | "shift_lead";
+export type MemberRole = "owner" | "manager" | "shift_lead" | "staff";
 
 // OrganizationMember interface
 export interface IOrganizationMember {
@@ -19,7 +19,7 @@ export interface IOrganizationMemberDocument
     Document {}
 
 // Valid member roles
-const MEMBER_ROLES: MemberRole[] = ["owner", "manager", "shift_lead"];
+const MEMBER_ROLES: MemberRole[] = ["owner", "manager", "shift_lead", "staff"];
 
 // Main OrganizationMember schema
 const OrganizationMemberSchema = new Schema<IOrganizationMemberDocument>(

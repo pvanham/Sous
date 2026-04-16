@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Home, Calendar, Users, ClipboardList, CalendarOff, Settings } from "lucide-react";
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
@@ -17,9 +18,9 @@ const baseNavItems = [
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
 ];
 
-/** Settings is visible to owners and managers, hidden from shift_leads */
+/** Settings is visible to owners and managers, hidden from shift_leads and staff */
 function getNavItems(role: MemberRole) {
-  if (role === "shift_lead") return baseNavItems;
+  if (role === "shift_lead" || role === "staff") return baseNavItems;
   return [...baseNavItems, { href: "/dashboard/settings", label: "Settings", icon: Settings }];
 }
 
@@ -30,6 +31,11 @@ export default async function DashboardLayout({
   if (!userId) return null;
 
   const ctx = await getLocationContext(userId);
+
+  if (ctx.role === "staff") {
+    redirect("/staff-blocked");
+  }
+
   const result = await listLocations();
   const locations = result.success ? result.data : [];
   const navItems = getNavItems(ctx.role);

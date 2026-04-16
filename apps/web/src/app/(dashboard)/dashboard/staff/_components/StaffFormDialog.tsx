@@ -19,9 +19,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -35,7 +37,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { staffSchema, type StaffInput, type StaffFormValues } from "@/lib/validations/staff.schema";
+import { staffWithInviteSchema, type StaffFormValues } from "@/lib/validations/staff.schema";
+import type { StaffWithInviteInput } from "@/lib/validations/staff.schema";
 import { createStaff, updateStaff } from "@/server/actions/staff.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import type { StaffDTO } from "@/types/staff";
@@ -75,7 +78,7 @@ export function StaffFormDialog({
   }, [open, queryClient]);
 
   const form = useForm<StaffFormValues>({
-    resolver: zodResolver(staffSchema),
+    resolver: zodResolver(staffWithInviteSchema),
     defaultValues: {
       name: "",
       email: "",
@@ -83,6 +86,7 @@ export function StaffFormDialog({
       roles: [],
       skills: [],
       isActive: true,
+      sendInvite: true,
     },
   });
 
@@ -102,6 +106,7 @@ export function StaffFormDialog({
           roles: staff.roles,
           skills: staff.skills,
           isActive: staff.isActive,
+          sendInvite: false,
         });
       } else {
         form.reset({
@@ -111,6 +116,7 @@ export function StaffFormDialog({
           roles: [],
           skills: [],
           isActive: true,
+          sendInvite: true,
         });
       }
     }
@@ -119,13 +125,15 @@ export function StaffFormDialog({
   // Create mutation
   const createMutation = useMutation({
     mutationFn: async (data: StaffFormValues) => {
-      // Cast to StaffInput for server action compatibility
-      const result = await createStaff(data as StaffInput);
+      const result = await createStaff(data as StaffWithInviteInput);
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
-    onSuccess: () => {
-      toast.success("Staff member created successfully");
+    onSuccess: (_, variables) => {
+      const message = variables.sendInvite
+        ? "Staff member created and invitation sent"
+        : "Staff member created successfully";
+      toast.success(message);
       queryClient.invalidateQueries({ queryKey: ["staff"] });
       onOpenChange(false);
     },
@@ -137,8 +145,8 @@ export function StaffFormDialog({
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: StaffFormValues) => {
-      // Cast to StaffInput for server action compatibility
-      const result = await updateStaff(staff!.id, data as StaffInput);
+      const { sendInvite: _, ...updateData } = data;
+      const result = await updateStaff(staff!.id, updateData);
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
@@ -408,6 +416,33 @@ export function StaffFormDialog({
                 </div>
               ))}
             </div>
+
+            {/* Send App Invitation (create mode only) */}
+            {!isEditMode && (
+              <FormField
+                control={form.control}
+                name="sendInvite"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div className="space-y-0.5">
+                      <FormLabel className="text-base">
+                        Send App Invitation
+                      </FormLabel>
+                      <FormDescription>
+                        Sends an email invitation for this staff member to create
+                        their account and access the mobile app.
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
 
             <DialogFooter className="pt-4">
               <Button

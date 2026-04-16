@@ -3,6 +3,7 @@ import Staff from "@/server/models/Staff";
 import type { StaffInput } from "@/lib/validations/staff.schema";
 import {
   StaffDTO,
+  InvitationStatus,
   ImportResult,
   StaffListParams,
   PaginatedStaffResult,
@@ -131,7 +132,7 @@ export const StaffService = {
   async create(
     orgId: string,
     locationId: string,
-    data: Omit<StaffInput, "isActive"> & { isActive?: boolean }
+    data: Omit<StaffInput, "isActive"> & { isActive?: boolean; invitationStatus?: InvitationStatus }
   ): Promise<StaffDTO> {
     // Cast skills to match Mongoose schema expectations
     const skills = (data.skills || []).map((s) => ({
@@ -148,6 +149,7 @@ export const StaffService = {
       roles: data.roles,
       skills,
       isActive: data.isActive ?? true,
+      invitationStatus: data.invitationStatus ?? "not_invited",
       // Phase 3: Staff constraints for AI scheduling
       maxHoursPerWeek: data.maxHoursPerWeek ?? 40,
       minHoursPerWeek: data.minHoursPerWeek ?? 0,
@@ -649,6 +651,104 @@ export const StaffService = {
       }
     );
 
+    return result.modifiedCount;
+  },
+
+  // ============================================================
+  // Invitation / Clerk Linking Methods
+  // ============================================================
+
+  /**
+   * Find a staff record by email within a specific org/location.
+   * Used by the webhook to link a Clerk user to an existing staff record.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param email - Staff email address
+   * @returns StaffDTO or null if not found
+   */
+  async getByEmail(
+    orgId: string,
+    locationId: string,
+    email: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      email: email.toLowerCase(),
+    }).lean();
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Link a Clerk user ID to a staff record and mark the invitation as accepted.
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param staffId - Staff document ID
+   * @param clerkUserId - Clerk user ID to link
+   * @returns Updated StaffDTO or null if not found
+   */
+  async linkClerkUser(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    clerkUserId: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      {
+        $set: {
+          clerkUserId,
+          invitationStatus: "accepted" as InvitationStatus,
+        },
+      },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Update just the invitation status on a staff record.
+   * @param staffId - Staff document ID
+   * @param status - New invitation status
+   * @returns Updated StaffDTO or null if not found
+   */
+  async setInvitationStatus(
+    staffId: string,
+    status: InvitationStatus
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findByIdAndUpdate(
+      staffId,
+      { $set: { invitationStatus: status } },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Unlink a Clerk user from a staff record (e.g., when user is deleted).
+   * Preserves the staff record for scheduling data but removes the auth link.
+   * @param clerkUserId - Clerk user ID to unlink
+   * @returns Number of staff documents modified
+   */
+  async unlinkClerkUser(clerkUserId: string): Promise<number> {
+    const result = await Staff.updateMany(
+      { clerkUserId },
+      {
+        $set: {
+          clerkUserId: null,
+          invitationStatus: "not_invited" as InvitationStatus,
+        },
+      }
+    );
     return result.modifiedCount;
   },
 };

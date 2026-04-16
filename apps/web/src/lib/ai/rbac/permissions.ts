@@ -51,6 +51,11 @@ export const ROLE_PERMISSIONS: Readonly<
     "shift:read",
     "shift:swap",
   ] as const),
+  staff: Object.freeze([
+    "schedule:read",
+    "shift:read",
+    "shift:swap",
+  ] as const),
 });
 
 /**

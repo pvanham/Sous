@@ -29,7 +29,7 @@ All data in Sous is scoped to ensure strict multi-tenancy rules. Use `orgId` and
   orgId: ObjectId,          // Reference to Organization
   locationId: ObjectId?,    // Reference to Location (null = org-wide access)
   clerkUserId: string,      // Clerk user ID
-  role: 'owner' | 'manager',
+  role: 'owner' | 'manager' | 'shift_lead' | 'staff',
   createdAt: Date,
   updatedAt: Date
 }
@@ -61,6 +61,10 @@ All data in Sous is scoped to ensure strict multi-tenancy rules. Use `orgId` and
   roles: string[],          
   skills: [{ station: string, proficiency: 1-5 }],
   isActive: boolean,
+  
+  // App invitation / auth linkage
+  clerkUserId?: string,     // Set when staff accepts invitation and creates account
+  invitationStatus: 'not_invited' | 'pending' | 'accepted',
   
   // Phase 3 Extensions
   maxHoursPerWeek: number,  

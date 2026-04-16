@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +23,7 @@ import {
   Loader2,
   Calendar,
   CalendarOff,
+  Mail,
 } from "lucide-react";
 
 import {
@@ -57,6 +58,7 @@ import {
   setStaffActive,
   deleteStaff,
 } from "@/server/actions/staff.actions";
+import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { StaffDTO, PaginatedStaffResult } from "@/types/staff";
 import { StaffFormDialog } from "./StaffFormDialog";
 import { cn } from "@/lib/utils";
@@ -77,26 +79,6 @@ function ProficiencyStars({ level }: { level: number }) {
   );
 }
 
-// Debounce hook
-function useDebounce<T>(value: T, delay: number): T {
-  const [debouncedValue, setDebouncedValue] = useState<T>(value);
-
-  useState(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  });
-
-  // Use useCallback to update debounced value after delay
-  const updateValue = useCallback(() => {
-    const timer = setTimeout(() => setDebouncedValue(value), delay);
-    return () => clearTimeout(timer);
-  }, [value, delay]);
-
-  useState(updateValue);
-
-  return debouncedValue;
-}
-
 export function StaffTable({ initialData }: StaffTableProps) {
   const queryClient = useQueryClient();
 
@@ -113,17 +95,10 @@ export function StaffTable({ initialData }: StaffTableProps) {
     null,
   );
 
-  // Debounced search - update search after 300ms of no typing
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchInput(value);
-    // Reset to page 1 when searching
-    setPage(1);
-    // Debounce the actual search
-    const timer = setTimeout(() => {
-      setSearch(value);
-    }, 300);
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300);
     return () => clearTimeout(timer);
-  }, []);
+  }, [searchInput]);
 
   // Fetch staff with pagination
   const { data, isLoading, isFetching } = useQuery({
@@ -181,6 +156,22 @@ export function StaffTable({ initialData }: StaffTableProps) {
       toast.success("Staff member deleted");
       queryClient.invalidateQueries({ queryKey: ["staff"] });
       setDeleteConfirmStaff(null);
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  // Send / resend invite mutation
+  const inviteMutation = useMutation({
+    mutationFn: async (staffId: string) => {
+      const result = await inviteStaffToApp({ staffId });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Invitation sent to ${data.emailAddress}`);
+      queryClient.invalidateQueries({ queryKey: ["staff"] });
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -304,13 +295,55 @@ export function StaffTable({ initialData }: StaffTableProps) {
         </Badge>
       ),
     }),
+    columnHelper.accessor("invitationStatus", {
+      header: "App Access",
+      cell: (info) => {
+        const status = info.getValue();
+        if (status === "accepted") {
+          return (
+            <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600">
+              Linked
+            </Badge>
+          );
+        }
+        if (status === "pending") {
+          return (
+            <Badge variant="outline" className="text-amber-600 border-amber-400">
+              Pending
+            </Badge>
+          );
+        }
+        return (
+          <span className="text-muted-foreground text-sm">Not Invited</span>
+        );
+      },
+    }),
     columnHelper.display({
       id: "actions",
       header: "Actions",
       cell: (info) => {
         const staffMember = info.row.original;
+        const canInvite =
+          !staffMember.clerkUserId &&
+          staffMember.invitationStatus !== "pending";
+        const canResend =
+          !staffMember.clerkUserId &&
+          staffMember.invitationStatus === "pending";
         return (
           <div className="flex items-center gap-1">
+            {/* Send / Resend Invite Button */}
+            {(canInvite || canResend) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => inviteMutation.mutate(staffMember.id)}
+                disabled={inviteMutation.isPending}
+                title={canResend ? "Resend Invitation" : "Send App Invitation"}
+              >
+                <Mail className="h-4 w-4" />
+              </Button>
+            )}
+
             {/* Edit Button */}
             <Button
               variant="ghost"
@@ -397,7 +430,10 @@ export function StaffTable({ initialData }: StaffTableProps) {
           <Input
             placeholder="Search by name, email, or phone..."
             value={searchInput}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setPage(1);
+            }}
             className="pl-9"
           />
         </div>

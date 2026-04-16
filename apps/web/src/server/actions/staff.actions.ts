@@ -2,7 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import {
-  staffSchema,
+  staffWithInviteSchema,
   staffUpdateSchema,
   importStaffSchema,
   staffListParamsSchema,
@@ -11,6 +11,7 @@ import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
   StaffDTO,
@@ -236,8 +237,8 @@ export async function importStaffFromCSV(
 }
 
 /**
- * Create a new staff member.
- * @param input - Staff data
+ * Create a new staff member, optionally sending an app invitation.
+ * @param input - Staff data (may include sendInvite flag)
  * @returns ActionResponse containing created StaffDTO
  */
 export async function createStaff(
@@ -250,15 +251,15 @@ export async function createStaff(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. Zod validation
-    const parseResult = staffSchema.safeParse(input);
+    // 2. Zod validation (accepts optional sendInvite, falls back to base schema)
+    const parseResult = staffWithInviteSchema.safeParse(input);
     if (!parseResult.success) {
       const errorMessage = parseResult.error.issues
         .map((e) => `${e.path.join(".")}: ${e.message}`)
         .join(", ");
       return { success: false, error: errorMessage };
     }
-    const staffData = parseResult.data;
+    const { sendInvite, ...staffData } = parseResult.data;
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
@@ -304,12 +305,23 @@ export async function createStaff(
       staffData
     );
 
-    // 6. Return response
-    return { success: true, data: staff };
+    // 6. Send invitation if requested (best-effort; don't fail creation)
+    if (sendInvite) {
+      const inviteResult = await inviteStaffToApp({ staffId: staff.id });
+      if (!inviteResult.success) {
+        console.error("Staff created but invitation failed:", inviteResult.error);
+      }
+    }
+
+    // 7. Re-fetch to get up-to-date invitationStatus
+    const updated = sendInvite
+      ? await StaffService.getById(ctx.orgId, ctx.locationId, staff.id)
+      : null;
+
+    return { success: true, data: updated ?? staff };
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to create staff";
-    // Check for duplicate email error
     if (message.includes("duplicate key") || message.includes("E11000")) {
       return {
         success: false,

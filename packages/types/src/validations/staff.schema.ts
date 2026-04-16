@@ -74,6 +74,11 @@ const staffBaseSchema = z.object({
     .default(0),
 });
 
+// Extended staff schema with optional sendInvite flag for the creation form
+const staffWithInviteBaseSchema = staffBaseSchema.extend({
+  sendInvite: z.boolean().optional().default(false),
+});
+
 // Main staff schema with cross-field validation
 // Note: skills and isActive are required to ensure input/output types match
 // for react-hook-form compatibility. Use defaultStaffValues for form defaults.
@@ -117,8 +122,23 @@ export const staffListParamsSchema = z.object({
   search: z.string().optional(),
 });
 
+// Staff with invite schema with cross-field validation
+export const staffWithInviteSchema = staffWithInviteBaseSchema.refine(
+  (data) => {
+    const max = data.maxHoursPerWeek ?? 40;
+    const min = data.minHoursPerWeek ?? 0;
+    return max >= min;
+  },
+  {
+    message:
+      "Maximum hours per week must be greater than or equal to minimum hours",
+    path: ["maxHoursPerWeek"],
+  }
+);
+
 // Types inferred from schemas
 export type StaffInput = z.infer<typeof staffSchema>;
+export type StaffWithInviteInput = z.infer<typeof staffWithInviteSchema>;
 export type StaffUpdateInput = z.infer<typeof staffUpdateSchema>;
 export type CsvRowInput = z.infer<typeof csvRowSchema>;
 export type ImportStaffInput = z.infer<typeof importStaffSchema>;
@@ -133,6 +153,7 @@ export interface StaffFormValues {
   roles: string[];
   skills: Array<{ station: string; proficiency: number }>;
   isActive: boolean;
+  sendInvite?: boolean;
   // Phase 3: Staff constraints for AI scheduling
   maxHoursPerWeek?: number;
   minHoursPerWeek?: number;

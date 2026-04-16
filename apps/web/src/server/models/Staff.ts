@@ -94,6 +94,15 @@ const StaffSchema = new Schema<IStaffDocument>(
       default: 0,
       min: 0,
     },
+    clerkUserId: {
+      type: String,
+      default: null,
+    },
+    invitationStatus: {
+      type: String,
+      enum: ["not_invited", "pending", "accepted"],
+      default: "not_invited",
+    },
   },
   {
     timestamps: true,
@@ -115,6 +124,9 @@ StaffSchema.index({ orgId: 1, locationId: 1, email: 1 }, { unique: true });
 
 // Index for SMS lookup (phone number per location)
 StaffSchema.index({ orgId: 1, locationId: 1, phone: 1 });
+
+// Sparse index for Clerk user linkage
+StaffSchema.index({ clerkUserId: 1 }, { sparse: true });
 
 // Singleton pattern for Next.js HMR compatibility
 const Staff: Model<IStaffDocument> =

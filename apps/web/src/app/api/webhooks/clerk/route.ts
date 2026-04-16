@@ -5,10 +5,11 @@ import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { StaffService } from "@/server/services/staff.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
 
-const VALID_INVITED_ROLES: MemberRole[] = ["manager", "shift_lead"];
+const VALID_INVITED_ROLES: MemberRole[] = ["manager", "shift_lead", "staff"];
 
 export async function POST(req: Request) {
   // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
@@ -76,14 +77,37 @@ export async function POST(req: Request) {
       const resolvedRole: MemberRole = VALID_INVITED_ROLES.includes(metadataRole as MemberRole)
         ? (metadataRole as MemberRole)
         : "manager";
+      const orgId = publicMetadata.orgId as string;
+      const locationId = (publicMetadata.locationId as string) || null;
+
       try {
         await OrganizationMemberService.create({
-          orgId: publicMetadata.orgId as string,
-          locationId: (publicMetadata.locationId as string) || null,
+          orgId,
+          locationId,
           clerkUserId: userId,
           role: resolvedRole,
         });
-        console.log(`Successfully added user ${userId} as ${resolvedRole} to org ${publicMetadata.orgId}`);
+        console.log(`Successfully added user ${userId} as ${resolvedRole} to org ${orgId}`);
+
+        // Link Clerk user to existing Staff record for staff invitations
+        if (resolvedRole === "staff" && locationId) {
+          const staffId = publicMetadata.staffId as string | undefined;
+          try {
+            if (staffId) {
+              await StaffService.linkClerkUser(orgId, locationId, staffId, userId);
+              console.log(`Linked clerk user ${userId} to staff ${staffId}`);
+            } else {
+              // Fallback: match by email
+              const staffByEmail = await StaffService.getByEmail(orgId, locationId, email);
+              if (staffByEmail) {
+                await StaffService.linkClerkUser(orgId, locationId, staffByEmail.id, userId);
+                console.log(`Linked clerk user ${userId} to staff ${staffByEmail.id} via email`);
+              }
+            }
+          } catch (linkError) {
+            console.error("Failed to link staff record (non-fatal):", linkError);
+          }
+        }
       } catch (error) {
         console.error("Failed to create membership:", error);
         return new Response("Internal Server Error", { status: 500 });
@@ -168,10 +192,15 @@ export async function POST(req: Request) {
           await StaffAvailability.deleteMany({ orgId });
 
           console.log(`Completed cascading delete for org ${orgId}`);
-        } else {
-          // If they were just a manager, only delete their membership
+        } else if (membership.role === "staff") {
+          // Unlink Clerk user from Staff record but preserve scheduling data
+          await StaffService.unlinkClerkUser(userId);
           await OrganizationMemberService.delete(membership.id);
-          console.log(`Deleted manager membership ${membership.id}`);
+          console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
+        } else {
+          // Manager / shift_lead: only delete their membership
+          await OrganizationMemberService.delete(membership.id);
+          console.log(`Deleted ${membership.role} membership ${membership.id}`);
         }
       }
     } catch (error) {

@@ -78,6 +78,7 @@ function mockStaff(
     preferredStations: [primaryRole],
     certifications: [],
     hourlyRate: 18,
+    invitationStatus: "not_invited",
     createdAt: new Date(),
     updatedAt: new Date(),
   };
