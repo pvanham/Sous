@@ -133,3 +133,21 @@ Desktop.ini
 *.tmp
 *.orig
 node_modules
+
+# ────────────────────────────────────────────
+# Expo / React Native (mobile app)
+# ────────────────────────────────────────────
+.expo/
+dist/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+ios/
+android/
+
+# Turborepo
+.turbo/
