@@ -1,0 +1,161 @@
+---
+description: Shared Zod schemas and DTO types in @sous/types consumed by both web and mobile.
+globs: packages/types/**/*.ts
+---
+
+# `@sous/types` — Shared Schemas and DTOs
+
+`packages/types/` is the **only** place cross-app types and runtime
+validators live. Both `apps/web` and `apps/mobile` consume it as
+`@sous/types`.
+
+---
+
+## Scope
+
+`@sous/types` contains **pure, portable** types:
+
+1. **DTO interfaces** — plain serializable shapes returned from the web
+   API and consumed by either app. Example: `StaffDTO`, `ShiftDTO`,
+   `ScheduleDTO`.
+2. **Zod validation schemas** — request payload validation that is
+   identical on the server (web actions / route handlers) and the
+   client (web forms, mobile forms).
+3. **Enums / unions** — cross-app value types like `InvitationStatus`
+   or `MemberRole`.
+
+It must **not** contain:
+
+- Mongoose schemas or anything that imports `mongoose`.
+- Server-only helpers (`toXDTO`, `dbConnect`, Clerk calls).
+- Expo- or RN-specific code.
+- Framework-specific code (`next/*`, `@clerk/*`, `@expo/*`).
+
+Server-coupled types (`CreateShiftInput` where it's tightly coupled to
+Mongoose intake) can live in `apps/web/src/types/`. When in doubt, if
+the type is **serializable** and **safe to import on the client**, it
+belongs here.
+
+---
+
+## Directory layout
+
+```
+packages/types/
+├── package.json          name: "@sous/types", private workspace
+├── tsconfig.json         strict; outputs to dist/
+└── src/
+    ├── index.ts          Re-exports every DTO and every schema/type
+    └── validations/      One Zod file per feature
+        ├── staff.schema.ts
+        ├── shift.schema.ts
+        ├── schedule.schema.ts
+        ├── schedule-generation.schema.ts
+        ├── generated-schedule.schema.ts
+        ├── labor-requirement.schema.ts
+        ├── location.schema.ts
+        ├── kitchen-config.schema.ts
+        ├── organization.schema.ts
+        ├── time-off-request.schema.ts
+        ├── staff-availability.schema.ts
+        ├── invitation.schema.ts
+        ├── viewport-context.schema.ts
+        └── chat-message.schema.ts
+```
+
+`src/index.ts` is the **public surface**. Every new DTO and every new
+Zod schema + inferred type must be re-exported here, so consumers always
+do `import { X } from "@sous/types"` and never dig into subpaths.
+
+---
+
+## Zod conventions
+
+- Each `<feature>.schema.ts` exports schemas **and** the inferred
+  types:
+
+  ```ts
+  export const createShiftSchema = z.object({ … });
+  export type CreateShiftInput = z.infer<typeof createShiftSchema>;
+  ```
+
+- Use `z.coerce.date()` for date inputs. Clients serialize `Date` as
+  ISO strings across the wire; `coerce` accepts either.
+- Use `.refine()` for cross-field invariants (start < end, max
+  duration, etc.). Keep messages human-readable — these surface in
+  form errors.
+- Use `.optional().default(...)` for truly optional fields. Avoid
+  `.nullable()` unless the wire protocol is genuinely `null`.
+- Prefer discriminated unions (`z.discriminatedUnion`) over large
+  flat objects when the type has branches.
+
+---
+
+## DTO conventions
+
+- DTOs are **plain `interface` types** (or `type` aliases), never
+  classes.
+- IDs are always `string` (even though Mongo uses `ObjectId` server-side).
+- Dates are `Date` on the DTO interface. Across JSON they become ISO
+  strings; the consumer decides whether to re-hydrate them to `Date`
+  (both apps currently do).
+- Nullable relationships use `| null`, not `?:`, when the field is
+  always present but may be empty (e.g. `locationId: string | null` on
+  an org-wide membership).
+- Arrays default to `[]` on the server; don't introduce `undefined` on
+  the wire just to save bytes.
+
+---
+
+## Consuming from the apps
+
+### Web
+
+```ts
+// in a form component
+import { createShiftSchema } from "@sous/types";
+const form = useForm({ resolver: zodResolver(createShiftSchema) });
+
+// in a server action
+import { createShiftSchema } from "@sous/types";
+const parsed = createShiftSchema.safeParse(input);
+```
+
+### Mobile
+
+```ts
+import type { ShiftDTO } from "@sous/types";
+
+const shiftQuery = useQuery<ShiftDTO[]>({
+  queryKey: ["schedule", "week", weekStart],
+  queryFn: () => fetchWeekShifts(weekStart),
+});
+```
+
+If you find yourself writing a type in `apps/web/src/types/` **or**
+`apps/mobile/features/*/` that the other app also needs, move it here
+first.
+
+---
+
+## Adding a new schema or DTO — checklist
+
+1. Decide on the scope. If it is truly shared, create
+   `packages/types/src/validations/<feature>.schema.ts` (for Zod) or
+   add the interface to an existing file under `src/`.
+2. Re-export from `src/index.ts`.
+3. Consume from the web action and the mobile API layer. Do not
+   duplicate the shape locally.
+4. If the DTO changes, bump both apps at the same time — typescript
+   will surface the call sites.
+
+---
+
+## Common mistakes (do not commit these)
+
+1. Importing `mongoose` anywhere under `packages/types/`.
+2. Importing `@clerk/*`, `next/*`, `@expo/*`, or `axios` from here.
+3. Forgetting to re-export a new schema / DTO from `src/index.ts`.
+4. Typing IDs as `ObjectId` or leaving them as `any`.
+5. Defining the same DTO shape in both `apps/web/src/types/` and
+   `packages/types/src/` — there can be only one.

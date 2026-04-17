@@ -1,0 +1,304 @@
+---
+description: 3-layer architecture for Server Actions, Services, and Mongoose Models in the web app.
+globs: apps/web/src/server/**/*.ts,apps/web/src/lib/auth/**/*.ts
+---
+
+# Web — Actions / Services / Models (3-Layer Architecture)
+
+This rule is the **architectural constitution** for anything that reads or
+writes the database. Every flow from a UI click to a MongoDB document must
+pass through **exactly three server-side layers**:
+
+```
+React UI (server or client component)
+      │
+      ▼
+"use server" Server Action    (src/server/actions/<feature>.actions.ts)
+      │
+      ▼
+Service                       (src/server/services/<feature>.service.ts)
+      │
+      ▼
+Mongoose Model                (src/server/models/<Feature>.ts)
+      │
+      ▼
+MongoDB Atlas
+```
+
+**Hard boundaries:**
+
+- Mongoose models are imported **only** in services.
+- Services are imported **only** by actions (and by other services).
+- Actions are imported **only** by UI components or by other actions.
+- UI components never import Mongoose models, never import services, never
+  touch `process.env`, never talk to Mongo.
+
+Skipping a layer is a bug, not a shortcut.
+
+---
+
+## Directory layout
+
+```
+apps/web/src/server/
+├── actions/           *.actions.ts — "use server" entry points
+├── services/          *.service.ts — business logic + Mongoose access
+│   └── ai/            scheduling agent, prompts
+└── models/            *.ts — Mongoose schemas
+
+apps/web/src/lib/
+├── auth/              getLocationContext, hasLocationAccess
+├── validations/       Web-local Zod schemas (prefer @sous/types)
+├── safe-action.ts     ActionResponse<T> discriminated union
+└── db.ts              dbConnect() — singleton Mongoose connection
+```
+
+---
+
+## Action layer — the contract
+
+Every Server Action file starts with `"use server"` and follows the same
+six-step shape:
+
+```ts
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { getLocationContext } from "@/lib/auth/get-location-context";
+import { ShiftService } from "@/server/services/shift.service";
+import { createShiftSchema } from "@/lib/validations/shift.schema";
+import type { ActionResponse } from "@/lib/safe-action";
+import type { ShiftDTO } from "@/types/shift";
+
+/**
+ * Create a new shift.
+ * @param input - Unvalidated input from the client
+ */
+export async function createShift(
+  input: unknown
+): Promise<ActionResponse<ShiftDTO>> {
+  try {
+    // 1. Auth
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    // 2. Validate (Zod)
+    const parsed = createShiftSchema.safeParse(input);
+    if (!parsed.success) {
+      const message = parsed.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+      return { success: false, error: message };
+    }
+
+    // 3. Resolve tenant context (calls dbConnect internally)
+    const ctx = await getLocationContext(userId);
+
+    // 4. Cross-cutting business checks (optional; still via services)
+    // e.g. validate station against KitchenConfig
+
+    // 5. Delegate to the service
+    const shift = await ShiftService.create({
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+      ...parsed.data,
+    });
+
+    // 6. Return a DTO
+    return { success: true, data: shift };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
+    return { success: false, error: message };
+  }
+}
+```
+
+### Hard rules for actions
+
+- **Input type is `unknown`.** Validate with Zod; never trust a typed
+  client signature.
+- **Return type is `ActionResponse<T>`** (discriminated union in
+  `src/lib/safe-action.ts`). Never throw — always return
+  `{ success: false, error }`.
+- **Auth + tenant context first.** `auth()` and then
+  `getLocationContext(userId)`. Never accept `orgId` / `locationId` from
+  the client.
+- **No Mongoose.** An action must not import anything from
+  `src/server/models/`.
+- **No direct `fetch`** to another service — call the service.
+- **Naming:** `createX`, `updateX`, `deleteX`, `listX`, `getXById`, etc.
+  One file per aggregate root (`shift.actions.ts`, `staff.actions.ts`).
+
+---
+
+## Service layer — business logic + Mongoose
+
+```ts
+// src/server/services/shift.service.ts
+import Shift from "@/server/models/Shift";
+import { Types } from "mongoose";
+import { toShiftDTO } from "@/types/shift";
+import type { ShiftDTO, CreateShiftInput } from "@/types/shift";
+
+export const ShiftService = {
+  async create(data: CreateShiftInput): Promise<ShiftDTO> {
+    const hasOverlap = await this.checkOverlap(
+      data.orgId,
+      data.locationId,
+      data.staffId,
+      data.start,
+      data.end
+    );
+    if (hasOverlap) {
+      throw new Error("This shift overlaps with an existing shift for this staff member");
+    }
+
+    const doc = await Shift.create({
+      orgId: new Types.ObjectId(data.orgId),
+      locationId: new Types.ObjectId(data.locationId),
+      scheduleId: new Types.ObjectId(data.scheduleId),
+      staffId: new Types.ObjectId(data.staffId),
+      start: data.start,
+      end: data.end,
+      station: data.station,
+      notes: data.notes || "",
+    });
+
+    return toShiftDTO(doc.toObject());
+  },
+
+  // More methods…
+};
+```
+
+### Hard rules for services
+
+- Services are exported as **plain objects with method properties**, not
+  classes. `export const ShiftService = { ... }`.
+- Services are the **only** consumers of `src/server/models/*`.
+- Convert string IDs to `new Types.ObjectId(id)` **inside** the service,
+  before hitting Mongo.
+- Return **DTOs**, never Mongoose documents. Use the feature-local
+  `toXDTO(doc.toObject())` helper.
+- Services may call other services. Avoid circular dependencies by
+  pushing shared logic to a lower service (e.g.
+  `organization.service.ts`).
+- Services throw on business-rule violations. The action catches and
+  converts to `ActionResponse<T>`.
+- Queries that return lists must use `.lean()` when the Mongoose
+  document methods aren't needed — it's faster and less memory.
+
+---
+
+## Model layer — Mongoose schemas
+
+```ts
+// src/server/models/Shift.ts
+import mongoose, { Schema, model, models } from "mongoose";
+
+const ShiftSchema = new Schema(
+  {
+    orgId: { type: Schema.Types.ObjectId, ref: "Organization", required: true, index: true },
+    locationId: { type: Schema.Types.ObjectId, ref: "Location", required: true, index: true },
+    scheduleId: { type: Schema.Types.ObjectId, ref: "Schedule", required: true, index: true },
+    staffId: { type: Schema.Types.ObjectId, ref: "Staff", required: true, index: true },
+    start: { type: Date, required: true },
+    end: { type: Date, required: true },
+    station: { type: String, required: true },
+    notes: { type: String, default: "" },
+  },
+  { timestamps: true }
+);
+
+export default models.Shift || model("Shift", ShiftSchema);
+```
+
+### Hard rules for models
+
+- **Always** use `models.X || model("X", Schema)`. Next.js hot-reloads
+  the module in dev and a plain `model()` call will throw
+  `OverwriteModelError`.
+- Every tenant-scoped doc carries **both** `orgId` and `locationId`, both
+  indexed. There is **no** userId-based scoping.
+- Every schema defines `timestamps: true` unless there is a justified
+  reason not to.
+- Keep validation minimal in the schema; real validation lives in Zod
+  (for client + server symmetry). Mongo-level constraints should be
+  limited to required/index/enum.
+
+---
+
+## DTO layer (`src/types/<feature>.ts`)
+
+Each feature has a `types/<feature>.ts` file that defines:
+
+- The **DTO** (plain serializable shape returned across the RSC boundary).
+- The **Input** types consumed by services (plain data, already validated).
+- A `toXDTO(doc)` helper that maps a lean Mongo doc to the DTO.
+
+Shared (web + mobile) types and Zod schemas live in
+`packages/types/src/` and are imported via `@sous/types`. If you add a
+type that both apps will consume, put it there.
+
+---
+
+## Multi-tenancy is non-negotiable
+
+Every query through a service **must** filter by **both** `orgId` and
+`locationId`:
+
+```ts
+await Staff.find({
+  orgId: new Types.ObjectId(ctx.orgId),
+  locationId: new Types.ObjectId(ctx.locationId),
+  // ...
+});
+```
+
+The one exception is `OrganizationService` itself (it's queried by `_id`
+or by `clerkUserId` via membership).
+
+There is also `hasLocationAccess(userId, orgId, locationId)` in
+`src/lib/auth/get-location-context.ts` for cross-location checks (e.g.
+when an owner accesses a non-default location via the `LocationSwitcher`).
+
+---
+
+## Error handling
+
+- Services **throw `Error`** with a human-readable message.
+- Actions **catch** and return `{ success: false, error: err.message }`.
+  Never re-throw from an action; that breaks the RSC contract.
+- Do **not** return internal errors verbatim if they leak PII or keys.
+  Known safe errors go through; unknown errors should be logged and
+  returned as `"An internal error occurred."`.
+
+---
+
+## Testing surface
+
+- Unit tests for services live alongside the service (or in
+  `__tests__/` siblings) — they can mount Mongoose against an
+  `mongodb-memory-server` or a disposable Atlas cluster.
+- Actions are integration-tested via the `scripts/test-phase-*` E2E
+  scripts (legacy) and, going forward, via thin Jest/Vitest wrappers
+  that stub Clerk and hit real services.
+
+---
+
+## Adding a new feature — checklist
+
+1. Define shared Zod schema + DTO type in `packages/types/` (or
+   `src/lib/validations/` if web-only).
+2. Create `src/server/models/<Feature>.ts` with `orgId` + `locationId`
+   + `timestamps`.
+3. Create `src/server/services/<feature>.service.ts` as a plain object
+   with the CRUD + business methods you need. Always return DTOs.
+4. Create `src/server/actions/<feature>.actions.ts` with one exported
+   async function per operation. Each follows the 6-step shape above.
+5. Import the action into the relevant Server Component / Client
+   Component. Wire it up via TanStack Query `useMutation` if
+   mutating.
+6. Update `docs/architecture/01-data-models.md` and
+   `docs/architecture/02-layer-patterns.md` if the shape of the system
+   changed (not required for a pure add).

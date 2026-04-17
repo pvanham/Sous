@@ -1,0 +1,259 @@
+---
+description: Next.js 16 App Router, Tailwind v4, Clerk, and MongoDB patterns for the web app. Attached automatically when editing apps/web.
+globs: apps/web/**/*.{ts,tsx,css}
+---
+
+# Web App — Next.js 16 Conventions
+
+Applies to **everything** inside `apps/web/`. This rule covers the framework
+shape. For the 3-layer data flow (actions, services, models), read
+`web-server-actions.mdc`. For the AI orchestrator, read
+`web-ai-orchestrator.mdc`.
+
+---
+
+## Framework baseline
+
+| Aspect | Value | Notes |
+|--------|-------|-------|
+| Next.js | **16** (App Router, Turbopack default) | `apps/web/next.config.ts` |
+| React | **19** (strict mode enabled) | Server Components by default |
+| TypeScript | 5 strict | No `any`; no implicit returns |
+| Auth | Clerk (`@clerk/nextjs`) | Provider + proxy + server `auth()` |
+| Database | MongoDB Atlas + Mongoose 9 | Singleton connection — see `src/lib/db.ts` |
+| Styling | Tailwind CSS v4 (CSS-first) | Shared preset in `@sous/config/tailwind-preset` |
+| UI library | shadcn/ui (Radix) | `src/components/ui/` — do not rebuild |
+| Forms | React Hook Form + Zod | Shared schemas in `@sous/types` |
+| Data fetching (client) | TanStack Query v5 | See `src/components/shared/providers.tsx` |
+| AI (chat) | Vercel AI SDK (`ai`, `@ai-sdk/openai`) | Streaming route handler |
+| AI (non-chat) | `openai` npm package | Direct calls from services |
+| Billing | Stripe SDK (server) + Stripe.js (client) | Route handlers for checkout/portal |
+
+---
+
+## Clerk middleware is `src/proxy.ts` (Next.js 16)
+
+**Critical:** The file `apps/web/src/proxy.ts` is the Clerk middleware. It is
+**not** a typo or a legacy artifact — in Next.js 16 the `middleware.ts`
+convention was **renamed to `proxy.ts`** and the exported function name is
+now `proxy`. See [Next.js 16 release notes](https://nextjs.org/blog/next-16).
+
+- Do **not** rename `proxy.ts` back to `middleware.ts`.
+- Do **not** export a `middleware` function from this file.
+- `proxy.ts` runs on the **Node.js runtime** (Edge is no longer supported
+  for this convention).
+- Public routes are listed inline via `createRouteMatcher`. Any new public
+  route (new webhook, new marketing page) must be added there.
+
+```ts
+// apps/web/src/proxy.ts
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/pricing",
+  "/api/webhooks/clerk(.*)",
+  // ...
+]);
+
+export default clerkMiddleware(async (auth, request) => {
+  if (!isPublicRoute(request)) {
+    await auth.protect();
+  }
+});
+```
+
+---
+
+## App Router layout
+
+```
+apps/web/src/app/
+├── layout.tsx               Root: ClerkProvider + fonts + <Providers>
+├── globals.css              Tailwind v4 import + design tokens
+├── (dashboard)/             Authenticated app — redirects staff to /staff-blocked
+│   └── dashboard/
+│       ├── layout.tsx       Location context, LocationSwitcher, AIAssistantPanel
+│       ├── page.tsx         Dashboard home
+│       ├── schedule/page.tsx + _components/
+│       ├── staff/page.tsx   + _components/, [id]/availability/…
+│       ├── labor/
+│       ├── settings/        (billing, team, ai, locations, schedule-generation)
+│       └── time-off/
+├── (auth)/                  Sign-in / sign-up surfaces (Clerk components)
+├── api/                     Route handlers — see "API routes" below
+├── staff-blocked/           Shown when a staff-role user hits the dashboard
+├── pricing/                 Marketing
+└── features/, sso-callback/ Marketing + Clerk SSO redirect
+```
+
+**Rules:**
+
+- Every user-visible route is a Server Component by default. Add
+  `"use client"` only when you actually need browser APIs, hooks, or event
+  handlers.
+- Page-local components live in `_components/` **directly under the page
+  that owns them** (underscore prefix excludes them from routing). Don't
+  hoist them to `src/components/` unless they're reused across pages.
+- Truly shared components live in `src/components/` and are organised by
+  intent: `ui/` (shadcn primitives), `shared/` (app-wide widgets like
+  `LocationSwitcher`, `ThemeToggle`, `AIAssistantPanel`), `ai-chat/` (chat
+  UI primitives), `marketing/` (public-site-only).
+
+### Route group conventions
+
+- `(dashboard)` wraps the entire authenticated surface. Its `layout.tsx`
+  calls `auth()` and `getLocationContext(userId)`, redirects staff-role
+  users to `/staff-blocked`, and mounts the `LocationSwitcher`, `AIAssistantPanel`,
+  and `CustomUserButton`.
+- `(auth)` wraps unauthenticated sign-in/up pages and deliberately has no
+  Clerk session check.
+
+---
+
+## API routes (`src/app/api/`) are reserved
+
+Next.js Route Handlers are used **only** for:
+
+1. **External webhooks** — Clerk (`/api/webhooks/clerk`), Stripe
+   (`/api/webhooks/stripe`), Twilio (`/api/webhooks/twilio`). Must
+   verify signatures. Must be listed as public in `proxy.ts`.
+2. **Streaming responses** — the AI chat endpoint
+   (`/api/ai/chat`) uses `streamText` from the Vercel AI SDK. Streaming
+   cannot be expressed as a Server Action.
+3. **Billing redirects** — `create-checkout` and `create-portal` need to
+   return a Stripe URL for a client-side redirect.
+4. **Client-polled status endpoints** — e.g. `/api/ai/tasks/[taskId]/status`
+   and `/api/ai/proposals/[proposalId]/resolve`. Used by React Query
+   polling.
+5. **The mobile app's contract** — `/api/me/membership` is consumed by
+   `apps/mobile`. Treat this as a public-ish API surface and keep its
+   shape stable.
+
+**Everything else (create/update/delete, reads for UI) goes through
+Server Actions** under `src/server/actions/`. Do not invent a new route
+handler for a CRUD flow.
+
+---
+
+## Server-side auth and data access
+
+```ts
+"use server";
+import { auth } from "@clerk/nextjs/server";
+import { getLocationContext } from "@/lib/auth/get-location-context";
+
+export async function doSomething() {
+  const { userId } = await auth();
+  if (!userId) return { success: false, error: "Unauthorized" };
+
+  const ctx = await getLocationContext(userId);
+  // ctx: { orgId, locationId, role }
+  // …
+}
+```
+
+- **Never** trust a client-supplied `orgId` or `locationId`. They are
+  always derived from `getLocationContext()`. This is how multi-tenancy
+  is enforced.
+- `getLocationContext` handles org-wide memberships by checking
+  `user.publicMetadata.activeLocationId` from Clerk (set by
+  `LocationSwitcher`) and falling back to the org's default location.
+- Role-based access in the dashboard layout: `owner` / `manager` /
+  `shift_lead` → allowed; `staff` → redirect to `/staff-blocked`
+  (mobile app is the staff surface).
+
+See `web-server-actions.mdc` for the full action/service/model pattern.
+
+---
+
+## Tailwind v4 + the Warm Industrial design system
+
+Tailwind v4 is **CSS-first**. Design tokens live in
+`apps/web/src/app/globals.css` as CSS custom properties, and the shared
+preset at `packages/config/tailwind-preset.ts` maps them into semantic
+Tailwind utility names.
+
+### Rules
+
+1. **Use semantic class names**, not raw colours:
+   - `bg-background`, `bg-card`, `bg-primary`, `text-foreground`,
+     `text-muted-foreground`, `border-border`, `ring-ring`.
+   - **Never** `bg-[#B45309]` or `bg-amber-700` for primary — that is the
+     current token value but the value can (and does) change when we ship
+     a theme update. Always resolve through the CSS variable.
+2. **Dark mode** is driven by a `.dark` class on `<html>` (handled by
+   `next-themes` via `components/shared/providers.tsx`). Use
+   `dark:` variants only for surface-level overrides.
+3. **Radius is token-driven.** `--radius: 0.25rem` (4px) — sharp by
+   design. `--radius-sm|md|lg` derive from it. Don't hard-code
+   `rounded-md`, `rounded-lg` with non-token values.
+4. **No shadows in the base style.** The palette relies on borders. If
+   you reach for `shadow-*`, ask whether a `border-border` is the more
+   on-brand choice.
+5. **Fonts are `GeistSans` and `GeistMono`**, loaded in
+   `src/app/layout.tsx` and exposed as CSS variables. Use the semantic
+   `font-sans` / `font-mono` utilities; do not re-import fonts.
+
+### Matching tokens on mobile
+
+The mobile app's `apps/mobile/global.css` mirrors these tokens. If you
+change a semantic colour in one app, update the other (or better, factor
+the change into the shared preset + both `globals.css` files).
+
+---
+
+## MongoDB / Mongoose usage
+
+- **Only import Mongoose models inside `src/server/services/`.** Actions,
+  route handlers, page components, and client components must go through
+  a service. This is enforced by convention and code review — linting
+  does not catch it.
+- Always call `await dbConnect()` at the top of any server code path that
+  will touch the database (actions and services already do this via
+  `getLocationContext`; ad-hoc scripts do not).
+- IDs: services convert string IDs to `new Types.ObjectId(id)` before
+  querying. DTOs expose string IDs. Never leak `ObjectId` instances across
+  the boundary.
+- Services return **DTOs** (plain objects) via `toXDTO(doc.toObject())`.
+  Never return a Mongoose Document to an action or UI. This keeps
+  serialization safe across the server-action boundary and makes code
+  testable.
+
+See `web-server-actions.mdc` for enforced patterns and the 3-layer shape.
+
+---
+
+## Forms & client state
+
+- Forms use **React Hook Form + Zod** via `@/components/ui/form.tsx`
+  (shadcn pattern).
+- Validation schemas are shared between client and server: prefer
+  `@sous/types` (cross-app) over `apps/web/src/lib/validations/`
+  (web-local); only put a schema in `src/lib/validations/` if it truly
+  has no mobile counterpart.
+- Client-side data fetching uses **TanStack Query v5** with the shared
+  `QueryClient` from `src/components/shared/providers.tsx`. Prefer
+  `useMutation` + server action over bespoke `fetch()` calls.
+- Optimistic updates: use `onMutate` + `queryClient.setQueryData` with a
+  rollback on error. See `ScheduleActions.tsx` for a reference.
+
+---
+
+## Common mistakes (do not commit these)
+
+1. Running `npm install` from inside `apps/web/`.
+2. Renaming `proxy.ts` → `middleware.ts` (it's the other way round in Next 16).
+3. Importing a Mongoose model outside `src/server/services/`.
+4. Returning a Mongoose document (`.toObject()` + DTO is required).
+5. Reading `orgId` / `locationId` from the client. Always derive server-side
+   via `getLocationContext`.
+6. Creating a new `src/app/api/*` route for a CRUD mutation (use a Server
+   Action).
+7. Hardcoding colour hex values instead of CSS variables.
+8. Using the `openai` npm package when the Vercel AI SDK is already wired
+   (or vice-versa — see `web-ai-orchestrator.mdc` for the rule).
+9. Forgetting `"use server"` at the top of a file that exports Server Actions.
+10. Exposing `Date` objects from an action (they survive the RSC boundary,
+    but downstream JSON serialization will break — DTO them to ISO strings
+    when needed).
