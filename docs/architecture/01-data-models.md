@@ -218,11 +218,19 @@ Approved / pending PTO, one per requested range. The CP solver treats
   endDate: Date,
   reason?: string,
   status: "pending" | "approved" | "denied",
+  type?: "pto" | "sick" | "unpaid",   // mobile request modal sets this
   reviewedBy?: string,                 // Clerk user ID of reviewer
   reviewedAt?: Date,
   createdAt, updatedAt: Date,
 }
 ```
+
+`type` is optional on the document — legacy rows pre-dating the
+mobile time-off submit flow do not carry it, and the manager-facing
+Server Action does not yet expose a picker — but the DTO converter
+defaults missing values to `"pto"` so consumers can always rely on a
+concrete category. The CP solver does not consume this field; only
+`status === "approved"` matters to scheduling.
 
 ---
 

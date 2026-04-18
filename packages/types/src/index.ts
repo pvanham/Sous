@@ -118,6 +118,17 @@ export interface UpdateShiftInput {
 
 export type TimeOffRequestStatus = "pending" | "approved" | "denied";
 
+/**
+ * Category of a time-off request. Surfaced by the mobile request
+ * form so staff can label the kind of leave they're asking for. The
+ * web manager UI does not currently expose this field; new requests
+ * created through the manager flow default to `"pto"`.
+ *
+ * Persisted on the `TimeOffRequest` document but not used by the CP
+ * solver — the solver only cares whether a request is `approved`.
+ */
+export type TimeOffRequestType = "pto" | "sick" | "unpaid";
+
 export interface TimeOffRequestDTO {
   id: string;
   orgId: string;
@@ -127,6 +138,8 @@ export interface TimeOffRequestDTO {
   endDate: Date;
   reason: string;
   status: TimeOffRequestStatus;
+  /** Category of leave (vacation / sick / unpaid). Defaults to `"pto"`. */
+  type: TimeOffRequestType;
   reviewedAt?: Date;
   reviewedBy?: string;
   notes: string;

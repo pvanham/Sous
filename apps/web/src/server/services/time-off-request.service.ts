@@ -214,6 +214,7 @@ export const TimeOffRequestService = {
       endDate: data.endDate,
       reason: data.reason ?? "",
       status: "pending",
+      type: data.type ?? "pto",
       notes: "",
     });
 

@@ -2,6 +2,7 @@ import mongoose, { Schema, Document, Model } from "mongoose";
 import type {
   ITimeOffRequest,
   TimeOffRequestStatus,
+  TimeOffRequestType,
 } from "@/types/time-off-request";
 
 // Document interface (with Mongoose document methods)
@@ -13,6 +14,10 @@ const STATUS_VALUES: TimeOffRequestStatus[] = [
   "approved",
   "denied",
 ];
+
+// Allowed leave types — keep in sync with the `TimeOffRequestType`
+// union and `timeOffRequestTypeSchema` in `@sous/types`.
+const TYPE_VALUES: TimeOffRequestType[] = ["pto", "sick", "unpaid"];
 
 // Main TimeOffRequest schema
 const TimeOffRequestSchema = new Schema<ITimeOffRequestDocument>(
@@ -55,6 +60,14 @@ const TimeOffRequestSchema = new Schema<ITimeOffRequestDocument>(
       enum: {
         values: STATUS_VALUES,
         message: "Status must be one of: pending, approved, denied",
+      },
+    },
+    type: {
+      type: String,
+      default: "pto",
+      enum: {
+        values: TYPE_VALUES,
+        message: "Type must be one of: pto, sick, unpaid",
       },
     },
     reviewedAt: {

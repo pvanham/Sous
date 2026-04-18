@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
-import { View, FlatList, Pressable } from "react-native";
+import { View, FlatList, Pressable, Alert } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { isAxiosError } from "axios";
 import type { TimeOffRequestDTO, TimeOffRequestStatus } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
@@ -43,6 +44,18 @@ export function TimeOffScreen() {
     onSuccess: () => {
       setModalVisible(false);
       queryClient.invalidateQueries({ queryKey: ["timeOffRequests"] });
+    },
+    onError: (error: unknown) => {
+      // Surface the route handler's `{ error }` payload (advance-days
+      // violation, duplicate range, etc.) to the user verbatim. Falls
+      // back to a generic message when the network call itself fails.
+      const message =
+        isAxiosError(error) && typeof error.response?.data?.error === "string"
+          ? error.response.data.error
+          : error instanceof Error
+            ? error.message
+            : "Could not submit time-off request. Please try again.";
+      Alert.alert("Time off", message);
     },
   });
 
