@@ -25,18 +25,18 @@ import { NextResponse } from "next/server";
 //   - 401 / 403 / 404 as appropriate.
 //   - 409 if an ExchangeShift already exists for this shift.
 //
-// Implementation sketch (DO NOT BUILD YET)
-//   1. Validate path + body with Zod.
-//   2. Confirm the Shift belongs to the caller via Staff lookup.
+// Implementation sketch
+//   1. Validate path + body with `dropShiftSchema`.
+//   2. Resolve the caller's `staffId`.
 //   3. Enforce business rules from KitchenConfig (e.g. "no drops less
 //      than N hours before start").
-//   4. Create an `ExchangeShift` record (new model — see open
-//      question in the exchange route file) referencing the Shift.
-//   5. Return the new ExchangeShift DTO.
+//   4. `await ExchangeShiftService.drop({ orgId, locationId, shiftId,
+//      staffId, reason })` — service confirms ownership and creates
+//      the row with status `available`.
+//   5. Return the new ExchangeShiftDTO.
 //
-// Out of scope for the file-setup task
-//   - The `ExchangeShift` model / service / action.
-//   - Manager-approval flow.
+// The ExchangeShift model and service now exist (see SHI-11);
+// approval flow is also implemented (`ExchangeShiftService.approve`).
 // ─────────────────────────────────────────────────────────────
 
 export async function POST(

@@ -10,9 +10,11 @@ import { NextResponse } from "next/server";
 //   (`available`, `pending_coverage`, `covered`, `manager_approved`),
 //   so the staff member can see the state of each one.
 //
-// Status / pre-implementation checklist
-//   See `apps/web/src/app/api/exchange/available/route.ts` — the
-//   ExchangeShift model and service must be defined first.
+// Status
+//   The ExchangeShift model and service exist (see SHI-11); this
+//   route handler is the only outstanding piece. Wiring it up means
+//   resolving the caller's `staffId` and delegating to
+//   `ExchangeShiftService.listByDropper(orgId, locationId, staffId)`.
 //
 // Auth & tenancy (when implementing)
 //   - `auth()` → `getLocationContext(userId)`.
@@ -23,10 +25,10 @@ import { NextResponse } from "next/server";
 //   - 200 → `ExchangeShiftDTO[]` sorted by `start` ascending.
 //   - 401 → `{ error }` on missing JWT.
 //
-// Implementation sketch (DO NOT BUILD YET)
+// Implementation sketch
 //   1. Auth + ctx.
-//   2. Resolve staffId.
-//   3. `await ExchangeService.listMine({ orgId, locationId, staffId })`.
+//   2. Resolve staffId from the caller's OrganizationMember + Staff.
+//   3. `await ExchangeShiftService.listByDropper(orgId, locationId, staffId)`.
 // ─────────────────────────────────────────────────────────────
 
 export async function GET(): Promise<Response> {

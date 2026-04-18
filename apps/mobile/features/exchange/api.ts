@@ -47,23 +47,20 @@ import type { ExchangeShift } from "@/types";
 //     • 200 → ExchangeShift
 //     • 403 → { error } when the caller does not own the shift
 //
-// Open questions to resolve before implementation
-//   - Do we need a separate Mongoose model `ExchangeShift`, or do we
-//     model "in-exchange" as a status field on the existing `Shift`?
-//     The current mock shape implies a separate model; verify with
-//     the schedule team before writing the service.
-//   - Where does manager approval slot in? `manager_approved` is in
-//     the status union but no flow currently produces it.
-//   - Should `ExchangeShift` move to `@sous/types`? It's referenced
-//     by both apps in spirit, but only the mobile app uses it today.
+// Resolved design decisions (SHI-11)
+//   - `ExchangeShift` IS its own Mongoose model (not a status field on
+//     `Shift`). The audit fields and OCC lifecycle live there.
+//   - Manager approval is produced by
+//     `ExchangeShiftService.approve(...)`, transitioning
+//     `pending_coverage → manager_approved`.
+//   - `ExchangeShiftDTO` + `ExchangeShiftStatus` now live in
+//     `@sous/types`; this file's `import type { ExchangeShift }`
+//     resolves through `apps/mobile/types/index.ts` to the same DTO.
 //
 // Implementation steps when wiring real endpoints
 //   1. Replace each mock body with `apiClient.get / post(...)`.
 //   2. Drop `makeExchangeShift()` and `delay()` helpers.
-//   3. Move `ExchangeShift` + `ExchangeShiftStatus` into
-//      `packages/types/src` so the web service layer and the mobile
-//      client share the type.
-//   4. Mutation `onSuccess` for pickup/drop must invalidate
+//   3. Mutation `onSuccess` for pickup/drop must invalidate
 //      `["exchange"]` AND `["schedule"]` (the caller's weekly view
 //      will have changed).
 // ─────────────────────────────────────────────────────────────
@@ -166,6 +163,8 @@ function makeExchangeShift(
   const end = new Date(start);
   end.setHours(start.getHours() + durationHours);
 
+  const now = new Date();
+
   return {
     id,
     shiftId: `shift-${id}`,
@@ -174,11 +173,17 @@ function makeExchangeShift(
     scheduleId: "sched-001",
     staffId: "staff-001",
     droppedByName,
+    pickedUpByStaffId: null,
+    pickedUpByName: null,
     start,
     end,
     station,
     status,
-    createdAt: new Date(),
+    reason: "",
+    approvedByClerkUserId: null,
+    approvedAt: null,
+    createdAt: now,
+    updatedAt: now,
   };
 }
 

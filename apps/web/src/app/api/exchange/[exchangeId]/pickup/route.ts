@@ -10,12 +10,14 @@ import { NextResponse } from "next/server";
 //   transfers ownership of the underlying Shift and transitions the
 //   ExchangeShift's status.
 //
-// Status / pre-implementation checklist
-//   See `apps/web/src/app/api/exchange/available/route.ts`. The
-//   ExchangeShift model and service must be defined first; this
-//   route in particular relies on `ExchangeService.pickup(...)`
-//   using OCC against the `ExchangeShift.updatedAt` field so two
-//   simultaneous pickups can't both succeed.
+// Status
+//   The ExchangeShift model and service exist (see SHI-11). The
+//   service's `pickup({ orgId, locationId, exchangeId,
+//   pickerStaffId, requireApproval })` method already implements the
+//   OCC update against `ExchangeShift.updatedAt` and (when
+//   `requireApproval=false`) the cascading reassignment of the
+//   underlying `Shift.staffId`. This route handler is still a 501
+//   placeholder.
 //
 // Auth & tenancy
 //   - `auth()` → `getLocationContext(userId)`.
@@ -38,14 +40,15 @@ import { NextResponse } from "next/server";
 //     caller's location.
 //   - 409 → `{ error }` on stale data (someone picked it up first).
 //
-// Implementation sketch (DO NOT BUILD YET)
+// Implementation sketch
 //   1. Auth + ctx + staffId resolution.
-//   2. Validate `exchangeId` (ObjectId).
-//   3. `await ExchangeService.pickup({ orgId, locationId, exchangeId,
-//      staffId })` — service performs the OCC update + Shift
-//      reassignment in a single Mongo session/transaction where
-//      possible.
-//   4. Translate service errors → HTTP statuses above.
+//   2. Validate `exchangeId` (ObjectId) and the (currently empty)
+//      body via `pickupExchangeShiftSchema`.
+//   3. Consult `KitchenConfig` to decide `requireApproval`.
+//   4. Run `CandidateService` eligibility checks (skill, conflict).
+//   5. `await ExchangeShiftService.pickup({ orgId, locationId,
+//      exchangeId, pickerStaffId: staffId, requireApproval })`.
+//   6. Translate service errors → HTTP statuses above.
 // ─────────────────────────────────────────────────────────────
 
 export async function POST(

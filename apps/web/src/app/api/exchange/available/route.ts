@@ -11,26 +11,24 @@ import { NextResponse } from "next/server";
 //   the exchange board.
 //
 // Status
-//   The `ExchangeShift` aggregate does not exist on the web side yet
-//   (no model, no service, no shared DTO). This route is a placeholder
-//   so the implementation has a planned landing spot — see the
-//   open question in `apps/mobile/features/exchange/api.ts`.
-//
-// Pre-implementation checklist (in order)
-//   1. Decide: separate `ExchangeShift` model, or status field on
-//      the existing `Shift`? Document the answer in
-//      `docs/architecture/01-data-models.md`.
-//   2. Move `ExchangeShift` + `ExchangeShiftStatus` from
-//      `apps/mobile/types/index.ts` into `packages/types/src` so the
-//      web service and the mobile client share a single shape.
-//   3. Add (or extend) the relevant Mongoose model.
-//   4. Add `ExchangeService` under
-//      `apps/web/src/server/services/exchange.service.ts` with at
-//      minimum: `listAvailable({ orgId, locationId, excludeStaffId })`,
-//      `listMine({ orgId, locationId, staffId })`, `pickup(...)`,
-//      `drop(...)`.
-//   5. THEN wire this route + the others under `/api/exchange/*`
-//      and `/api/shifts/[shiftId]/drop`.
+//   The backend foundation now exists (see SHI-11). The decision was
+//   to model exchange as its OWN aggregate (`ExchangeShift`) rather
+//   than a status field on `Shift` — see
+//   `docs/architecture/01-data-models.md` for the rationale. The
+//   pieces in place:
+//     - `ExchangeShiftDTO` + `ExchangeShiftStatus` in `@sous/types`.
+//     - Zod validators in
+//       `packages/types/src/validations/exchange-shift.schema.ts`.
+//     - Mongoose model at
+//       `apps/web/src/server/models/ExchangeShift.ts`.
+//     - Service at
+//       `apps/web/src/server/services/exchange-shift.service.ts`
+//       with `listAvailable`, `listByDropper`, `drop`, `pickup`,
+//       `approve`, `cancel`.
+//   THIS route handler is still a 501 placeholder. Wiring it up
+//   means resolving the caller's `staffId` (from
+//   `OrganizationMember` → `Staff`) and delegating to
+//   `ExchangeShiftService.listAvailable({ excludeStaffId })`.
 //
 // Auth & tenancy (when implementing)
 //   - `auth()` → `getLocationContext(userId)`.

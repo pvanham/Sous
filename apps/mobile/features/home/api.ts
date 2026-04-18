@@ -20,9 +20,10 @@ import type { Announcement } from "@/types";
 //   GET /announcements?limit=20
 //     • Auth: Clerk JWT
 //     • Returns announcements for the user's location, newest first.
-//     • Once announcements ship, the shape should live in @sous/types
-//       so both apps consume the same DTO.
-//     • 200 → Announcement[]
+//     • Backend foundation now exists (SHI-11):
+//       `AnnouncementDTO` lives in `@sous/types` and is re-exported
+//       by `apps/mobile/types` as `Announcement`.
+//     • 200 → AnnouncementDTO[]
 //
 // Implementation steps when wiring real endpoints
 //   1. Replace the mock body with `apiClient.get("...")` (Axios).
@@ -73,35 +74,58 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
   await delay(300);
 
   return [
-    {
+    makeMockAnnouncement({
       id: "ann-001",
       title: "Menu Update",
       body: "New spring risotto special starts Friday. Prep list updated in the walk-in binder.",
-      createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      ageHours: 2,
       priority: "high",
-    },
-    {
+    }),
+    makeMockAnnouncement({
       id: "ann-002",
       title: "Health Inspection Reminder",
       body: "County inspector coming next Tuesday. Deep clean stations at end of every shift this week.",
-      createdAt: new Date(Date.now() - 8 * 60 * 60 * 1000),
+      ageHours: 8,
       priority: "urgent",
-    },
-    {
+    }),
+    makeMockAnnouncement({
       id: "ann-003",
       title: "Staff Meeting",
       body: "All-hands meeting this Sunday at 3 PM before dinner service. Attendance mandatory.",
-      createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+      ageHours: 24,
       priority: "normal",
-    },
-    {
+    }),
+    makeMockAnnouncement({
       id: "ann-004",
       title: "New Dishwasher",
       body: "Welcome Marco to the team! He starts on the dish pit Monday evening.",
-      createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000),
+      ageHours: 48,
       priority: "low",
-    },
+    }),
   ];
+}
+
+function makeMockAnnouncement(input: {
+  id: string;
+  title: string;
+  body: string;
+  ageHours: number;
+  priority: Announcement["priority"];
+}): Announcement {
+  const createdAt = new Date(Date.now() - input.ageHours * 60 * 60 * 1000);
+  return {
+    id: input.id,
+    orgId: "org-001",
+    locationId: "loc-001",
+    authorClerkUserId: "user_mock",
+    authorName: "Manager",
+    title: input.title,
+    body: input.body,
+    priority: input.priority,
+    expiresAt: null,
+    createdAt,
+    updatedAt: createdAt,
+  };
 }
 
 function delay(ms: number): Promise<void> {

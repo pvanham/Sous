@@ -6,19 +6,38 @@ export type {
   TimeOffRequestStatus,
   ScheduleDTO,
   ScheduleStatus,
+  // Announcements + Exchange now live in @sous/types so the mobile
+  // client and the web service layer share a single canonical shape.
+  AnnouncementDTO,
+  AnnouncementPriority,
+  ExchangeShiftDTO,
+  ExchangeShiftStatus,
 } from "@sous/types";
 
-// ── Mobile-specific types ────────────────────────────────────
+import type {
+  AnnouncementDTO,
+  AnnouncementPriority,
+  ExchangeShiftDTO,
+  ExchangeShiftStatus,
+} from "@sous/types";
 
-export type AnnouncementPriority = "urgent" | "high" | "normal" | "low";
+// ── Mobile-only convenience aliases ──────────────────────────
+//
+// The mobile UI was built against the names `Announcement` and
+// `ExchangeShift` before the shared types existed. We keep these
+// aliases so existing components compile without churn while the
+// canonical names continue to be the `*DTO` ones from `@sous/types`.
 
-export interface Announcement {
-  id: string;
-  title: string;
-  body: string;
-  createdAt: Date;
-  priority: AnnouncementPriority;
-}
+/** Alias of `AnnouncementDTO` from `@sous/types`. */
+export type Announcement = AnnouncementDTO;
+/** Alias of `ExchangeShiftDTO` from `@sous/types`. */
+export type ExchangeShift = ExchangeShiftDTO;
+
+// Re-export the priority / status enums under their old names too.
+export type { AnnouncementPriority as MobileAnnouncementPriority };
+export type { ExchangeShiftStatus as MobileExchangeShiftStatus };
+
+// ── Mobile-specific input types (no server counterpart yet) ──
 
 export type TimeOffRequestType = "pto" | "sick" | "unpaid";
 
@@ -27,25 +46,4 @@ export interface CreateTimeOffRequestInput {
   endDate: Date;
   type: TimeOffRequestType;
   reason?: string;
-}
-
-export type ExchangeShiftStatus =
-  | "available"
-  | "pending_coverage"
-  | "covered"
-  | "manager_approved";
-
-export interface ExchangeShift {
-  id: string;
-  shiftId: string;
-  orgId: string;
-  locationId: string;
-  scheduleId: string;
-  staffId: string;
-  droppedByName: string;
-  start: Date;
-  end: Date;
-  station: string;
-  status: ExchangeShiftStatus;
-  createdAt: Date;
 }
