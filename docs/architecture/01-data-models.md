@@ -346,6 +346,120 @@ When adding a new model, add the compound tenancy index in the schema
 
 ---
 
+## Mobile-app-driven aggregates
+
+These collections were introduced together to back the mobile app's
+Home and Exchange tabs. The web app's authoring UI for them is not
+yet implemented; the model + service + DTO surfaces are.
+
+### Announcement (`Announcement.ts`)
+
+Manager-authored posts visible on the mobile **Home** tab. Scoped per
+location (an organization with multiple locations gets independent
+feeds). Read-side is open to every member of the location; write-side
+(create / update / delete) is restricted to `owner` and `manager`
+roles in `announcement.actions.ts`.
+
+```ts
+{
+  orgId: ObjectId(Organization),
+  locationId: ObjectId(Location),
+  authorClerkUserId: string,           // who posted (Clerk user ID)
+  authorName: string,                  // snapshot at write time
+  title: string,                       // 1..120 chars
+  body: string,                        // 1..2000 chars
+  priority: "urgent" | "high" | "normal" | "low",   // default "normal"
+  expiresAt?: Date | null,             // when set, must be in the future
+  createdAt, updatedAt: Date,
+}
+```
+
+Indexes: `(orgId, locationId, createdAt)` for the newest-first feed
+and `(orgId, locationId, expiresAt)` for the still-active filter.
+We deliberately do **not** use a TTL index — `expiresAt` controls
+visibility, not deletion, so the manager-side history outlives the
+staff-facing window.
+
+The DTO and Zod schemas live in `@sous/types`
+(`AnnouncementDTO`, `AnnouncementPriority`,
+`createAnnouncementSchema`, `updateAnnouncementSchema`,
+`listAnnouncementsSchema`). The web wrapper at
+`apps/web/src/types/announcement.ts` adds the Mongoose-flavoured
+`IAnnouncement` interface and the `toAnnouncementDTO` converter.
+
+### ExchangeShift (`ExchangeShift.ts`)
+
+Drop / pickup record for the mobile **Exchange** tab. Each row is a
+1-to-1 lifecycle wrapper around a single `Shift` — we modeled it as a
+separate aggregate (rather than a status field on `Shift`) so the
+weekly schedule view never has to know about exchange and so the
+audit fields (`pickedUpByStaffId`, `approvedByClerkUserId`,
+`approvedAt`, `reason`) live where they belong.
+
+```ts
+{
+  orgId: ObjectId(Organization),
+  locationId: ObjectId(Location),
+  shiftId: ObjectId(Shift),            // source of truth for start/end/station
+  scheduleId: ObjectId(Schedule),      // denormalised for cheap weekly views
+  staffId: ObjectId(Staff),            // dropper
+  droppedByName: string,               // snapshot for cheap rendering
+  pickedUpByStaffId?: ObjectId(Staff) | null,
+  pickedUpByName?: string | null,
+  start, end: Date,                    // denormalised from Shift
+  station: string,                     // denormalised from Shift
+  status: "available" | "pending_coverage" | "covered"
+        | "manager_approved" | "cancelled",
+  reason: string,                      // optional dropper note (max 500)
+  approvedByClerkUserId?: string | null,
+  approvedAt?: Date | null,
+  createdAt, updatedAt: Date,
+}
+```
+
+Lifecycle (`ExchangeShiftStatus`):
+
+- `available`        — dropped, awaiting pickup.
+- `pending_coverage` — picked up; awaiting shift-lead / manager
+                       approval (only when `KitchenConfig` requires
+                       it). The underlying `Shift.staffId` is **not**
+                       reassigned yet.
+- `covered`          — picked up under a no-approval policy; the
+                       underlying `Shift.staffId` has been swapped to
+                       the picker.
+- `manager_approved` — terminal status after a `pending_coverage`
+                       approval. Distinguished from `covered` so
+                       audit history is unambiguous.
+- `cancelled`        — dropper rescinded the drop while still
+                       `available`. Terminal.
+
+Indexes:
+
+- `(orgId, locationId, status, start)` — board pagination by status.
+- `(orgId, locationId, staffId, createdAt)` — "my drops" list.
+- Partial-unique `(shiftId)` filtered to
+  `status ∈ {available, pending_coverage}` — guarantees a single
+  open drop per shift while still allowing a fresh drop after a
+  `cancelled` / `covered` row.
+
+Concurrency: `ExchangeShiftService.pickup` and `.approve` use OCC
+against `ExchangeShift.updatedAt` so two simultaneous pickups can
+never both succeed; the loser sees a clean error (the route handler
+maps it to HTTP 409). Eligibility checks (skill match, schedule
+overlap) live in `CandidateService` and must be invoked by the
+route handler before calling `pickup` — the service tier intentionally
+stays narrow.
+
+The DTO and Zod schemas live in `@sous/types` (`ExchangeShiftDTO`,
+`ExchangeShiftStatus`, `dropShiftSchema`,
+`pickupExchangeShiftSchema`, `listAvailableExchangeShiftsSchema`,
+`listMyExchangeShiftsSchema`, `approveExchangeShiftSchema`,
+`cancelExchangeShiftSchema`). The web wrapper at
+`apps/web/src/types/exchange-shift.ts` adds the Mongoose-flavoured
+`IExchangeShift` interface and `toExchangeShiftDTO` converter.
+
+---
+
 ## Not yet modeled (Phase 5 / future)
 
 SMS two-way messaging (`Message`, `CoverageRequest`) is on the roadmap

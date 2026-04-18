@@ -11,30 +11,22 @@ import { NextResponse } from "next/server";
 //   sample list.
 //
 // Status
-//   The `Announcement` domain does NOT exist on the web side yet —
-//   no Mongoose model, no service, no DTO in `@sous/types`. This
-//   route is a placeholder so future work has a known landing spot.
-//
-// Pre-implementation checklist (in order)
-//   1. Add `AnnouncementDTO` (and `AnnouncementPriority`) to
-//      `packages/types/src/index.ts` and delete the duplicate types
-//      currently in `apps/mobile/types/index.ts`.
-//   2. Add Zod validations in `packages/types/src/validations` for
-//      create/update inputs.
-//   3. Add the `Announcement` Mongoose model under
-//      `apps/web/src/server/models/Announcement.ts` (orgId +
-//      locationId + indexes + timestamps).
-//   4. Add `apps/web/src/server/services/announcement.service.ts`
-//      with at minimum `list({ limit })`, `create`, `delete`.
-//   5. Add manager-only Server Actions in
-//      `apps/web/src/server/actions/announcement.actions.ts` for the
-//      eventual web-side authoring UI.
-//   6. THEN flesh out this route handler.
+//   The backend foundation now exists (see SHI-11):
+//     - `AnnouncementDTO` + `AnnouncementPriority` in `@sous/types`.
+//     - Zod validators in
+//       `packages/types/src/validations/announcement.schema.ts`.
+//     - Mongoose model at `apps/web/src/server/models/Announcement.ts`.
+//     - Service at `apps/web/src/server/services/announcement.service.ts`.
+//     - Manager-only Server Actions in
+//       `apps/web/src/server/actions/announcement.actions.ts`.
+//   THIS route handler is still a 501 placeholder. Wiring it up
+//   simply means resolving the location context and delegating to
+//   `AnnouncementService.list(orgId, locationId, { limit })`.
 //
 // Auth & tenancy (when implementing)
 //   - `auth()` → `getLocationContext(userId)`.
-//   - All roles may read; manager / owner only may write (write goes
-//     through Server Actions, NOT this route).
+//   - All roles may read; manager / owner writes go through the
+//     Server Actions, NOT this route.
 //
 // Response (planned)
 //   - 200 → `AnnouncementDTO[]`

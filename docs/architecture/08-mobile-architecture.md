@@ -361,15 +361,13 @@ documents auth, request/response shape, and the implementation plan.
 | `dropShift(shiftId)`                      | POST | `/api/shifts/[shiftId]/drop/route.ts`                            |
 | `fetchMembership()` (already shipped)     | GET  | `/api/me/membership/route.ts`                                    |
 
-Two domains do not exist on the web side yet and must be designed
-before their routes can be implemented:
-
-- **Announcements** — no model, service, or shared DTO. Full
-  pre-implementation checklist lives at the top of
-  `/api/announcements/route.ts`.
-- **ExchangeShift** — open question of "separate model vs. status on
-  Shift". Checklist + open questions live at the top of
-  `/api/exchange/available/route.ts`.
+Both **Announcements** and **ExchangeShift** now have full backend
+foundations on the web side (model + service + shared DTO + Zod
+schemas — see [01-data-models.md](./01-data-models.md) for the
+schema and lifecycle). The route handlers under `/api/announcements`,
+`/api/exchange/*`, and `/api/shifts/[shiftId]/drop` remain 501
+placeholders; their file headers describe the (now small)
+implementation step that delegates to the existing service.
 
 When you wire a feature to a real endpoint:
 

@@ -349,6 +349,106 @@ export interface SaveKitchenConfigOptions {
   };
 }
 
+// ── Announcement ─────────────────────────────────────────────
+
+/**
+ * Priority bucket for an announcement. Drives presentation on the
+ * mobile home tab (urgent → red banner, high → amber, etc.) and
+ * sorting (urgent / high pin to the top within the recency window).
+ */
+export type AnnouncementPriority = "urgent" | "high" | "normal" | "low";
+
+/**
+ * Manager-authored announcement scoped to a single location.
+ *
+ * Visible to every member of the location regardless of role; only
+ * managers and owners can create / update / delete (enforced at the
+ * action layer in the web app).
+ */
+export interface AnnouncementDTO {
+  id: string;
+  orgId: string;
+  locationId: string;
+  /** Clerk user id of the manager / owner who authored the post. */
+  authorClerkUserId: string;
+  /** Display name captured at write time so deletions don't break the feed. */
+  authorName: string;
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+  /** Optional expiry — when set, expired announcements are filtered out. */
+  expiresAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// ── Exchange Shift ───────────────────────────────────────────
+
+/**
+ * Lifecycle of a dropped shift on the exchange board.
+ *
+ * - `available`         The dropper has released the shift; nobody has
+ *                       claimed it yet.
+ * - `pending_coverage`  Another staff member has clicked "pick up" and
+ *                       the system is waiting on shift-lead /
+ *                       manager approval (only when KitchenConfig
+ *                       requires it).
+ * - `covered`           A pickup was accepted automatically (no
+ *                       approval required) or after manager sign-off.
+ *                       The underlying Shift's `staffId` has been
+ *                       reassigned by `ExchangeShiftService.pickup`.
+ * - `manager_approved`  Terminal historical status used when the
+ *                       coverage flow involved manager approval. Kept
+ *                       distinct from `covered` so the audit trail can
+ *                       distinguish the two paths.
+ * - `cancelled`         The dropper rescinded the drop before it was
+ *                       picked up. Terminal.
+ */
+export type ExchangeShiftStatus =
+  | "available"
+  | "pending_coverage"
+  | "covered"
+  | "manager_approved"
+  | "cancelled";
+
+/**
+ * A shift that has been dropped onto the exchange board. References
+ * the underlying `Shift` document so the source of truth for
+ * start / end / station stays a single place.
+ *
+ * The denormalised display fields (`droppedByName`, `start`, `end`,
+ * `station`) make the mobile feed cheap to render without an extra
+ * join. They are rewritten if the originating Shift is updated.
+ */
+export interface ExchangeShiftDTO {
+  id: string;
+  orgId: string;
+  locationId: string;
+  /** Source `Shift.id` whose ownership flips when picked up. */
+  shiftId: string;
+  /** Source `Schedule.id` — denormalised to keep weekly views snappy. */
+  scheduleId: string;
+  /** `Staff.id` of the person dropping the shift. */
+  staffId: string;
+  /** `Staff.name` snapshot at drop time (read-only display field). */
+  droppedByName: string;
+  /** `Staff.id` of the picker once status moves past `available`. */
+  pickedUpByStaffId?: string | null;
+  /** `Staff.name` snapshot of the picker, for display in "my drops". */
+  pickedUpByName?: string | null;
+  start: Date;
+  end: Date;
+  station: string;
+  status: ExchangeShiftStatus;
+  /** Optional note from the dropper (max ~500 chars). */
+  reason: string;
+  /** Set by manager / shift lead when transitioning to `manager_approved`. */
+  approvedByClerkUserId?: string | null;
+  approvedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ── Candidate (Schedule Generation) ──────────────────────────
 
 export interface SlotCandidates {
