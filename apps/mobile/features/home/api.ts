@@ -1,6 +1,41 @@
 import type { ShiftDTO } from "@sous/types";
 import type { Announcement } from "@/types";
 
+// ─────────────────────────────────────────────────────────────
+// Home tab — server-state access layer.
+//
+// Responsibilities
+//   - Fetch the staff member's next upcoming shift.
+//   - Fetch recent announcements scoped to the current location.
+//
+// Backend contract (planned, not yet implemented)
+//   GET /shifts/next
+//     • Auth: Clerk JWT (Authorization: Bearer ...)
+//     • Resolves the calling user's Staff record via OrganizationMember,
+//       then returns the soonest Shift with `start >= now`.
+//     • 200 → ShiftDTO | null
+//     • 401 → { error } when the JWT is missing/invalid
+//     • 404 → { error } when the user has no membership
+//
+//   GET /announcements?limit=20
+//     • Auth: Clerk JWT
+//     • Returns announcements for the user's location, newest first.
+//     • Once announcements ship, the shape should live in @sous/types
+//       so both apps consume the same DTO.
+//     • 200 → Announcement[]
+//
+// Implementation steps when wiring real endpoints
+//   1. Replace the mock body with `apiClient.get("...")` (Axios).
+//   2. Delete the `delay()` / mock factories below.
+//   3. Use DTOs from `@sous/types` directly — do not re-declare shapes
+//      in `apps/mobile/types`.
+//   4. Surface errors with a readable message via the calling screen's
+//      TanStack Query `error` channel; never silently fall back to
+//      placeholder data.
+//   5. Keep the `["home", ...]` query keys consistent with the
+//      conventions in docs/architecture/08-mobile-architecture.md §8.
+// ─────────────────────────────────────────────────────────────
+
 /**
  * Returns the user's next upcoming shift.
  * Replace with `apiClient.get("/shifts/next")` when the backend endpoint exists.

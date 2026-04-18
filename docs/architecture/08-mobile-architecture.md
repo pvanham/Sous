@@ -332,11 +332,44 @@ feature's `api.ts` returns hardcoded mocks with a `delay()` helper:
   pickUpShift, dropShift
 - `features/time-off/api.ts` — requests list, submitTimeOffRequest
 
-Every function has a comment like:
+Every function carries a doc comment describing the planned route
+handler that will replace the mock, e.g.:
 
 ```ts
 // Replace with `apiClient.get("/shifts", { params: { weekStart } })` later.
 ```
+
+### 10.1 Planned mobile API surface (skeletons live in the repo)
+
+Skeleton route handlers exist under `apps/web/src/app/api/` for every
+endpoint the mobile app will eventually call. They each return
+`501 Not Implemented` and contain an extensive header comment that
+documents auth, request/response shape, and the implementation plan.
+**Do not flesh one out without first reading its file-level comment**:
+
+| Mobile call                               | Verb | Web route handler                                                |
+|-------------------------------------------|------|------------------------------------------------------------------|
+| `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      |
+| `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    |
+| `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           |
+| `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          |
+| `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         |
+| `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         |
+| `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               |
+| `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    |
+| `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     |
+| `dropShift(shiftId)`                      | POST | `/api/shifts/[shiftId]/drop/route.ts`                            |
+| `fetchMembership()` (already shipped)     | GET  | `/api/me/membership/route.ts`                                    |
+
+Two domains do not exist on the web side yet and must be designed
+before their routes can be implemented:
+
+- **Announcements** — no model, service, or shared DTO. Full
+  pre-implementation checklist lives at the top of
+  `/api/announcements/route.ts`.
+- **ExchangeShift** — open question of "separate model vs. status on
+  Shift". Checklist + open questions live at the top of
+  `/api/exchange/available/route.ts`.
 
 When you wire a feature to a real endpoint:
 
