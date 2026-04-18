@@ -4,6 +4,7 @@ export type {
   StaffSkill,
   TimeOffRequestDTO,
   TimeOffRequestStatus,
+  TimeOffRequestType,
   ScheduleDTO,
   ScheduleStatus,
   // Announcements + Exchange now live in @sous/types so the mobile
@@ -13,6 +14,8 @@ export type {
   ExchangeShiftDTO,
   ExchangeShiftStatus,
 } from "@sous/types";
+
+export type { SubmitTimeOffRequestInput as CreateTimeOffRequestInput } from "@sous/types/validations/time-off-request.schema";
 
 import type {
   AnnouncementDTO,
@@ -37,13 +40,3 @@ export type ExchangeShift = ExchangeShiftDTO;
 export type { AnnouncementPriority as MobileAnnouncementPriority };
 export type { ExchangeShiftStatus as MobileExchangeShiftStatus };
 
-// ── Mobile-specific input types (no server counterpart yet) ──
-
-export type TimeOffRequestType = "pto" | "sick" | "unpaid";
-
-export interface CreateTimeOffRequestInput {
-  startDate: Date;
-  endDate: Date;
-  type: TimeOffRequestType;
-  reason?: string;
-}
