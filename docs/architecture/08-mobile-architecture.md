@@ -325,17 +325,15 @@ Rules:
 
 ## 10. Mock data — active technical debt
 
-Today, `features/auth/api.ts`, `features/home/api.ts`,
-`features/schedule/api.ts`, and `features/time-off/api.ts` hit real
-endpoints; the remaining feature `api.ts` files still return
-hardcoded mocks with a `delay()` helper:
+Every feature `api.ts` file now hits real endpoints — there is no
+remaining mock data on the mobile data layer:
 
 - `features/home/api.ts` — **live** (next shift, announcements)
 - `features/schedule/api.ts` — **live** (week shifts, shift roster)
 - `features/time-off/api.ts` — **live** (requests list,
   submitTimeOffRequest)
-- `features/exchange/api.ts` — available shifts, my drops,
-  pickUpShift, dropShift
+- `features/exchange/api.ts` — **live** (available shifts, my drops,
+  pickUpShift, dropShift)
 
 Every function carries a doc comment describing the planned route
 handler that will replace the mock, e.g.:
@@ -360,10 +358,10 @@ documents auth, request/response shape, and the implementation plan.
 | `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
 | `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | live   |
 | `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | live   |
-| `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | 501    |
-| `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | 501    |
-| `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     | 501    |
-| `dropShift(shiftId)`                      | POST | `/api/shifts/[shiftId]/drop/route.ts`                            | 501    |
+| `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | live   |
+| `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | live   |
+| `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     | live   |
+| `dropShift(shiftId, { reason })`          | POST | `/api/shifts/[shiftId]/drop/route.ts`                            | live   |
 | `fetchMembership()`                       | GET  | `/api/me/membership/route.ts`                                    | live   |
 
 The Home tab is fully wired (SHI-7). `/api/shifts/next` resolves the
@@ -409,12 +407,39 @@ for this date range already exists") rather than a 500. Mutation
 success invalidates the `["timeOffRequests"]` query key so the
 history list and the counter cards refresh in one round trip.
 
-**ExchangeShift** also has a full backend foundation on the web side
-(model + service + shared DTO + Zod schemas — see
-[01-data-models.md](./01-data-models.md)). The route handlers under
-`/api/exchange/*` and `/api/shifts/[shiftId]/drop` remain 501
-placeholders; their file headers describe the (now small)
-implementation step that delegates to the existing service.
+The Exchange tab is fully wired (SHI-8). All four mobile endpoints
+under `/api/exchange/*` and `/api/shifts/[shiftId]/drop` are thin
+adapters over `ExchangeShiftService` (model + service + shared DTO +
+Zod schemas live in [01-data-models.md](./01-data-models.md)):
+
+- `GET /api/exchange/available` resolves the caller's `staffId` and
+  delegates to `ExchangeShiftService.listAvailable({ excludeStaffId })`
+  so users never see their own drops in the available feed.
+- `GET /api/exchange/mine` resolves `staffId` and delegates to
+  `ExchangeShiftService.listByDropper`. Manager / owner callers with
+  no Staff row at the active location get an empty array (matching
+  the graceful-empty pattern from `/api/shifts` and `/api/time-off`).
+- `POST /api/exchange/[exchangeId]/pickup` resolves the picker's
+  `staffId`, runs an overlap pre-check via `ShiftService.checkOverlap`
+  (the cheap last-mile guard against scheduling a staffer onto two
+  concurrent shifts), and delegates to `ExchangeShiftService.pickup`.
+  The service already implements the OCC update against
+  `ExchangeShift.updatedAt`; the route surfaces stale-snapshot
+  conflicts as `409` and self-pickup / overlap as `403`. v1 always
+  passes `requireApproval: false` (status moves directly to
+  `covered`); when `KitchenConfig` grows an
+  "exchange-requires-approval" toggle, the route will read it and
+  branch.
+- `POST /api/shifts/[shiftId]/drop` validates the optional `reason`
+  body against `dropShiftSchema` from `@sous/types`, resolves the
+  caller's `staffId`, and delegates to `ExchangeShiftService.drop`.
+  The model's partial unique index on
+  `(shiftId, status ∈ open)` surfaces as a clean `409` ("this shift
+  is already on the exchange board") rather than a generic 500.
+
+Mutation success on the screen invalidates BOTH `["exchange"]` (the
+board + my drops) AND `["schedule"]` (the caller's weekly view
+changes because a shift is being added or removed).
 
 When you wire a feature to a real endpoint:
 

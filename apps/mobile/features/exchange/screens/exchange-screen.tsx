@@ -57,7 +57,13 @@ export function ExchangeScreen() {
     onMutate: (shiftId) => setPickingUp(shiftId),
     onSettled: () => {
       setPickingUp(null);
+      // Pickup mutates BOTH the exchange board (the row leaves
+      // `available` and joins someone's "covered" history) AND the
+      // caller's weekly schedule (a new shift was added). Invalidate
+      // both query trees so the schedule tab re-fetches next time
+      // it mounts and any open exchange queries refresh now.
       queryClient.invalidateQueries({ queryKey: ["exchange"] });
+      queryClient.invalidateQueries({ queryKey: ["schedule"] });
     },
   });
 
