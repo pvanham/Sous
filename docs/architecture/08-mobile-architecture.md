@@ -25,12 +25,12 @@ web app uses.
   out and explain why.
 - Render four tabs: **Home**, **Schedule**, **Exchange**, **Time Off**.
 
-**What the mobile app does not do yet**: most feature screens still
-render **mock data** (see §10). The Home tab is now wired to real
-endpoints (`/api/shifts/next`, `/api/announcements`); Schedule,
-Exchange, and Time-off remain on mocks until their route handlers
-ship. The Axios pipeline, auth wiring, TanStack Query setup, and UI
-are real.
+**What the mobile app does not do yet**: some feature screens still
+render **mock data** (see §10). The Home and Schedule tabs are now
+wired to real endpoints (`/api/shifts/next`, `/api/announcements`,
+`/api/shifts`, `/api/shifts/:shiftId/roster`); Exchange and Time-off
+remain on mocks until their route handlers ship. The Axios pipeline,
+auth wiring, TanStack Query setup, and UI are real.
 
 ---
 
@@ -325,12 +325,12 @@ Rules:
 
 ## 10. Mock data — active technical debt
 
-Today, `features/auth/api.ts` and `features/home/api.ts` hit real
-endpoints; the remaining feature `api.ts` files still return
-hardcoded mocks with a `delay()` helper:
+Today, `features/auth/api.ts`, `features/home/api.ts`, and
+`features/schedule/api.ts` hit real endpoints; the remaining feature
+`api.ts` files still return hardcoded mocks with a `delay()` helper:
 
 - `features/home/api.ts` — **live** (next shift, announcements)
-- `features/schedule/api.ts` — week shifts, shift roster
+- `features/schedule/api.ts` — **live** (week shifts, shift roster)
 - `features/exchange/api.ts` — available shifts, my drops,
   pickUpShift, dropShift
 - `features/time-off/api.ts` — requests list, submitTimeOffRequest
@@ -354,8 +354,8 @@ documents auth, request/response shape, and the implementation plan.
 |-------------------------------------------|------|------------------------------------------------------------------|--------|
 | `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      | live   |
 | `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    | live   |
-| `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | 501    |
-| `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | 501    |
+| `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | live   |
+| `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
 | `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | 501    |
 | `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | 501    |
 | `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | 501    |
@@ -371,6 +371,25 @@ and delegates to `ShiftService.getNextForStaff`;
 `AnnouncementService.list`. Both routes follow the same
 `auth() → getLocationContext(userId)` pattern as the rest of the
 mobile API surface.
+
+The Schedule tab is fully wired (SHI-10). `/api/shifts` accepts a
+`weekStart` (`YYYY-MM-DD`) query parameter, resolves the caller's
+`staffId` server-side, and delegates to
+`ShiftService.getByStaffAndWeek` to return shifts whose `start` falls
+inside `[weekStart, weekStart + 7d)`. Manager / owner callers with no
+Staff row at the active location get an empty array (mirroring the
+graceful-empty pattern from `/api/shifts/next`) so the schedule
+screen renders its empty state instead of erroring.
+
+`/api/shifts/[shiftId]/roster` resolves the target shift, calls
+`ShiftService.getRoster(scheduleId, start, end)` to find every shift
+in the same `Schedule` whose time window overlaps the target's
+`[start, end)`, then materialises the staff IDs via
+`StaffService.getByIds`. RBAC is enforced server-side: `staff` and
+`shift_lead` callers must appear on the roster (403 otherwise);
+`manager` and `owner` may view any roster within the active tenant.
+The roster includes the caller themselves so the UI can mark "(you)"
+without an extra round-trip.
 
 **ExchangeShift** also has a full backend foundation on the web side
 (model + service + shared DTO + Zod schemas — see
