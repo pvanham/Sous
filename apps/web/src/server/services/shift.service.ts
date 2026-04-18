@@ -225,6 +225,82 @@ export const ShiftService = {
   },
 
   /**
+   * Get a staff member's shifts that fall inside a half-open
+   * `[weekStart, weekEnd)` window for a specific tenant.
+   *
+   * Used by the mobile Schedule tab to populate the weekly strip and
+   * day-detail list. The window is left-inclusive / right-exclusive so
+   * a shift starting exactly at the next week's boundary doesn't show
+   * up twice when the user paginates forward.
+   *
+   * Filtering is on `start` only — a shift that begins inside the
+   * window but ends after it (e.g. an overnight close) is intentionally
+   * included so the staff member doesn't lose track of it on the day
+   * they actually work it.
+   *
+   * @param orgId        Organization ID (tenancy filter).
+   * @param locationId   Location ID (tenancy filter).
+   * @param staffId      Staff member whose shifts to return.
+   * @param weekStart    Inclusive lower bound (UTC instant).
+   * @param weekEnd      Exclusive upper bound (UTC instant).
+   * @returns Array of ShiftDTOs sorted by `start` ascending.
+   */
+  async getByStaffAndWeek(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    weekStart: Date,
+    weekEnd: Date
+  ): Promise<ShiftDTO[]> {
+    const docs = await Shift.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: new Types.ObjectId(staffId),
+      start: { $gte: weekStart, $lt: weekEnd },
+    })
+      .sort({ start: 1 })
+      .lean();
+
+    return docs.map(toShiftDTO);
+  },
+
+  /**
+   * Return every shift on a given schedule whose time window overlaps
+   * `[start, end)`. Backs the mobile "who's on with me" roster modal.
+   *
+   * Two shifts overlap when `existing.start < window.end` and
+   * `existing.end > window.start`. This catches:
+   *   - shifts that start before and end during the target window
+   *   - shifts that start during the target window
+   *   - shifts that span the entire window
+   *
+   * Scoped by `scheduleId` so we don't pull cross-week roster bleed
+   * (e.g. a shift on the same Monday morning belonging to last week's
+   * schedule). The route handler is responsible for resolving the
+   * target shift first and passing its `scheduleId`, `start`, `end`
+   * values here.
+   */
+  async getRoster(
+    orgId: string,
+    locationId: string,
+    scheduleId: string,
+    start: Date,
+    end: Date
+  ): Promise<ShiftDTO[]> {
+    const docs = await Shift.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      scheduleId: new Types.ObjectId(scheduleId),
+      start: { $lt: end },
+      end: { $gt: start },
+    })
+      .sort({ start: 1 })
+      .lean();
+
+    return docs.map(toShiftDTO);
+  },
+
+  /**
    * Get the soonest upcoming shift for a staff member at a location.
    *
    * "Upcoming" means `start >= now` — a shift that has already started

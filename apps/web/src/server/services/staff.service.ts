@@ -123,6 +123,49 @@ export const StaffService = {
   },
 
   /**
+   * Bulk-fetch staff records by ID for a tenant.
+   *
+   * Used by the mobile shift-roster route to materialize a
+   * collection of `staffId`s (returned by `ShiftService.getRoster`)
+   * into full `StaffDTO`s in a single round-trip rather than one
+   * `getById` per staff member.
+   *
+   * Invalid / non-`ObjectId` strings are filtered out silently so a
+   * single bad input doesn't crash the whole query. Results are
+   * deduplicated to match the deduplicated input set, and ordered by
+   * `name` ascending for stable presentation in the UI.
+   *
+   * @param orgId       Organization ID (tenancy filter).
+   * @param locationId  Location ID (tenancy filter).
+   * @param staffIds    Staff document IDs to fetch.
+   * @returns Array of StaffDTOs (may be shorter than input if some
+   *          IDs don't exist in this tenant).
+   */
+  async getByIds(
+    orgId: string,
+    locationId: string,
+    staffIds: string[]
+  ): Promise<StaffDTO[]> {
+    if (staffIds.length === 0) return [];
+
+    const objectIds = Array.from(new Set(staffIds))
+      .filter((id) => Types.ObjectId.isValid(id))
+      .map((id) => new Types.ObjectId(id));
+
+    if (objectIds.length === 0) return [];
+
+    const docs = await Staff.find({
+      _id: { $in: objectIds },
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .sort({ name: 1 })
+      .lean();
+
+    return docs.map(toStaffDTO);
+  },
+
+  /**
    * Create a new staff member.
    * @param orgId - Organization ID
    * @param locationId - Location ID

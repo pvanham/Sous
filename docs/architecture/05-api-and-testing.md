@@ -36,8 +36,9 @@ Use `app/api/.../route.ts` **only** for:
      — conversation history.
 5. **The mobile app's public API** — endpoints consumed by the Expo
    app. Live today: `/api/me/membership`, `/api/shifts/next`,
-   `/api/announcements`. Skeleton 501 routes for the remaining tabs
-   live alongside; see
+   `/api/announcements`, `/api/shifts`,
+   `/api/shifts/[shiftId]/roster`. Skeleton 501 routes for the
+   remaining tabs (Exchange, Time-off) live alongside; see
    [08-mobile-architecture.md §10](./08-mobile-architecture.md) for
    the canonical mapping. The wire shapes are part of the cross-app
    contract, so any change must keep `@sous/types` in lock-step.
@@ -210,3 +211,7 @@ All route handlers return one of:
   (Home tab "Next shift" card)
 - `apps/web/src/app/api/announcements/route.ts` — **mobile contract**
   (Home tab announcement feed)
+- `apps/web/src/app/api/shifts/route.ts` — **mobile contract**
+  (Schedule tab weekly strip + day list)
+- `apps/web/src/app/api/shifts/[shiftId]/roster/route.ts` —
+  **mobile contract** (Schedule tab "who's on with me" modal)

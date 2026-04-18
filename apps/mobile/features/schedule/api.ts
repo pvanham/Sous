@@ -1,6 +1,5 @@
 import type { ShiftDTO, StaffDTO } from "@sous/types";
-
-const STATIONS = ["Sauté", "Grill", "Prep", "Garde Manger", "Pastry", "Dish"];
+import { apiClient } from "@/lib/api-client";
 
 // ─────────────────────────────────────────────────────────────
 // Schedule tab — server-state access layer.
@@ -10,121 +9,117 @@ const STATIONS = ["Sauté", "Grill", "Prep", "Garde Manger", "Pastry", "Dish"];
 //   - Fetch the full roster (everyone scheduled) for a given shift,
 //     so the staff member can see who they are working alongside.
 //
-// Backend contract (planned, not yet implemented)
+// Backend contract (live as of SHI-10)
 //   GET /shifts?weekStart=YYYY-MM-DD
-//     • Auth: Clerk JWT.
-//     • `weekStart` is an ISO date interpreted in the location's
-//       timezone. Server resolves the user's Staff record via
-//       OrganizationMember, then returns shifts where
-//       `start >= weekStart && start < weekStart + 7d`.
-//     • 200 → ShiftDTO[]   (empty array allowed)
+//     • Auth: Clerk JWT (Authorization: Bearer ...) — attached by the
+//       Axios interceptor in `lib/api-client.ts`.
+//     • `weekStart` is an ISO calendar date (YYYY-MM-DD) interpreted
+//       as midnight UTC. The server returns shifts whose `start`
+//       falls inside `[weekStart, weekStart + 7d)`. The caller's
+//       `staffId` is resolved server-side from the Clerk JWT — we
+//       never send a staffId from the client.
+//     • 200 → ShiftDTO[]   (empty array allowed; also empty when the
+//             caller is a manager/owner with no Staff row)
 //     • 400 → { error } when weekStart is missing/malformed
 //     • 401 → { error } when the JWT is missing
 //
 //   GET /shifts/:shiftId/roster
 //     • Auth: Clerk JWT.
 //     • Returns every Staff record scheduled on the same shift the
-//       calling user is part of (same scheduleId + overlapping time
-//       window OR same `scheduleDay` — final rule TBD).
-//     • Server must verify the caller is on the shift before returning
-//       roster details (RBAC: same-shift-only for staff role).
+//       caller is part of (same `scheduleId` and overlapping time
+//       window). Includes the caller themselves so the UI can mark
+//       "(you)" without an extra request.
+//     • Server enforces RBAC: staff / shift-lead callers must be on
+//       the shift; managers / owners may view any roster within
+//       their tenant.
 //     • 200 → StaffDTO[]
+//     • 400 → { error } when shiftId is malformed
+//     • 401 → { error } when the JWT is missing
 //     • 403 → { error } when the caller is not on the shift
 //     • 404 → { error } when the shift does not exist
 //
-// Implementation steps when wiring real endpoints
-//   1. Replace mock bodies with `apiClient.get(...)` calls.
-//   2. ISO-serialize `weekStart` (`weekStart.toISOString().slice(0,10)`)
-//      so the URL is stable / cacheable.
-//   3. Delete `mockStaff()` and `delay()` helpers.
-//   4. Use `["schedule", "week", weekStartIso]` and
-//      `["schedule", "roster", shiftId]` query keys.
-//   5. After mutations elsewhere (drop / pickup) invalidate
-//      `["schedule"]` to keep the weekly strip in sync.
+// Wire format
+//   The web API serializes `Date` fields (`start`, `end`,
+//   `createdAt`, `updatedAt`) as ISO strings. The DTOs declare them
+//   as real `Date`s, so we revive them here before returning to the
+//   UI. Components rely on actual `Date` objects for time formatting
+//   (`toLocaleDateString`, etc.).
+//
+// Query keys (see docs/architecture/08-mobile-architecture.md §8)
+//   - `["schedule", "week", weekStartIso]`
+//   - `["schedule", "roster", shiftId]`
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Returns all of the current user's shifts for a given week.
- * Replace with `apiClient.get("/shifts", { params: { weekStart } })` later.
+ * Returns all of the current user's shifts whose `start` is in the
+ * 7-day window beginning at `weekStart`. The `weekStart` argument is
+ * sent as a `YYYY-MM-DD` calendar date so the URL is stable and the
+ * TanStack Query cache key is canonical across devices in the same
+ * timezone.
  */
 export async function fetchWeekShifts(weekStart: Date): Promise<ShiftDTO[]> {
-  await delay(350);
-
-  const shifts: ShiftDTO[] = [];
-  const baseDate = new Date(weekStart);
-
-  const shiftDays = [0, 1, 2, 4, 5];
-  for (const dayOffset of shiftDays) {
-    const start = new Date(baseDate);
-    start.setDate(start.getDate() + dayOffset);
-
-    const isEvening = dayOffset % 2 === 1;
-    start.setHours(isEvening ? 15 : 7, 0, 0, 0);
-
-    const end = new Date(start);
-    end.setHours(start.getHours() + 8, 0, 0, 0);
-
-    shifts.push({
-      id: `shift-week-${dayOffset}`,
-      orgId: "org-001",
-      locationId: "loc-001",
-      scheduleId: "sched-001",
-      staffId: "staff-001",
-      start,
-      end,
-      station: STATIONS[dayOffset % STATIONS.length],
-      notes: dayOffset === 0 ? "Double-check mise en place for risotto special" : "",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-  }
-
-  return shifts;
+  const weekStartIso = toIsoCalendarDate(weekStart);
+  const response = await apiClient.get<SerializedShift[]>("/shifts", {
+    params: { weekStart: weekStartIso },
+  });
+  return response.data.map(reviveShift);
 }
 
 /**
- * Returns the full roster of staff working a specific shift.
- * Replace with `apiClient.get("/shifts/:id/roster")` later.
+ * Returns the full roster of staff working a specific shift. The
+ * server-side RBAC check refuses requests from staff who are not on
+ * the shift; surface that 403 to the UI so it can show a permission
+ * error instead of an empty modal.
  */
-export async function fetchShiftRoster(_shiftId: string): Promise<StaffDTO[]> {
-  await delay(300);
-
-  return [
-    mockStaff("staff-001", "Alex Rivera", "Sauté", ["Sauté", "Grill"]),
-    mockStaff("staff-002", "Jordan Chen", "Grill", ["Grill", "Prep"]),
-    mockStaff("staff-003", "Sam Okafor", "Prep", ["Prep", "Garde Manger"]),
-    mockStaff("staff-004", "Maria Lopez", "Garde Manger", ["Garde Manger", "Pastry"]),
-    mockStaff("staff-005", "Liam Nguyen", "Dish", ["Dish"]),
-  ];
+export async function fetchShiftRoster(shiftId: string): Promise<StaffDTO[]> {
+  const response = await apiClient.get<SerializedStaff[]>(
+    `/shifts/${encodeURIComponent(shiftId)}/roster`,
+  );
+  return response.data.map(reviveStaff);
 }
 
-function mockStaff(
-  id: string,
-  name: string,
-  primaryRole: string,
-  roles: string[]
-): StaffDTO {
+// ── Wire shapes (Date fields arrive as ISO strings) ─────────
+
+type SerializedShift = Omit<
+  ShiftDTO,
+  "start" | "end" | "createdAt" | "updatedAt"
+> & {
+  start: string;
+  end: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SerializedStaff = Omit<StaffDTO, "createdAt" | "updatedAt"> & {
+  createdAt: string;
+  updatedAt: string;
+};
+
+function reviveShift(raw: SerializedShift): ShiftDTO {
   return {
-    id,
-    orgId: "org-001",
-    locationId: "loc-001",
-    name,
-    email: `${name.toLowerCase().replace(" ", ".")}@restaurant.com`,
-    phone: "555-0100",
-    roles,
-    skills: [{ station: primaryRole, proficiency: 4 }],
-    isActive: true,
-    maxHoursPerWeek: 40,
-    minHoursPerWeek: 20,
-    preferredStations: [primaryRole],
-    certifications: [],
-    hourlyRate: 18,
-    invitationStatus: "not_invited",
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    ...raw,
+    start: new Date(raw.start),
+    end: new Date(raw.end),
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
   };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function reviveStaff(raw: SerializedStaff): StaffDTO {
+  return {
+    ...raw,
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
+  };
+}
+
+/**
+ * Format a `Date` as a `YYYY-MM-DD` calendar date in UTC so the value
+ * the mobile client sends matches the value the server interprets
+ * (which also treats the date as UTC midnight). Using `toISOString`
+ * keeps the cache key deterministic across devices regardless of the
+ * device's local timezone.
+ */
+function toIsoCalendarDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
 }
