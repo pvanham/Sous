@@ -1,6 +1,7 @@
 // Re-export shared types from @sous/types
 export type {
   TimeOffRequestStatus,
+  TimeOffRequestType,
   TimeOffRequestDTO,
 } from "@sous/types";
 
@@ -14,6 +15,12 @@ export interface ITimeOffRequest {
   endDate: Date;
   reason: string;
   status: import("@sous/types").TimeOffRequestStatus;
+  /**
+   * Category of leave (vacation / sick / unpaid). Optional on the
+   * document because legacy rows pre-dating SHI-9 do not carry it; the
+   * DTO converter defaults missing values to `"pto"`.
+   */
+  type?: import("@sous/types").TimeOffRequestType;
   reviewedAt?: Date;
   reviewedBy?: string;
   notes: string;
@@ -34,6 +41,7 @@ export function toTimeOffRequestDTO(
     endDate: doc.endDate,
     reason: doc.reason,
     status: doc.status,
+    type: doc.type ?? "pto",
     reviewedAt: doc.reviewedAt,
     reviewedBy: doc.reviewedBy,
     notes: doc.notes,
