@@ -325,15 +325,17 @@ Rules:
 
 ## 10. Mock data — active technical debt
 
-Today, `features/auth/api.ts`, `features/home/api.ts`, and
-`features/schedule/api.ts` hit real endpoints; the remaining feature
-`api.ts` files still return hardcoded mocks with a `delay()` helper:
+Today, `features/auth/api.ts`, `features/home/api.ts`,
+`features/schedule/api.ts`, and `features/time-off/api.ts` hit real
+endpoints; the remaining feature `api.ts` files still return
+hardcoded mocks with a `delay()` helper:
 
 - `features/home/api.ts` — **live** (next shift, announcements)
 - `features/schedule/api.ts` — **live** (week shifts, shift roster)
+- `features/time-off/api.ts` — **live** (requests list,
+  submitTimeOffRequest)
 - `features/exchange/api.ts` — available shifts, my drops,
   pickUpShift, dropShift
-- `features/time-off/api.ts` — requests list, submitTimeOffRequest
 
 Every function carries a doc comment describing the planned route
 handler that will replace the mock, e.g.:
@@ -356,8 +358,8 @@ documents auth, request/response shape, and the implementation plan.
 | `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    | live   |
 | `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | live   |
 | `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
-| `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | 501    |
-| `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | 501    |
+| `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | live   |
+| `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | live   |
 | `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | 501    |
 | `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | 501    |
 | `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     | 501    |
@@ -390,6 +392,22 @@ in the same `Schedule` whose time window overlaps the target's
 `manager` and `owner` may view any roster within the active tenant.
 The roster includes the caller themselves so the UI can mark "(you)"
 without an extra round-trip.
+
+The Time-off tab is fully wired (SHI-9). `/api/time-off` is a thin
+adapter over `TimeOffRequestService`. `GET` resolves the caller's
+`staffId` server-side (`StaffService.getByClerkUserId`) and delegates
+to `TimeOffRequestService.getByStaffId`; manager / owner callers with
+no Staff row at the active location get an empty array, matching the
+graceful-empty pattern used by `/api/shifts`. `POST` validates the
+body against `submitTimeOffRequestSchema` (a mobile-only variant of
+`createTimeOffRequestSchema` that omits `staffId` and requires
+`type`), enforces the per-location `KitchenConfig.minTimeOffAdvanceDays`
+rule (mirroring the manager Server Action), and delegates to
+`TimeOffRequestService.create`. The unique compound index on the
+`TimeOffRequest` model surfaces as a clean 400 ("a time-off request
+for this date range already exists") rather than a 500. Mutation
+success invalidates the `["timeOffRequests"]` query key so the
+history list and the counter cards refresh in one round trip.
 
 **ExchangeShift** also has a full backend foundation on the web side
 (model + service + shared DTO + Zod schemas — see
