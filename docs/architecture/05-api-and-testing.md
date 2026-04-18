@@ -35,8 +35,12 @@ Use `app/api/.../route.ts` **only** for:
    - `/api/ai/conversations`, `/api/ai/conversations/[conversationId]`
      — conversation history.
 5. **The mobile app's public API** — endpoints consumed by the Expo
-   app. Today this is just `/api/me/membership`, but the shape is
-   stable and is considered part of the cross-app contract.
+   app. Live today: `/api/me/membership`, `/api/shifts/next`,
+   `/api/announcements`. Skeleton 501 routes for the remaining tabs
+   live alongside; see
+   [08-mobile-architecture.md §10](./08-mobile-architecture.md) for
+   the canonical mapping. The wire shapes are part of the cross-app
+   contract, so any change must keep `@sous/types` in lock-step.
 
 **Rule of thumb:** if you're tempted to add a `POST /api/users` for
 "simplicity", stop. Use a Server Action. Route handlers exist for the
@@ -202,3 +206,7 @@ All route handlers return one of:
 - `apps/web/src/app/api/billing/create-checkout/route.ts`
 - `apps/web/src/app/api/billing/create-portal/route.ts`
 - `apps/web/src/app/api/me/membership/route.ts` — **mobile contract**
+- `apps/web/src/app/api/shifts/next/route.ts` — **mobile contract**
+  (Home tab "Next shift" card)
+- `apps/web/src/app/api/announcements/route.ts` — **mobile contract**
+  (Home tab announcement feed)

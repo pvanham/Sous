@@ -681,6 +681,32 @@ export const StaffService = {
   },
 
   /**
+   * Find the staff record linked to a given Clerk user inside a
+   * specific tenant.
+   *
+   * The mobile route handlers use this to translate the caller's
+   * Clerk identity (resolved by `auth()`) into the `staffId` that
+   * every shift / time-off / exchange query is keyed on, without
+   * trusting any client-supplied id.
+   *
+   * @returns StaffDTO or null when no staff row at this location is
+   *          linked to the given Clerk user.
+   */
+  async getByClerkUserId(
+    orgId: string,
+    locationId: string,
+    clerkUserId: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      clerkUserId,
+    }).lean();
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
    * Link a Clerk user ID to a staff record and mark the invitation as accepted.
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)

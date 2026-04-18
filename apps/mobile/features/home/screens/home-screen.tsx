@@ -27,12 +27,12 @@ export function HomeScreen() {
   }, [signOut]);
 
   const shiftQuery = useQuery({
-    queryKey: ["nextShift"],
+    queryKey: ["home", "nextShift"],
     queryFn: fetchNextShift,
   });
 
   const announcementsQuery = useQuery({
-    queryKey: ["announcements"],
+    queryKey: ["home", "announcements"],
     queryFn: fetchAnnouncements,
   });
 
@@ -75,6 +75,12 @@ export function HomeScreen() {
           <View className="py-12 items-center">
             <ActivityIndicator size="large" />
           </View>
+        ) : shiftQuery.isError ? (
+          <View className="bg-card border border-border rounded-md p-5 items-center">
+            <StyledText variant="body" className="text-muted-foreground">
+              Couldn&apos;t load your next shift. Pull down to retry.
+            </StyledText>
+          </View>
         ) : shiftQuery.data ? (
           <NextShiftCard shift={shiftQuery.data} />
         ) : (
@@ -85,7 +91,13 @@ export function HomeScreen() {
           </View>
         )}
 
-        {announcementsQuery.data ? (
+        {announcementsQuery.isError ? (
+          <View className="bg-card border border-border rounded-md p-5 mt-6 items-center">
+            <StyledText variant="body" className="text-muted-foreground">
+              Couldn&apos;t load announcements.
+            </StyledText>
+          </View>
+        ) : announcementsQuery.data && announcementsQuery.data.length > 0 ? (
           <AnnouncementFeed announcements={announcementsQuery.data} />
         ) : null}
 

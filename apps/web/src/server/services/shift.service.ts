@@ -225,6 +225,37 @@ export const ShiftService = {
   },
 
   /**
+   * Get the soonest upcoming shift for a staff member at a location.
+   *
+   * "Upcoming" means `start >= now` — a shift that has already started
+   * (even if it hasn't ended) is intentionally excluded so the mobile
+   * home card always points the user at their next *future* commitment.
+   *
+   * The query is bounded by both `orgId` and `locationId` so a staff
+   * member who somehow exists in two tenants only ever sees the row
+   * for the tenant whose context the caller resolved.
+   *
+   * @returns The next ShiftDTO sorted by `start` ascending, or `null`
+   *          if the staff member has no upcoming shifts.
+   */
+  async getNextForStaff(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<ShiftDTO | null> {
+    const doc = await Shift.findOne({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: new Types.ObjectId(staffId),
+      start: { $gte: new Date() },
+    })
+      .sort({ start: 1 })
+      .lean();
+
+    return doc ? toShiftDTO(doc) : null;
+  },
+
+  /**
    * Get a single shift by ID.
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)

@@ -26,9 +26,11 @@ web app uses.
 - Render four tabs: **Home**, **Schedule**, **Exchange**, **Time Off**.
 
 **What the mobile app does not do yet**: most feature screens still
-render **mock data** (see §10). The Axios pipeline, auth wiring,
-TanStack Query setup, and UI are real — the API endpoints that back
-them need to ship on the web app before those screens go live.
+render **mock data** (see §10). The Home tab is now wired to real
+endpoints (`/api/shifts/next`, `/api/announcements`); Schedule,
+Exchange, and Time-off remain on mocks until their route handlers
+ship. The Axios pipeline, auth wiring, TanStack Query setup, and UI
+are real.
 
 ---
 
@@ -323,10 +325,11 @@ Rules:
 
 ## 10. Mock data — active technical debt
 
-Today, only `features/auth/api.ts` hits a real endpoint. Every other
-feature's `api.ts` returns hardcoded mocks with a `delay()` helper:
+Today, `features/auth/api.ts` and `features/home/api.ts` hit real
+endpoints; the remaining feature `api.ts` files still return
+hardcoded mocks with a `delay()` helper:
 
-- `features/home/api.ts` — next shift, announcements
+- `features/home/api.ts` — **live** (next shift, announcements)
 - `features/schedule/api.ts` — week shifts, shift roster
 - `features/exchange/api.ts` — available shifts, my drops,
   pickUpShift, dropShift
@@ -347,25 +350,32 @@ endpoint the mobile app will eventually call. They each return
 documents auth, request/response shape, and the implementation plan.
 **Do not flesh one out without first reading its file-level comment**:
 
-| Mobile call                               | Verb | Web route handler                                                |
-|-------------------------------------------|------|------------------------------------------------------------------|
-| `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      |
-| `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    |
-| `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           |
-| `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          |
-| `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         |
-| `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         |
-| `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               |
-| `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    |
-| `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     |
-| `dropShift(shiftId)`                      | POST | `/api/shifts/[shiftId]/drop/route.ts`                            |
-| `fetchMembership()` (already shipped)     | GET  | `/api/me/membership/route.ts`                                    |
+| Mobile call                               | Verb | Web route handler                                                | Status |
+|-------------------------------------------|------|------------------------------------------------------------------|--------|
+| `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      | live   |
+| `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    | live   |
+| `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | 501    |
+| `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | 501    |
+| `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | 501    |
+| `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | 501    |
+| `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | 501    |
+| `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | 501    |
+| `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     | 501    |
+| `dropShift(shiftId)`                      | POST | `/api/shifts/[shiftId]/drop/route.ts`                            | 501    |
+| `fetchMembership()`                       | GET  | `/api/me/membership/route.ts`                                    | live   |
 
-Both **Announcements** and **ExchangeShift** now have full backend
-foundations on the web side (model + service + shared DTO + Zod
-schemas — see [01-data-models.md](./01-data-models.md) for the
-schema and lifecycle). The route handlers under `/api/announcements`,
-`/api/exchange/*`, and `/api/shifts/[shiftId]/drop` remain 501
+The Home tab is fully wired (SHI-7). `/api/shifts/next` resolves the
+caller's `staffId` server-side via `StaffService.getByClerkUserId`
+and delegates to `ShiftService.getNextForStaff`;
+`/api/announcements` delegates straight to
+`AnnouncementService.list`. Both routes follow the same
+`auth() → getLocationContext(userId)` pattern as the rest of the
+mobile API surface.
+
+**ExchangeShift** also has a full backend foundation on the web side
+(model + service + shared DTO + Zod schemas — see
+[01-data-models.md](./01-data-models.md)). The route handlers under
+`/api/exchange/*` and `/api/shifts/[shiftId]/drop` remain 501
 placeholders; their file headers describe the (now small)
 implementation step that delegates to the existing service.
 
