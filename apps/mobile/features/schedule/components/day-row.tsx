@@ -67,10 +67,13 @@ export function DayRow({ date, shifts, isToday, onShiftPress }: DayRowProps) {
             ))}
           </View>
         ) : (
-          <View className="flex-1 justify-center min-h-[64px] border border-dashed border-border rounded-md px-4">
-            <StyledText variant="caption" className="text-muted-foreground">
-              {DAY_LABELS[dow]} · Off
-            </StyledText>
+          <View className="flex-1 justify-center min-h-[60px] bg-muted/40 rounded-md px-4 border border-border/60">
+            <View className="flex-row items-center">
+              <View className="w-1 h-4 bg-muted-foreground/40 rounded-full mr-2" />
+              <StyledText variant="caption" className="text-muted-foreground">
+                {DAY_LABELS[dow]} · Off
+              </StyledText>
+            </View>
           </View>
         )}
       </View>

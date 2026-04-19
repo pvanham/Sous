@@ -66,13 +66,49 @@ export function WeekNavigator({
   );
 }
 
+/**
+ * Build a compact, locale-aware label for a 7-day range.
+ *
+ * - Same month  → "Apr 19 – 25, 2026"
+ * - Same year   → "Dec 28 – Jan 3, 2026"
+ * - Year change → "Dec 28, 2025 – Jan 3, 2026"
+ *
+ * We assemble pieces by hand because Intl.DateTimeFormat in en-US
+ * renders `{ day, year }` without a month as the verbose long form
+ * (e.g. "2026 (day: 25)"), which is unreadable in a header.
+ */
 function formatRange(start: Date, end: Date): string {
-  const sameMonth = start.getMonth() === end.getMonth();
-  const startFmt: Intl.DateTimeFormatOptions = sameMonth
-    ? { month: "short", day: "numeric" }
-    : { month: "short", day: "numeric" };
-  const endFmt: Intl.DateTimeFormatOptions = sameMonth
-    ? { day: "numeric", year: "numeric" }
-    : { month: "short", day: "numeric", year: "numeric" };
-  return `${start.toLocaleDateString("en-US", startFmt)} – ${end.toLocaleDateString("en-US", endFmt)}`;
+  const sameMonth =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth();
+  const sameYear = start.getFullYear() === end.getFullYear();
+
+  if (sameMonth) {
+    const month = start.toLocaleDateString("en-US", { month: "short" });
+    return `${month} ${start.getDate()} – ${end.getDate()}, ${end.getFullYear()}`;
+  }
+
+  if (sameYear) {
+    const startPart = start.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    const endPart = end.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+    return `${startPart} – ${endPart}, ${end.getFullYear()}`;
+  }
+
+  const startPart = start.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const endPart = end.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  return `${startPart} – ${endPart}`;
 }
