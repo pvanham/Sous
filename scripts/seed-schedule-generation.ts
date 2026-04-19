@@ -80,6 +80,16 @@ const ORG_NAME = "The Copper Ladle - AI Test";
 const STAFF_EMAIL_DOMAIN = "copperladle.test";
 const STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD ?? "CopperLadle!2026Seed";
 
+// All seeded staff emails carry the `+clerk_test` sub-address marker.
+// Clerk development instances treat any address matching the pattern
+// `*+clerk_test@*` as a test account: it bypasses real email delivery,
+// auto-verifies on user creation, and accepts the fixed OTP `424242`
+// during sign-in. Without this marker, `client.users.createUser({...})`
+// returns 422 Unprocessable Entity for unverifiable test domains like
+// `*.test`, which is what was breaking the previous run of this seed.
+//
+// See: https://clerk.com/docs/testing/test-emails-and-phones
+
 /**
  * Compute the target test week: the upcoming Monday from today.
  * If today IS a Monday, use next Monday so we always get a future week.
@@ -166,7 +176,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // ── Managers (4) ──────────────────────────────────────────────
   {
     name: "Marcus Rivera",
-    email: `marcus.rivera@${STAFF_EMAIL_DOMAIN}`,
+    email: `marcus.rivera+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000001",
     roles: ["Manager", "Executive Chef"],
     skills: [
@@ -185,7 +195,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Sophie Chen",
-    email: `sophie.chen@${STAFF_EMAIL_DOMAIN}`,
+    email: `sophie.chen+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000002",
     roles: ["Manager", "Sous Chef"],
     skills: [
@@ -204,7 +214,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "David Okafor",
-    email: `david.okafor@${STAFF_EMAIL_DOMAIN}`,
+    email: `david.okafor+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000003",
     roles: ["Manager", "Sous Chef"],
     skills: [
@@ -222,7 +232,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Priya Patel",
-    email: `priya.patel@${STAFF_EMAIL_DOMAIN}`,
+    email: `priya.patel+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000004",
     roles: ["Manager", "Sous Chef"],
     skills: [
@@ -242,7 +252,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // ── Experienced Line Cooks (7) ────────────────────────────────
   {
     name: "Emily Nguyen",
-    email: `emily.nguyen@${STAFF_EMAIL_DOMAIN}`,
+    email: `emily.nguyen+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000005",
     roles: ["Line Cook"],
     skills: [
@@ -258,7 +268,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Jake Thompson",
-    email: `jake.thompson@${STAFF_EMAIL_DOMAIN}`,
+    email: `jake.thompson+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000006",
     roles: ["Line Cook"],
     skills: [
@@ -275,7 +285,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Maria Santos",
-    email: `maria.santos@${STAFF_EMAIL_DOMAIN}`,
+    email: `maria.santos+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000007",
     roles: ["Line Cook"],
     skills: [
@@ -291,7 +301,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Tyler Kim",
-    email: `tyler.kim@${STAFF_EMAIL_DOMAIN}`,
+    email: `tyler.kim+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000008",
     roles: ["Line Cook"],
     skills: [
@@ -307,7 +317,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Carlos Mendez",
-    email: `carlos.mendez@${STAFF_EMAIL_DOMAIN}`,
+    email: `carlos.mendez+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000009",
     roles: ["Line Cook"],
     skills: [
@@ -323,7 +333,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Ashley Brooks",
-    email: `ashley.brooks@${STAFF_EMAIL_DOMAIN}`,
+    email: `ashley.brooks+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000010",
     roles: ["Line Cook"],
     skills: [
@@ -339,7 +349,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Ryan O'Brien",
-    email: `ryan.obrien@${STAFF_EMAIL_DOMAIN}`,
+    email: `ryan.obrien+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000011",
     roles: ["Line Cook"],
     skills: [
@@ -358,7 +368,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // ── Prep Cooks (6) ────────────────────────────────────────────
   {
     name: "Lisa Chang",
-    email: `lisa.chang@${STAFF_EMAIL_DOMAIN}`,
+    email: `lisa.chang+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000012",
     roles: ["Prep Cook"],
     skills: [
@@ -374,7 +384,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Omar Hassan",
-    email: `omar.hassan@${STAFF_EMAIL_DOMAIN}`,
+    email: `omar.hassan+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000013",
     roles: ["Prep Cook"],
     skills: [
@@ -390,7 +400,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Hannah Miller",
-    email: `hannah.miller@${STAFF_EMAIL_DOMAIN}`,
+    email: `hannah.miller+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000014",
     roles: ["Prep Cook"],
     skills: [
@@ -406,7 +416,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Wei Zhang",
-    email: `wei.zhang@${STAFF_EMAIL_DOMAIN}`,
+    email: `wei.zhang+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000015",
     roles: ["Prep Cook"],
     skills: [
@@ -422,7 +432,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Jordan Taylor",
-    email: `jordan.taylor@${STAFF_EMAIL_DOMAIN}`,
+    email: `jordan.taylor+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000016",
     roles: ["Prep Cook"],
     skills: [
@@ -438,7 +448,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Natalie Wood",
-    email: `natalie.wood@${STAFF_EMAIL_DOMAIN}`,
+    email: `natalie.wood+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000017",
     roles: ["Prep Cook"],
     skills: [
@@ -456,7 +466,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // ── Dishwashers (4) ───────────────────────────────────────────
   {
     name: "Deshawn Williams",
-    email: `deshawn.williams@${STAFF_EMAIL_DOMAIN}`,
+    email: `deshawn.williams+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000018",
     roles: ["Dishwasher"],
     skills: [
@@ -472,7 +482,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Kenji Tanaka",
-    email: `kenji.tanaka@${STAFF_EMAIL_DOMAIN}`,
+    email: `kenji.tanaka+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000019",
     roles: ["Dishwasher"],
     skills: [
@@ -488,7 +498,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Aaliyah Johnson",
-    email: `aaliyah.johnson@${STAFF_EMAIL_DOMAIN}`,
+    email: `aaliyah.johnson+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000020",
     roles: ["Dishwasher"],
     skills: [
@@ -504,7 +514,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Miguel Flores",
-    email: `miguel.flores@${STAFF_EMAIL_DOMAIN}`,
+    email: `miguel.flores+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000021",
     roles: ["Dishwasher"],
     skills: [
@@ -522,7 +532,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // ── Flex Staff (5) ────────────────────────────────────────────
   {
     name: "Sam Russo",
-    email: `sam.russo@${STAFF_EMAIL_DOMAIN}`,
+    email: `sam.russo+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000022",
     roles: ["Line Cook", "Prep Cook"],
     skills: [
@@ -541,7 +551,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Alex Petrov",
-    email: `alex.petrov@${STAFF_EMAIL_DOMAIN}`,
+    email: `alex.petrov+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000023",
     roles: ["Line Cook", "Prep Cook"],
     skills: [
@@ -560,7 +570,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Nina Kowalski",
-    email: `nina.kowalski@${STAFF_EMAIL_DOMAIN}`,
+    email: `nina.kowalski+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000024",
     roles: ["Line Cook"],
     skills: [
@@ -578,7 +588,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Dante Jackson",
-    email: `dante.jackson@${STAFF_EMAIL_DOMAIN}`,
+    email: `dante.jackson+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000025",
     roles: ["Line Cook", "Prep Cook"],
     skills: [
@@ -596,7 +606,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Chloe Martinez",
-    email: `chloe.martinez@${STAFF_EMAIL_DOMAIN}`,
+    email: `chloe.martinez+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000026",
     roles: ["Line Cook"],
     skills: [
@@ -617,7 +627,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   // exist purely to verify the readiness checks ignore them.
   {
     name: "Rachel Green",
-    email: `rachel.green@${STAFF_EMAIL_DOMAIN}`,
+    email: `rachel.green+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000027",
     roles: ["Line Cook"],
     skills: [
@@ -633,7 +643,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Tony Vasquez",
-    email: `tony.vasquez@${STAFF_EMAIL_DOMAIN}`,
+    email: `tony.vasquez+clerk_test@${STAFF_EMAIL_DOMAIN}`,
     phone: "5551000028",
     roles: ["Prep Cook"],
     skills: [{ station: "Prep", proficiency: 4 }],
@@ -980,6 +990,24 @@ function getClerkClient(): ClerkClient | null {
 }
 
 /**
+ * Format a Clerk SDK error for logging. The Backend SDK throws errors
+ * whose `.errors` array contains `{ code, message, longMessage }` entries
+ * — far more useful than the generic "Unprocessable Entity" message on
+ * the parent error object.
+ */
+function formatClerkError(err: unknown): string {
+  if (err && typeof err === "object" && "errors" in err) {
+    const errors = (err as { errors?: Array<{ code?: string; message?: string; longMessage?: string; meta?: unknown }> }).errors;
+    if (Array.isArray(errors) && errors.length > 0) {
+      return errors
+        .map((e) => `[${e.code ?? "?"}] ${e.longMessage ?? e.message ?? "unknown"}`)
+        .join("; ");
+    }
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+/**
  * Look up a Clerk user by email. Returns null if not found.
  */
 async function findClerkUserByEmail(
@@ -994,9 +1022,22 @@ async function findClerkUserByEmail(
 }
 
 /**
- * Get-or-create a Clerk user for a staff member. Returns null on any
- * Clerk failure so the seed can still complete (Staff records survive
- * but won't be linked).
+ * Get-or-create a Clerk user for a staff member, mirroring the end-state
+ * of the production invitation -> sign-up flow:
+ *
+ *   1. UI: manager triggers `inviteStaffToApp` -> Clerk invitation email
+ *   2. Recipient signs up -> Clerk fires `user.created` webhook
+ *   3. Webhook creates an OrganizationMember and links the Clerk user
+ *      to the existing Staff record (sets `invitationStatus: accepted`)
+ *
+ * The seed short-circuits steps 1+2 by creating the Clerk user directly
+ * via the Backend SDK; step 3 is reproduced by the caller, which calls
+ * `StaffService.linkClerkUser` (sets invitationStatus to "accepted")
+ * and `OrganizationMemberService.create` after this returns.
+ *
+ * Returns the Clerk user id, or null if anything fails (the seed will
+ * still complete with an unlinked Staff record so the rest of the
+ * dataset is usable).
  */
 async function ensureClerkUserForStaff(
   client: ClerkClient,
@@ -1008,9 +1049,7 @@ async function ensureClerkUserForStaff(
       return existing.id;
     }
   } catch (err) {
-    logWarn(
-      `Clerk lookup failed for ${staff.email}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    logWarn(`Clerk lookup failed for ${staff.email}: ${formatClerkError(err)}`);
     return null;
   }
 
@@ -1018,6 +1057,10 @@ async function ensureClerkUserForStaff(
   const lastName = rest.join(" ") || firstName;
 
   try {
+    // `+clerk_test` in the local-part marks this as a Clerk dev-instance
+    // test account, so the email is auto-verified at creation time and
+    // the user can immediately sign in via the mobile app using
+    // STAFF_PASSWORD (or the fixed OTP `424242` for email-code flows).
     const created = await client.users.createUser({
       emailAddress: [staff.email],
       password: STAFF_PASSWORD,
@@ -1028,9 +1071,7 @@ async function ensureClerkUserForStaff(
     });
     return created.id;
   } catch (err) {
-    logWarn(
-      `Failed to create Clerk user for ${staff.email}: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    logWarn(`Failed to create Clerk user for ${staff.email}: ${formatClerkError(err)}`);
     return null;
   }
 }
@@ -1048,9 +1089,7 @@ async function deleteAllSeededClerkUsers(client: ClerkClient): Promise<void> {
       await client.users.deleteUser(user.id);
       log(`  Deleted Clerk user ${def.email} (${user.id})`);
     } catch (err) {
-      logWarn(
-        `Failed to delete Clerk user ${def.email}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      logWarn(`Failed to delete Clerk user ${def.email}: ${formatClerkError(err)}`);
     }
   }
 }
