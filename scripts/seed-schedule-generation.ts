@@ -77,16 +77,22 @@ import type { ClerkClient, User as ClerkUser } from "@clerk/backend";
 // ============================================================================
 
 const ORG_NAME = "The Copper Ladle - AI Test";
-const STAFF_EMAIL_DOMAIN = "copperladle.test";
+const STAFF_EMAIL_DOMAIN = "gmail.com";
 const STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD ?? "CopperLadle!2026Seed";
 
 // All seeded staff emails carry the `+clerk_test` sub-address marker.
 // Clerk development instances treat any address matching the pattern
 // `*+clerk_test@*` as a test account: it bypasses real email delivery,
 // auto-verifies on user creation, and accepts the fixed OTP `424242`
-// during sign-in. Without this marker, `client.users.createUser({...})`
-// returns 422 Unprocessable Entity for unverifiable test domains like
-// `*.test`, which is what was breaking the previous run of this seed.
+// during sign-in.
+//
+// IMPORTANT: Clerk's `client.users.createUser({...})` rejects addresses
+// whose domain does not pass standard email format validation (e.g. the
+// reserved `*.test` TLD returns `form_param_format_invalid`). We therefore
+// pair the `+clerk_test` marker with a real, well-known domain
+// (`gmail.com`) so creation succeeds while still routing through Clerk's
+// test-account path. No real mail is ever sent to these `+clerk_test`
+// addresses.
 //
 // See: https://clerk.com/docs/testing/test-emails-and-phones
 
