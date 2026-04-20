@@ -274,6 +274,12 @@ export const ExchangeShiftService = {
 
     // OCC: filter on the snapshot's `updatedAt` so a competing
     // pickup that landed first invalidates this one.
+    //
+    // We also flip `aiInsightStatus` to `pending` here so the
+    // mobile UI can render a "Sous is thinking…" placeholder
+    // immediately. The route handler will kick off the actual
+    // generation in an `after()` callback (it is non-blocking
+    // because the LLM call can take several seconds).
     const updated = await ExchangeShift.findOneAndUpdate(
       {
         _id: existing._id,
@@ -285,6 +291,9 @@ export const ExchangeShiftService = {
           status: nextStatus,
           pickedUpByStaffId: new Types.ObjectId(pickerStaffId),
           pickedUpByName: picker.name,
+          aiInsightStatus: "pending",
+          aiInsight: null,
+          aiInsightGeneratedAt: null,
         },
       },
       { new: true }
@@ -424,6 +433,50 @@ export const ExchangeShiftService = {
     }
 
     return toExchangeShiftDTO(updated);
+  },
+
+  /**
+   * Persist the AI-generated insight onto an ExchangeShift row.
+   *
+   * Called from the post-pickup `after()` hook once the LLM has
+   * returned a concise note about the swap. Tenant-scoped so a
+   * caller cannot stamp insights onto another org's rows.
+   *
+   * @param outcome  `"ready"` when `insight` is a non-empty string
+   *                 the user should see; `"failed"` when the LLM
+   *                 call errored or produced unsafe / empty output
+   *                 (in which case `insight` MUST be null).
+   */
+  async setAIInsight(input: {
+    orgId: string;
+    locationId: string;
+    exchangeId: string;
+    outcome: "ready" | "failed";
+    insight: string | null;
+  }): Promise<ExchangeShiftDTO | null> {
+    const { orgId, locationId, exchangeId, outcome, insight } = input;
+
+    if (outcome === "ready" && (insight === null || insight.trim() === "")) {
+      throw new Error("Cannot persist a 'ready' insight with empty text");
+    }
+
+    const updated = await ExchangeShift.findOneAndUpdate(
+      {
+        _id: exchangeId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      {
+        $set: {
+          aiInsightStatus: outcome,
+          aiInsight: outcome === "ready" ? insight : null,
+          aiInsightGeneratedAt: new Date(),
+        },
+      },
+      { new: true }
+    ).lean();
+
+    return updated ? toExchangeShiftDTO(updated) : null;
   },
 
   /**

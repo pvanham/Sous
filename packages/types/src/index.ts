@@ -425,6 +425,26 @@ export type ExchangeShiftStatus =
   | "cancelled";
 
 /**
+ * Lifecycle for the optional Sous AI insight attached to an
+ * ExchangeShift. The insight is generated asynchronously at pickup
+ * time once two staff have agreed to a swap; the status lets the UI
+ * render a placeholder while it is being prepared.
+ *
+ *   - `not_applicable`  → row is still on the board (no agreement yet)
+ *                         or generation was deliberately skipped
+ *                         (e.g. quota exhausted).
+ *   - `pending`         → background generation is in flight.
+ *   - `ready`           → `aiInsight` is populated and safe to display.
+ *   - `failed`          → generation errored; UI should hide the
+ *                         insight section but the row itself is fine.
+ */
+export type ExchangeShiftAIInsightStatus =
+  | "not_applicable"
+  | "pending"
+  | "ready"
+  | "failed";
+
+/**
  * A shift that has been dropped onto the exchange board. References
  * the underlying `Shift` document so the source of truth for
  * start / end / station stays a single place.
@@ -458,6 +478,18 @@ export interface ExchangeShiftDTO {
   /** Set by manager / shift lead when transitioning to `manager_approved`. */
   approvedByClerkUserId?: string | null;
   approvedAt?: Date | null;
+  /**
+   * Concise note from Sous (the AI assistant) about this swap —
+   * generated once both staff agree (status leaves `available`).
+   * `null` while the insight has not been produced or the model
+   * call failed; clients should branch on `aiInsightStatus`
+   * instead of comparing this field directly.
+   */
+  aiInsight?: string | null;
+  /** Lifecycle of `aiInsight` generation. See `ExchangeShiftAIInsightStatus`. */
+  aiInsightStatus: ExchangeShiftAIInsightStatus;
+  /** Timestamp `aiInsight` finished generating (success or failure). */
+  aiInsightGeneratedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }

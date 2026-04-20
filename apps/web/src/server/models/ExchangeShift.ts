@@ -1,6 +1,9 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { IExchangeShift } from "@/types/exchange-shift";
-import type { ExchangeShiftStatus } from "@sous/types";
+import type {
+  ExchangeShiftStatus,
+  ExchangeShiftAIInsightStatus,
+} from "@sous/types";
 
 /**
  * Mongoose document for an exchange shift (drop / pickup record).
@@ -47,6 +50,13 @@ const STATUS_VALUES: ExchangeShiftStatus[] = [
   "covered",
   "manager_approved",
   "cancelled",
+];
+
+const AI_INSIGHT_STATUS_VALUES: ExchangeShiftAIInsightStatus[] = [
+  "not_applicable",
+  "pending",
+  "ready",
+  "failed",
 ];
 
 const ExchangeShiftSchema = new Schema<IExchangeShiftDocument>(
@@ -126,6 +136,33 @@ const ExchangeShiftSchema = new Schema<IExchangeShiftDocument>(
       default: null,
     },
     approvedAt: {
+      type: Date,
+      default: null,
+    },
+    /**
+     * Concise note from Sous (the AI assistant) about the agreed
+     * swap. Generated asynchronously after the row leaves
+     * `available` (i.e. after pickup) so the picker / dropper /
+     * manager can see why the trade is or isn't a clean handoff.
+     * Null until generation completes; clients should branch on
+     * `aiInsightStatus` rather than null-checking this field.
+     */
+    aiInsight: {
+      type: String,
+      default: null,
+      maxlength: 1000,
+    },
+    aiInsightStatus: {
+      type: String,
+      required: true,
+      default: "not_applicable",
+      enum: {
+        values: AI_INSIGHT_STATUS_VALUES,
+        message:
+          "AI insight status must be one of: not_applicable, pending, ready, failed",
+      },
+    },
+    aiInsightGeneratedAt: {
       type: Date,
       default: null,
     },

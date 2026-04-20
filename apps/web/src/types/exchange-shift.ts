@@ -4,9 +4,14 @@
 export type {
   ExchangeShiftStatus,
   ExchangeShiftDTO,
+  ExchangeShiftAIInsightStatus,
 } from "@sous/types";
 
-import type { ExchangeShiftDTO, ExchangeShiftStatus } from "@sous/types";
+import type {
+  ExchangeShiftDTO,
+  ExchangeShiftStatus,
+  ExchangeShiftAIInsightStatus,
+} from "@sous/types";
 
 // ── Server-coupled: Mongoose document interface ──────────────
 //
@@ -30,6 +35,9 @@ export interface IExchangeShift {
   reason: string;
   approvedByClerkUserId?: string | null;
   approvedAt?: Date | null;
+  aiInsight?: string | null;
+  aiInsightStatus: ExchangeShiftAIInsightStatus;
+  aiInsightGeneratedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +69,9 @@ export function toExchangeShiftDTO(
     reason: doc.reason,
     approvedByClerkUserId: doc.approvedByClerkUserId ?? null,
     approvedAt: doc.approvedAt ?? null,
+    aiInsight: doc.aiInsight ?? null,
+    aiInsightStatus: doc.aiInsightStatus ?? "not_applicable",
+    aiInsightGeneratedAt: doc.aiInsightGeneratedAt ?? null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
