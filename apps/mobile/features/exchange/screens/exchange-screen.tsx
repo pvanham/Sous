@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { View, Pressable, FlatList } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
@@ -10,6 +10,13 @@ import {
   pickUpShift,
 } from "../api";
 import type { ExchangeShift, ExchangeShiftStatus } from "@/types";
+
+// While at least one of the caller's drops has its Sous insight
+// still being generated server-side, re-poll the "mine" endpoint
+// every few seconds so the note shows up without a manual refresh.
+// The OpenAI call typically completes in 2–6 seconds; cap at this
+// interval to avoid hammering the API in pathological cases.
+const INSIGHT_POLL_INTERVAL_MS = 3000;
 
 type SegmentTab = "available" | "mine";
 
@@ -51,6 +58,26 @@ export function ExchangeScreen() {
     queryKey: ["exchange", "mine"],
     queryFn: fetchMyDroppedShifts,
   });
+
+  const hasPendingInsight = useMemo(
+    () =>
+      (myDroppedQuery.data ?? []).some(
+        (shift) => shift.aiInsightStatus === "pending",
+      ),
+    [myDroppedQuery.data],
+  );
+
+  const myDroppedRefetch = myDroppedQuery.refetch;
+  // Re-fetch while any row is still waiting for its Sous insight,
+  // and stop the moment all rows have settled (`ready`, `failed`,
+  // or `not_applicable`).
+  useEffect(() => {
+    if (!hasPendingInsight) return;
+    const id = setInterval(() => {
+      myDroppedRefetch();
+    }, INSIGHT_POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [hasPendingInsight, myDroppedRefetch]);
 
   const pickUpMutation = useMutation({
     mutationFn: pickUpShift,
@@ -197,6 +224,42 @@ function DroppedShiftCard({ shift }: { shift: ExchangeShift }) {
           </StyledText>
         </View>
       </View>
+
+      <SousInsightSection shift={shift} />
+    </View>
+  );
+}
+
+/**
+ * Render the Sous AI note for an agreed swap.
+ *
+ * The note only exists once the row leaves `available`, so for
+ * still-on-the-board drops we render nothing. While the LLM call
+ * is in flight we render a subtle placeholder so the user knows
+ * something is coming. We hide the section entirely on `failed`
+ * — a missing insight isn't worth a scary error state.
+ */
+function SousInsightSection({ shift }: { shift: ExchangeShift }) {
+  if (shift.aiInsightStatus === "not_applicable") return null;
+  if (shift.aiInsightStatus === "failed") return null;
+
+  return (
+    <View className="mt-3 pt-3 border-t border-border/60">
+      <StyledText
+        variant="label"
+        className="text-[11px] uppercase tracking-wide text-primary/80 mb-1"
+      >
+        Sous insight
+      </StyledText>
+      {shift.aiInsightStatus === "pending" || !shift.aiInsight ? (
+        <StyledText variant="caption" className="text-muted-foreground italic">
+          Sous is reviewing this swap...
+        </StyledText>
+      ) : (
+        <StyledText variant="caption" className="text-foreground">
+          {shift.aiInsight}
+        </StyledText>
+      )}
     </View>
   );
 }
