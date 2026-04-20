@@ -46,6 +46,7 @@ const STATUS_VALUES: ExchangeShiftStatus[] = [
   "pending_coverage",
   "covered",
   "manager_approved",
+  "denied",
   "cancelled",
 ];
 
@@ -113,7 +114,7 @@ const ExchangeShiftSchema = new Schema<IExchangeShiftDocument>(
       enum: {
         values: STATUS_VALUES,
         message:
-          "Status must be one of: available, pending_coverage, covered, manager_approved, cancelled",
+          "Status must be one of: available, pending_coverage, covered, manager_approved, denied, cancelled",
       },
     },
     reason: {
@@ -128,6 +129,11 @@ const ExchangeShiftSchema = new Schema<IExchangeShiftDocument>(
     approvedAt: {
       type: Date,
       default: null,
+    },
+    managerNotes: {
+      type: String,
+      default: null,
+      maxlength: 500,
     },
   },
   {

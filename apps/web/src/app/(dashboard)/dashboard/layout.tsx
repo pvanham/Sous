@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Home, Calendar, Users, ClipboardList, CalendarOff, Settings } from "lucide-react";
+import { Home, Calendar, Users, ClipboardList, CalendarOff, ArrowLeftRight, Settings } from "lucide-react";
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
@@ -16,6 +16,7 @@ const baseNavItems = [
   { href: "/dashboard/staff", label: "Staff", icon: Users },
   { href: "/dashboard/labor", label: "Shift Slots", icon: ClipboardList },
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
+  { href: "/dashboard/exchange", label: "Exchange", icon: ArrowLeftRight },
 ];
 
 /** Settings is visible to owners and managers, hidden from shift_leads and staff */

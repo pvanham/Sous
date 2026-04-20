@@ -13,6 +13,7 @@ export const exchangeShiftStatusValues = [
   "pending_coverage",
   "covered",
   "manager_approved",
+  "denied",
   "cancelled",
 ] as const;
 
@@ -76,6 +77,31 @@ export const cancelExchangeShiftSchema = z.object({
   exchangeId: z.string().min(1, "Exchange shift ID is required"),
 });
 
+/**
+ * Schema for the manager-side denial transition (e.g. shift-lead /
+ * manager rejects a `pending_coverage` exchange). Optional `notes`
+ * captures the reason shown back to the dropper / picker.
+ */
+export const denyExchangeShiftSchema = z.object({
+  exchangeId: z.string().min(1, "Exchange shift ID is required"),
+  notes: z
+    .string()
+    .trim()
+    .max(500, "Notes must be 500 characters or less")
+    .optional()
+    .default(""),
+});
+
+/**
+ * Schema for the manager dashboard list endpoint. Optional `status`
+ * filter scopes the result; omitting it returns everything for the
+ * tenant ordered by most-recently-updated first.
+ */
+export const listExchangeShiftsForManagerSchema = z.object({
+  status: z.enum(exchangeShiftStatusValues).optional(),
+  limit: z.coerce.number().int().min(1).max(500).optional().default(200),
+});
+
 export type DropShiftInput = z.infer<typeof dropShiftSchema>;
 export type PickupExchangeShiftInput = z.infer<
   typeof pickupExchangeShiftSchema
@@ -91,4 +117,10 @@ export type ApproveExchangeShiftInput = z.infer<
 >;
 export type CancelExchangeShiftInput = z.infer<
   typeof cancelExchangeShiftSchema
+>;
+export type DenyExchangeShiftInput = z.infer<
+  typeof denyExchangeShiftSchema
+>;
+export type ListExchangeShiftsForManagerInput = z.infer<
+  typeof listExchangeShiftsForManagerSchema
 >;

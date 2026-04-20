@@ -18,6 +18,7 @@ const STATUS_LABELS: Record<ExchangeShiftStatus, string> = {
   pending_coverage: "Pending",
   covered: "Covered",
   manager_approved: "Approved",
+  denied: "Denied",
   cancelled: "Cancelled",
 };
 
@@ -26,6 +27,7 @@ const STATUS_BADGE_CLASSES: Record<ExchangeShiftStatus, string> = {
   pending_coverage: "bg-yellow-500/15",
   covered: "bg-blue-500/15",
   manager_approved: "bg-green-500/15",
+  denied: "bg-red-500/15",
   cancelled: "bg-muted",
 };
 
@@ -34,6 +36,7 @@ const STATUS_TEXT_CLASSES: Record<ExchangeShiftStatus, string> = {
   pending_coverage: "text-yellow-600",
   covered: "text-blue-600",
   manager_approved: "text-green-600",
+  denied: "text-red-600",
   cancelled: "text-muted-foreground",
 };
 
