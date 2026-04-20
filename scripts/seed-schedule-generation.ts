@@ -78,7 +78,8 @@ import type { ClerkClient, User as ClerkUser } from "@clerk/backend";
 
 const ORG_NAME = "The Copper Ladle - AI Test";
 const STAFF_EMAIL_DOMAIN = "gmail.com";
-const STAFF_PASSWORD = process.env.SEED_STAFF_PASSWORD ?? "CopperLadle!2026Seed";
+const STAFF_PASSWORD =
+  process.env.SEED_STAFF_PASSWORD ?? "CopperLadle!2026Seed";
 
 // All seeded staff emails carry the `+clerk_test` sub-address marker.
 // Clerk development instances treat any address matching the pattern
@@ -136,13 +137,13 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
   ],
   managerRoles: ["Manager", "Executive Chef", "Sous Chef"],
   operatingHours: {
-    monday:    { isOpen: true,  open: "07:00", close: "23:00" },
-    tuesday:   { isOpen: true,  open: "07:00", close: "23:00" },
-    wednesday: { isOpen: true,  open: "07:00", close: "23:00" },
-    thursday:  { isOpen: true,  open: "07:00", close: "23:00" },
-    friday:    { isOpen: true,  open: "07:00", close: "23:00" },
-    saturday:  { isOpen: true,  open: "08:00", close: "23:00" },
-    sunday:    { isOpen: true,  open: "09:00", close: "21:00" },
+    monday: { isOpen: true, open: "07:00", close: "23:00" },
+    tuesday: { isOpen: true, open: "07:00", close: "23:00" },
+    wednesday: { isOpen: true, open: "07:00", close: "23:00" },
+    thursday: { isOpen: true, open: "07:00", close: "23:00" },
+    friday: { isOpen: true, open: "07:00", close: "23:00" },
+    saturday: { isOpen: true, open: "08:00", close: "23:00" },
+    sunday: { isOpen: true, open: "09:00", close: "21:00" },
   },
   minTimeOffAdvanceDays: 0, // Allow immediate time-off for testing
   aiSettings: {
@@ -700,19 +701,19 @@ function fullWeek(
 
 const AVAILABILITY_BY_STAFF: Record<string, AvailEntry[]> = {
   // ── Managers (all 7 days, full operating window) ──────────────
-  "Marcus Rivera":  fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Sophie Chen":    fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
-  "David Okafor":   fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
-  "Priya Patel":    fullWeek("available", "07:00", "23:00", [0, 2, 4, 6]),
+  "Marcus Rivera": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
+  "Sophie Chen": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
+  "David Okafor": fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
+  "Priya Patel": fullWeek("available", "07:00", "23:00", [0, 2, 4, 6]),
 
   // ── Other full-timers ─────────────────────────────────────────
-  "Emily Nguyen":   fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Maria Santos":   fullWeek("available", "07:00", "23:00", [1, 2, 4, 5]),
-  "Ryan O'Brien":   fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Lisa Chang":     fullWeek("available", "07:00", "23:00", [1, 2, 3, 4]),
-  "Wei Zhang":      fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
+  "Emily Nguyen": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
+  "Maria Santos": fullWeek("available", "07:00", "23:00", [1, 2, 4, 5]),
+  "Ryan O'Brien": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
+  "Lisa Chang": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4]),
+  "Wei Zhang": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
   "Deshawn Williams": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Miguel Flores":  fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
+  "Miguel Flores": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
 
   // ── Part-timers ───────────────────────────────────────────────
   "Jake Thompson": [
@@ -829,8 +830,8 @@ const AVAILABILITY_BY_STAFF: Record<string, AvailEntry[]> = {
   ],
 
   // ── Additional flex ──────────────────────────────────────────
-  "Nina Kowalski":  fullWeek("available", "07:00", "23:00", [1, 2, 4, 5]),
-  "Dante Jackson":  fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
+  "Nina Kowalski": fullWeek("available", "07:00", "23:00", [1, 2, 4, 5]),
+  "Dante Jackson": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
   "Chloe Martinez": [
     avail(0, "available", "09:00", "21:00"),
     avail(1, "preferred", "07:00", "23:00"),
@@ -866,71 +867,423 @@ function buildShiftSlots(): ShiftSlotDef[] {
 
   // GRILL
   for (const d of monThu) {
-    slots.push({ dayOfWeek: d, station: "Grill", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    slots.push({ dayOfWeek: d, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "high" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Grill",
+      startTime: "07:00",
+      endTime: "15:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Grill",
+      startTime: "15:00",
+      endTime: "23:00",
+      minStaff: 1,
+      preferredStaff: 2,
+      priority: "high",
+    });
   }
-  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  slots.push({ dayOfWeek: 5, station: "Grill", startTime: "17:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Grill", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Grill", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  slots.push({ dayOfWeek: 0, station: "Grill", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Grill", startTime: "15:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Grill",
+    startTime: "07:00",
+    endTime: "15:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Grill",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 2,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Grill",
+    startTime: "17:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Grill",
+    startTime: "08:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Grill",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 2,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Grill",
+    startTime: "09:00",
+    endTime: "15:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Grill",
+    startTime: "15:00",
+    endTime: "21:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
 
   // SAUTE
   for (const d of monThu) {
-    slots.push({ dayOfWeek: d, station: "Saute", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    slots.push({ dayOfWeek: d, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Saute",
+      startTime: "10:00",
+      endTime: "18:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Saute",
+      startTime: "15:00",
+      endTime: "23:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "high",
+    });
   }
-  slots.push({ dayOfWeek: 5, station: "Saute", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 5, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  slots.push({ dayOfWeek: 6, station: "Saute", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Saute", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "critical" });
-  slots.push({ dayOfWeek: 0, station: "Saute", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Saute", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Saute",
+    startTime: "10:00",
+    endTime: "18:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Saute",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 2,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Saute",
+    startTime: "08:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Saute",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 2,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Saute",
+    startTime: "10:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Saute",
+    startTime: "14:00",
+    endTime: "21:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
 
   // PREP
   for (const d of monFri) {
-    slots.push({ dayOfWeek: d, station: "Prep", startTime: "07:00", endTime: "13:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-    slots.push({ dayOfWeek: d, station: "Prep", startTime: "09:00", endTime: "17:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Prep",
+      startTime: "07:00",
+      endTime: "13:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "high",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Prep",
+      startTime: "09:00",
+      endTime: "17:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
   }
-  slots.push({ dayOfWeek: 5, station: "Prep", startTime: "13:00", endTime: "19:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 6, station: "Prep", startTime: "08:00", endTime: "14:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Prep", startTime: "11:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Prep", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Prep",
+    startTime: "13:00",
+    endTime: "19:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Prep",
+    startTime: "08:00",
+    endTime: "14:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Prep",
+    startTime: "11:00",
+    endTime: "18:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Prep",
+    startTime: "09:00",
+    endTime: "15:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
 
   // ASSEMBLY
   for (const d of monThu) {
-    slots.push({ dayOfWeek: d, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    slots.push({ dayOfWeek: d, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Assembly",
+      startTime: "10:00",
+      endTime: "18:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Assembly",
+      startTime: "15:00",
+      endTime: "23:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "high",
+    });
   }
-  slots.push({ dayOfWeek: 5, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 5, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 2, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Assembly", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Assembly", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 0, station: "Assembly", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Assembly", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Assembly",
+    startTime: "10:00",
+    endTime: "18:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Assembly",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 2,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Assembly",
+    startTime: "10:00",
+    endTime: "18:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Assembly",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Assembly",
+    startTime: "10:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Assembly",
+    startTime: "14:00",
+    endTime: "21:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
 
   // EXPO
   for (const d of monThu) {
-    slots.push({ dayOfWeek: d, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    slots.push({ dayOfWeek: d, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "high" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Expo",
+      startTime: "10:00",
+      endTime: "16:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Expo",
+      startTime: "16:00",
+      endTime: "23:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "high",
+    });
   }
-  slots.push({ dayOfWeek: 5, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 5, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  slots.push({ dayOfWeek: 6, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
-  slots.push({ dayOfWeek: 6, station: "Expo", startTime: "16:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  slots.push({ dayOfWeek: 0, station: "Expo", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Expo",
+    startTime: "10:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 5,
+    station: "Expo",
+    startTime: "16:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Expo",
+    startTime: "10:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "high",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Expo",
+    startTime: "16:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "critical",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Expo",
+    startTime: "10:00",
+    endTime: "18:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
 
   // DISH
   for (const d of monFri) {
-    slots.push({ dayOfWeek: d, station: "Dish", startTime: "07:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-    slots.push({ dayOfWeek: d, station: "Dish", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+    slots.push({
+      dayOfWeek: d,
+      station: "Dish",
+      startTime: "07:00",
+      endTime: "15:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
+    slots.push({
+      dayOfWeek: d,
+      station: "Dish",
+      startTime: "15:00",
+      endTime: "23:00",
+      minStaff: 1,
+      preferredStaff: 1,
+      priority: "normal",
+    });
   }
-  slots.push({ dayOfWeek: 6, station: "Dish", startTime: "08:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 6, station: "Dish", startTime: "15:00", endTime: "23:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Dish", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  slots.push({ dayOfWeek: 0, station: "Dish", startTime: "14:00", endTime: "21:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Dish",
+    startTime: "08:00",
+    endTime: "16:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 6,
+    station: "Dish",
+    startTime: "15:00",
+    endTime: "23:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Dish",
+    startTime: "09:00",
+    endTime: "15:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
+  slots.push({
+    dayOfWeek: 0,
+    station: "Dish",
+    startTime: "14:00",
+    endTime: "21:00",
+    minStaff: 1,
+    preferredStaff: 1,
+    priority: "normal",
+  });
 
   return slots;
 }
@@ -1003,10 +1356,22 @@ function getClerkClient(): ClerkClient | null {
  */
 function formatClerkError(err: unknown): string {
   if (err && typeof err === "object" && "errors" in err) {
-    const errors = (err as { errors?: Array<{ code?: string; message?: string; longMessage?: string; meta?: unknown }> }).errors;
+    const errors = (
+      err as {
+        errors?: Array<{
+          code?: string;
+          message?: string;
+          longMessage?: string;
+          meta?: unknown;
+        }>;
+      }
+    ).errors;
     if (Array.isArray(errors) && errors.length > 0) {
       return errors
-        .map((e) => `[${e.code ?? "?"}] ${e.longMessage ?? e.message ?? "unknown"}`)
+        .map(
+          (e) =>
+            `[${e.code ?? "?"}] ${e.longMessage ?? e.message ?? "unknown"}`,
+        )
         .join("; ");
     }
   }
@@ -1077,7 +1442,9 @@ async function ensureClerkUserForStaff(
     });
     return created.id;
   } catch (err) {
-    logWarn(`Failed to create Clerk user for ${staff.email}: ${formatClerkError(err)}`);
+    logWarn(
+      `Failed to create Clerk user for ${staff.email}: ${formatClerkError(err)}`,
+    );
     return null;
   }
 }
@@ -1095,7 +1462,9 @@ async function deleteAllSeededClerkUsers(client: ClerkClient): Promise<void> {
       await client.users.deleteUser(user.id);
       log(`  Deleted Clerk user ${def.email} (${user.id})`);
     } catch (err) {
-      logWarn(`Failed to delete Clerk user ${def.email}: ${formatClerkError(err)}`);
+      logWarn(
+        `Failed to delete Clerk user ${def.email}: ${formatClerkError(err)}`,
+      );
     }
   }
 }
@@ -1116,11 +1485,15 @@ async function dropLegacyIndexes(): Promise<void> {
 
   for (const { collection, indexName } of legacyIndexes) {
     try {
-      const collections = await db.listCollections({ name: collection }).toArray();
+      const collections = await db
+        .listCollections({ name: collection })
+        .toArray();
       if (collections.length === 0) continue;
 
       const indexes = await db.collection(collection).indexes();
-      const legacy = indexes.find((idx: { name?: string }) => idx.name === indexName);
+      const legacy = indexes.find(
+        (idx: { name?: string }) => idx.name === indexName,
+      );
       if (legacy) {
         await db.collection(collection).dropIndex(indexName);
         logSuccess(`Dropped legacy index "${indexName}" from ${collection}`);
@@ -1164,7 +1537,11 @@ async function seed(clerkUserId: string): Promise<void> {
 
   // ── Kitchen Config ──────────────────────────────────────────
   logStep("Creating Kitchen Config");
-  const config = await KitchenConfigService.upsert(orgId, locationId, KITCHEN_CONFIG);
+  const config = await KitchenConfigService.upsert(
+    orgId,
+    locationId,
+    KITCHEN_CONFIG,
+  );
   logSuccess(
     `"${config.name}" -- ${config.stations.length} stations, ${config.roles.length} roles, managers: [${config.managerRoles.join(", ")}]`,
   );
@@ -1236,7 +1613,9 @@ async function seed(clerkUserId: string): Promise<void> {
       }
     }
 
-    const skillStr = staff.skills.map((s) => `${s.station}(${s.proficiency})`).join(", ");
+    const skillStr = staff.skills
+      .map((s) => `${s.station}(${s.proficiency})`)
+      .join(", ");
     const flags: string[] = [];
     if (def.hourlyRate === 0) flags.push("$0/hr");
     if (def.maxHoursPerWeek <= 15) flags.push(`max${def.maxHoursPerWeek}h`);
@@ -1266,11 +1645,20 @@ async function seed(clerkUserId: string): Promise<void> {
       logError(`Staff not found for availability: ${staffName}`);
       continue;
     }
-    await StaffAvailabilityService.bulkUpsert(orgId, locationId, staffId, entries);
+    await StaffAvailabilityService.bulkUpsert(
+      orgId,
+      locationId,
+      staffId,
+      entries,
+    );
     totalAvailEntries += entries.length;
 
-    const availDays = entries.filter((e) => e.preference !== "unavailable").length;
-    const unavailDays = entries.filter((e) => e.preference === "unavailable").length;
+    const availDays = entries.filter(
+      (e) => e.preference !== "unavailable",
+    ).length;
+    const unavailDays = entries.filter(
+      (e) => e.preference === "unavailable",
+    ).length;
     log(`  ${staffName}: ${availDays} available, ${unavailDays} unavailable`);
   }
   logSuccess(
@@ -1305,9 +1693,16 @@ async function seed(clerkUserId: string): Promise<void> {
     reason: "Family obligation",
   });
   await TimeOffRequestService.updateStatus(
-    orgId, locationId, emilyTimeOff.id, "approved", clerkUserId, "Approved",
+    orgId,
+    locationId,
+    emilyTimeOff.id,
+    "approved",
+    clerkUserId,
+    "Approved",
   );
-  log(`  Emily Nguyen: ${DAY_NAMES[0]}-${DAY_NAMES[1]} APPROVED (key Grill cook out)`);
+  log(
+    `  Emily Nguyen: ${DAY_NAMES[0]}-${DAY_NAMES[1]} APPROVED (key Grill cook out)`,
+  );
 
   const mariaId = staffIds.get("Maria Santos")!;
   const mariaTimeOff = await TimeOffRequestService.create(orgId, locationId, {
@@ -1317,9 +1712,16 @@ async function seed(clerkUserId: string): Promise<void> {
     reason: "Vacation",
   });
   await TimeOffRequestService.updateStatus(
-    orgId, locationId, mariaTimeOff.id, "approved", clerkUserId, "Enjoy your trip!",
+    orgId,
+    locationId,
+    mariaTimeOff.id,
+    "approved",
+    clerkUserId,
+    "Enjoy your trip!",
   );
-  log(`  Maria Santos: ${DAY_NAMES[2]}-${DAY_NAMES[4]} APPROVED (3-day vacation)`);
+  log(
+    `  Maria Santos: ${DAY_NAMES[2]}-${DAY_NAMES[4]} APPROVED (3-day vacation)`,
+  );
 
   const jakeId = staffIds.get("Jake Thompson")!;
   await TimeOffRequestService.create(orgId, locationId, {
@@ -1328,7 +1730,9 @@ async function seed(clerkUserId: string): Promise<void> {
     endDate: testDay(3),
     reason: "Doctor appointment",
   });
-  log(`  Jake Thompson: ${DAY_NAMES[3]} PENDING (should NOT filter from generation)`);
+  log(
+    `  Jake Thompson: ${DAY_NAMES[3]} PENDING (should NOT filter from generation)`,
+  );
 
   const tylerId = staffIds.get("Tyler Kim")!;
   const tylerTimeOff = await TimeOffRequestService.create(orgId, locationId, {
@@ -1338,9 +1742,16 @@ async function seed(clerkUserId: string): Promise<void> {
     reason: "Personal day",
   });
   await TimeOffRequestService.updateStatus(
-    orgId, locationId, tylerTimeOff.id, "denied", clerkUserId, "Short-staffed that day",
+    orgId,
+    locationId,
+    tylerTimeOff.id,
+    "denied",
+    clerkUserId,
+    "Short-staffed that day",
   );
-  log(`  Tyler Kim: ${DAY_NAMES[1]} DENIED (should NOT filter from generation)`);
+  log(
+    `  Tyler Kim: ${DAY_NAMES[1]} DENIED (should NOT filter from generation)`,
+  );
 
   const kenjiId = staffIds.get("Kenji Tanaka")!;
   const kenjiTimeOff = await TimeOffRequestService.create(orgId, locationId, {
@@ -1350,16 +1761,25 @@ async function seed(clerkUserId: string): Promise<void> {
     reason: "Family event",
   });
   await TimeOffRequestService.updateStatus(
-    orgId, locationId, kenjiTimeOff.id, "approved", clerkUserId, "Approved",
+    orgId,
+    locationId,
+    kenjiTimeOff.id,
+    "approved",
+    clerkUserId,
+    "Approved",
   );
-  log(`  Kenji Tanaka: ${DAY_NAMES[6]} APPROVED (weekend dishwasher out on Sunday)`);
+  log(
+    `  Kenji Tanaka: ${DAY_NAMES[6]} APPROVED (weekend dishwasher out on Sunday)`,
+  );
 
   logSuccess("Created 5 time-off requests (3 approved, 1 pending, 1 denied)");
 
   // ── Schedule ────────────────────────────────────────────────
   logStep("Creating DRAFT Schedule for Test Week");
   const schedule = await ScheduleService.getOrCreateForWeek(
-    orgId, locationId, TEST_WEEK_START,
+    orgId,
+    locationId,
+    TEST_WEEK_START,
   );
   logSuccess(
     `Created DRAFT schedule for week of ${TEST_WEEK_START.toDateString()} (ID: ${schedule.id})`,
@@ -1373,13 +1793,19 @@ async function seed(clerkUserId: string): Promise<void> {
   console.log(`  Location:          Main Kitchen (${locationId})`);
   console.log(`  Kitchen Config:    ${config.stations.join(", ")}`);
   console.log(`  Manager Roles:     ${config.managerRoles.join(", ")}`);
-  console.log(`  Staff:             ${activeCount} active, ${inactiveCount} inactive`);
+  console.log(
+    `  Staff:             ${activeCount} active, ${inactiveCount} inactive`,
+  );
   console.log(`  Clerk-linked:      ${clerkLinkedCount}`);
-  console.log(`  Memberships:       ${managerMembershipCount} manager + ${staffMembershipCount} staff`);
+  console.log(
+    `  Memberships:       ${managerMembershipCount} manager + ${staffMembershipCount} staff`,
+  );
   console.log(`  Availability:      ${totalAvailEntries} entries`);
   console.log(`  Shift Slots:       ${shiftSlots.length} entries`);
   console.log(`  Time-Off Requests: 5 (3 approved, 1 pending, 1 denied)`);
-  console.log(`  Schedule:          ${schedule.id} (DRAFT, week of ${TEST_WEEK_START.toDateString()})`);
+  console.log(
+    `  Schedule:          ${schedule.id} (DRAFT, week of ${TEST_WEEK_START.toDateString()})`,
+  );
   console.log(`\n  Owner Clerk User ID: ${clerkUserId}`);
   if (clerkLinkedCount > 0) {
     console.log(`  Staff sign-in password: ${STAFF_PASSWORD}`);
@@ -1396,35 +1822,60 @@ async function deleteOrgAndData(orgId: string, orgName: string): Promise<void> {
   for (const location of locations) {
     log(`  Cleaning location: ${location.name} (${location.id})`);
 
-    const aiDeleted = await AIUsageService.deleteAllByLocation(orgId, location.id);
+    const aiDeleted = await AIUsageService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    AI usage logs deleted: ${aiDeleted}`);
 
-    const shiftsDeleted = await ShiftService.deleteAllByLocation(orgId, location.id);
+    const shiftsDeleted = await ShiftService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Shifts deleted: ${shiftsDeleted}`);
 
-    const schedulesDeleted = await ScheduleService.deleteAllByLocation(orgId, location.id);
+    const schedulesDeleted = await ScheduleService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Schedules deleted: ${schedulesDeleted}`);
 
-    const laborDeleted = await LaborRequirementService.deleteAllByLocation(orgId, location.id);
+    const laborDeleted = await LaborRequirementService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Shift slots deleted: ${laborDeleted}`);
 
-    const timeOffDeleted = await TimeOffRequestService.deleteAllByLocation(orgId, location.id);
+    const timeOffDeleted = await TimeOffRequestService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Time-off requests deleted: ${timeOffDeleted}`);
 
-    const availDeleted = await StaffAvailabilityService.deleteAllByLocation(orgId, location.id);
+    const availDeleted = await StaffAvailabilityService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Availability entries deleted: ${availDeleted}`);
 
-    const staffDeleted = await StaffService.deleteAllByLocation(orgId, location.id);
+    const staffDeleted = await StaffService.deleteAllByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Staff deleted: ${staffDeleted}`);
 
-    const configDeleted = await KitchenConfigService.deleteByLocation(orgId, location.id);
+    const configDeleted = await KitchenConfigService.deleteByLocation(
+      orgId,
+      location.id,
+    );
     log(`    Kitchen config deleted: ${configDeleted}`);
 
     await LocationService.delete(orgId, location.id);
     log(`    Location deleted: ${location.name}`);
   }
 
-  const membersDeleted = await OrganizationMemberService.deleteAllByOrgId(orgId);
+  const membersDeleted =
+    await OrganizationMemberService.deleteAllByOrgId(orgId);
   log(`  Members deleted: ${membersDeleted}`);
 
   await OrganizationService.delete(orgId);
@@ -1449,7 +1900,9 @@ async function cleanupAllOrgsForUser(clerkUserId: string): Promise<void> {
     return;
   }
 
-  log(`Found ${allOrgs.length} organization(s) for this Clerk user -- removing all`);
+  log(
+    `Found ${allOrgs.length} organization(s) for this Clerk user -- removing all`,
+  );
 
   for (const org of allOrgs) {
     log(`  Removing: "${org.name}" (${org.id})`);
@@ -1493,8 +1946,12 @@ async function main(): Promise<void> {
   }
 
   console.log(`\nClerk User ID:  ${clerkUserId}`);
-  console.log(`MongoDB URI:    ${process.env.MONGODB_URI ? "[SET]" : "[NOT SET]"}`);
-  console.log(`Clerk SDK key:  ${process.env.CLERK_SECRET_KEY ? "[SET]" : "[NOT SET]"}`);
+  console.log(
+    `MongoDB URI:    ${process.env.MONGODB_URI ? "[SET]" : "[NOT SET]"}`,
+  );
+  console.log(
+    `Clerk SDK key:  ${process.env.CLERK_SECRET_KEY ? "[SET]" : "[NOT SET]"}`,
+  );
   if (!isCleanup) {
     console.log(`Test Week:      ${TEST_WEEK_START.toDateString()}`);
   }
