@@ -422,6 +422,7 @@ export type ExchangeShiftStatus =
   | "pending_coverage"
   | "covered"
   | "manager_approved"
+  | "denied"
   | "cancelled";
 
 /**
@@ -455,11 +456,70 @@ export interface ExchangeShiftDTO {
   status: ExchangeShiftStatus;
   /** Optional note from the dropper (max ~500 chars). */
   reason: string;
-  /** Set by manager / shift lead when transitioning to `manager_approved`. */
+  /**
+   * Clerk user id of the manager / shift lead who issued the most
+   * recent decision (approval or denial). Set when transitioning to
+   * `manager_approved` or `denied`.
+   */
   approvedByClerkUserId?: string | null;
+  /** Timestamp of that decision. */
   approvedAt?: Date | null;
+  /** Optional manager note attached to a denial (or future approval). */
+  managerNotes?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/**
+ * Extra context the manager dashboard surfaces when reviewing a
+ * pending exchange. Computed on demand from current Staff + Shift
+ * state, never persisted. All fields describe the *picker's* world
+ * after the shift would be reassigned (the dropper just loses the
+ * shift's hours, which is reflected in `dropperHoursAfter`).
+ */
+export interface ExchangeShiftViabilityDTO {
+  /** Hours the dropper would have left this week after the swap. */
+  dropperHoursBefore: number;
+  dropperHoursAfter: number;
+  /** Hours the picker would land on this week after the swap. */
+  pickerHoursBefore: number;
+  pickerHoursAfter: number;
+  /** Hours-per-week ceiling on each side (from Staff). */
+  dropperMaxHoursPerWeek: number;
+  pickerMaxHoursPerWeek: number;
+  /** Picker's max-hours overage caused by accepting this shift. */
+  pickerOvertime: boolean;
+  /** Picker has at least one skill matching the shift's station. */
+  pickerHasSkill: boolean;
+  /** Best skill proficiency (1-5) the picker holds for the station, if any. */
+  pickerStationProficiency: number | null;
+  /**
+   * Picker shares at least one role with the dropper. Heuristic for
+   * "this is a like-for-like swap"; does not block the swap.
+   */
+  pickerHasMatchingRole: boolean;
+  pickerRoles: string[];
+  dropperRoles: string[];
+  /** Picker has an existing shift overlapping the swap window. */
+  pickerHasOverlap: boolean;
+  /**
+   * Number of hours between the picker's previous shift end and the
+   * swapped shift start (or between swapped shift end and next
+   * picker shift start), whichever is smaller. `null` when no
+   * adjacent shift exists.
+   */
+  pickerMinTurnaroundHours: number | null;
+  /** True when the smallest adjacent gap is below the clopen threshold. */
+  pickerClopenRisk: boolean;
+  clopenThresholdHours: number;
+  /** Picker's remaining shifts in the week (not counting the swap). */
+  pickerOtherShiftsThisWeek: number;
+  /** Active flag for both staff. Inactive staff are unusual but possible. */
+  pickerIsActive: boolean;
+  dropperIsActive: boolean;
+  /** Names denormalised for client-side rendering. */
+  dropperName: string;
+  pickerName: string | null;
 }
 
 // ── Candidate (Schedule Generation) ──────────────────────────

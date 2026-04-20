@@ -6,6 +6,16 @@ import {
   ExchangeShiftDTO,
   toExchangeShiftDTO,
 } from "@/types/exchange-shift";
+import type {
+  ExchangeShiftStatus,
+  ExchangeShiftViabilityDTO,
+} from "@sous/types";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import {
+  getWeekStart,
+  getWeekEnd,
+  calculateShiftDuration,
+} from "@/lib/utils/date";
 
 /**
  * Statuses that count as "still on the board". A Shift can only have
@@ -375,6 +385,291 @@ export const ExchangeShiftService = {
   },
 
   /**
+   * Manager / shift-lead denial of a `pending_coverage` exchange.
+   *
+   * Transitions the row to `denied` (terminal). The underlying Shift
+   * stays with the original dropper; the picker effectively "gives
+   * back" the proposed switch. The dropper may re-drop the shift
+   * later — the partial unique index excludes `denied` rows so that
+   * is allowed.
+   */
+  async deny(input: {
+    orgId: string;
+    locationId: string;
+    exchangeId: string;
+    deniedByClerkUserId: string;
+    notes?: string;
+  }): Promise<ExchangeShiftDTO> {
+    const { orgId, locationId, exchangeId, deniedByClerkUserId, notes } =
+      input;
+
+    const existing = await ExchangeShift.findOne({
+      _id: exchangeId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "pending_coverage",
+    }).lean();
+
+    if (!existing) {
+      throw new Error("Exchange shift is not awaiting approval");
+    }
+
+    const updated = await ExchangeShift.findOneAndUpdate(
+      {
+        _id: existing._id,
+        updatedAt: existing.updatedAt,
+        status: "pending_coverage",
+      },
+      {
+        $set: {
+          status: "denied",
+          approvedByClerkUserId: deniedByClerkUserId,
+          approvedAt: new Date(),
+          managerNotes: notes ?? "",
+        },
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      throw new Error(
+        "Exchange shift was modified by someone else; please refresh"
+      );
+    }
+
+    return toExchangeShiftDTO(updated);
+  },
+
+  /**
+   * Manager dashboard list — every exchange row at the location,
+   * optionally filtered by `status`. Sorted by `updatedAt` desc so
+   * the most recent activity surfaces first.
+   *
+   * Distinct from `listAvailable` (mobile board) and `listByDropper`
+   * (mobile "my drops") — neither restricts visibility, since the
+   * web UI is for managers/owners/shift_leads.
+   */
+  async listForManager(
+    orgId: string,
+    locationId: string,
+    options: { status?: ExchangeShiftStatus; limit?: number } = {}
+  ): Promise<ExchangeShiftDTO[]> {
+    const { status, limit = 200 } = options;
+
+    const query: Record<string, unknown> = {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    };
+    if (status) {
+      query.status = status;
+    }
+
+    const docs = await ExchangeShift.find(query)
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return docs.map(toExchangeShiftDTO);
+  },
+
+  /**
+   * Compute on-demand viability for a single exchange row.
+   *
+   * Returns the picker's hours-after-swap, station-skill match, role
+   * overlap, schedule overlap, clopen risk (against the kitchen's
+   * configured threshold), and overtime risk.
+   *
+   * `null` if the row is not in the tenant. When the row has not
+   * been picked up yet (`status: "available"`), picker-side fields
+   * are populated with defensive defaults so the UI can still render
+   * a partial card.
+   */
+  async getViability(
+    orgId: string,
+    locationId: string,
+    exchangeId: string
+  ): Promise<ExchangeShiftViabilityDTO | null> {
+    const row = await ExchangeShift.findOne({
+      _id: exchangeId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    }).lean();
+
+    if (!row) return null;
+
+    // Pull both staff records (dropper always present, picker may be
+    // null on `available` rows).
+    const [dropperDoc, pickerDoc, kitchen] = await Promise.all([
+      Staff.findOne({
+        _id: row.staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      }).lean(),
+      row.pickedUpByStaffId
+        ? Staff.findOne({
+            _id: row.pickedUpByStaffId,
+            orgId: new Types.ObjectId(orgId),
+            locationId: new Types.ObjectId(locationId),
+          }).lean()
+        : Promise.resolve(null),
+      KitchenConfigService.getByLocation(orgId, locationId),
+    ]);
+
+    const swapStart = new Date(row.start);
+    const swapEnd = new Date(row.end);
+    const swapDuration = calculateShiftDuration(swapStart, swapEnd);
+    const weekStart = getWeekStart(swapStart);
+    const weekEnd = getWeekEnd(swapStart);
+
+    const clopenThresholdHours =
+      kitchen?.scheduleGenerationSettings?.clopeningWarningThresholdHours ??
+      kitchen?.scheduleGenerationSettings?.minHoursBetweenShifts ??
+      10;
+
+    // Compute per-staff weekly hours from the shifts collection. The
+    // exchange row's underlying shift may already be reassigned to
+    // the picker (status `covered` / `manager_approved`) — we still
+    // compute "before" / "after" relative to the *original* dropper
+    // ownership so the manager sees the impact of the move.
+    const weekShiftsForDropper = await Shift.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: row.staffId,
+      start: { $gte: weekStart, $lte: weekEnd },
+    }).lean();
+
+    const weekShiftsForPicker = pickerDoc
+      ? await Shift.find({
+          orgId: new Types.ObjectId(orgId),
+          locationId: new Types.ObjectId(locationId),
+          staffId: pickerDoc._id,
+          start: { $gte: weekStart, $lte: weekEnd },
+        }).lean()
+      : [];
+
+    const sumHours = (
+      shifts: Array<{ start: Date; end: Date; _id: unknown }>,
+      excludeShiftId?: unknown
+    ): number =>
+      shifts.reduce((acc, s) => {
+        if (excludeShiftId && String(s._id) === String(excludeShiftId)) {
+          return acc;
+        }
+        return acc + calculateShiftDuration(new Date(s.start), new Date(s.end));
+      }, 0);
+
+    const dropperHasShift = weekShiftsForDropper.some(
+      (s) => String(s._id) === String(row.shiftId)
+    );
+    const pickerHasShift = weekShiftsForPicker.some(
+      (s) => String(s._id) === String(row.shiftId)
+    );
+
+    // "Before" = world before the swap. We model the swap as
+    // dropper losing the row's hours and picker gaining them,
+    // regardless of the row's current status. `dropperHasShift`
+    // tells us whether the underlying shift currently still belongs
+    // to the dropper (it does for `available` and `pending_coverage`
+    // rows).
+    const dropperHoursBefore = dropperHasShift
+      ? sumHours(weekShiftsForDropper)
+      : sumHours(weekShiftsForDropper) + swapDuration;
+    const dropperHoursAfter = dropperHoursBefore - swapDuration;
+
+    const pickerHoursBefore = pickerHasShift
+      ? sumHours(weekShiftsForPicker, row.shiftId)
+      : sumHours(weekShiftsForPicker);
+    const pickerHoursAfter = pickerHoursBefore + swapDuration;
+
+    // Skill / role checks against the picker (may be absent if the
+    // row is still available).
+    const pickerStationSkill = pickerDoc
+      ? pickerDoc.skills.find((sk) => sk.station === row.station)
+      : undefined;
+    const pickerHasSkill = Boolean(pickerStationSkill);
+    const pickerStationProficiency = pickerStationSkill
+      ? pickerStationSkill.proficiency
+      : null;
+
+    const dropperRoles = dropperDoc?.roles ?? [];
+    const pickerRoles = pickerDoc?.roles ?? [];
+    const pickerHasMatchingRole = pickerDoc
+      ? pickerRoles.some((r) => dropperRoles.includes(r))
+      : false;
+
+    // Overlap: any picker shift other than the swap itself that
+    // intersects the swap window.
+    const pickerHasOverlap = pickerDoc
+      ? weekShiftsForPicker.some((s) => {
+          if (String(s._id) === String(row.shiftId)) return false;
+          const sStart = new Date(s.start);
+          const sEnd = new Date(s.end);
+          return sStart < swapEnd && sEnd > swapStart;
+        })
+      : false;
+
+    // Turnaround: minimum gap (in hours) between the swap window and
+    // the picker's nearest other shift on either side.
+    let pickerMinTurnaroundHours: number | null = null;
+    if (pickerDoc) {
+      let smallest = Number.POSITIVE_INFINITY;
+      for (const s of weekShiftsForPicker) {
+        if (String(s._id) === String(row.shiftId)) continue;
+        const sStart = new Date(s.start);
+        const sEnd = new Date(s.end);
+        if (sEnd <= swapStart) {
+          const gap = (swapStart.getTime() - sEnd.getTime()) / 3_600_000;
+          if (gap < smallest) smallest = gap;
+        } else if (sStart >= swapEnd) {
+          const gap = (sStart.getTime() - swapEnd.getTime()) / 3_600_000;
+          if (gap < smallest) smallest = gap;
+        }
+      }
+      if (Number.isFinite(smallest)) {
+        pickerMinTurnaroundHours = Math.round(smallest * 100) / 100;
+      }
+    }
+
+    const pickerClopenRisk =
+      pickerMinTurnaroundHours !== null &&
+      pickerMinTurnaroundHours < clopenThresholdHours;
+
+    const pickerOvertime = pickerDoc
+      ? pickerHoursAfter > pickerDoc.maxHoursPerWeek
+      : false;
+
+    const pickerOtherShiftsThisWeek = pickerDoc
+      ? weekShiftsForPicker.filter(
+          (s) => String(s._id) !== String(row.shiftId)
+        ).length
+      : 0;
+
+    return {
+      dropperHoursBefore: Math.round(dropperHoursBefore * 100) / 100,
+      dropperHoursAfter: Math.round(dropperHoursAfter * 100) / 100,
+      pickerHoursBefore: Math.round(pickerHoursBefore * 100) / 100,
+      pickerHoursAfter: Math.round(pickerHoursAfter * 100) / 100,
+      dropperMaxHoursPerWeek: dropperDoc?.maxHoursPerWeek ?? 40,
+      pickerMaxHoursPerWeek: pickerDoc?.maxHoursPerWeek ?? 40,
+      pickerOvertime,
+      pickerHasSkill,
+      pickerStationProficiency,
+      pickerHasMatchingRole,
+      pickerRoles,
+      dropperRoles,
+      pickerHasOverlap,
+      pickerMinTurnaroundHours,
+      pickerClopenRisk,
+      clopenThresholdHours,
+      pickerOtherShiftsThisWeek,
+      pickerIsActive: pickerDoc?.isActive ?? false,
+      dropperIsActive: dropperDoc?.isActive ?? false,
+      dropperName: dropperDoc?.name ?? row.droppedByName,
+      pickerName: pickerDoc?.name ?? row.pickedUpByName ?? null,
+    };
+  },
+
+  /**
    * Dropper rescinds a still-`available` drop. The exchange row is
    * not deleted (we keep an audit trail) but transitions to
    * `cancelled`, which frees the underlying Shift to be dropped
@@ -405,6 +700,49 @@ export const ExchangeShiftService = {
       throw new Error(
         "You can only cancel your own drops"
       );
+    }
+
+    const updated = await ExchangeShift.findOneAndUpdate(
+      {
+        _id: existing._id,
+        updatedAt: existing.updatedAt,
+        status: "available",
+      },
+      { $set: { status: "cancelled" } },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      throw new Error(
+        "Exchange shift was modified by someone else; please refresh"
+      );
+    }
+
+    return toExchangeShiftDTO(updated);
+  },
+
+  /**
+   * Manager-side cancel of a still-`available` drop. Identical to
+   * `cancel` but skips the ownership check; used by the web manager
+   * dashboard so a manager can clean up an in-flight drop without
+   * impersonating the dropping staff member.
+   */
+  async cancelAsManager(input: {
+    orgId: string;
+    locationId: string;
+    exchangeId: string;
+  }): Promise<ExchangeShiftDTO> {
+    const { orgId, locationId, exchangeId } = input;
+
+    const existing = await ExchangeShift.findOne({
+      _id: exchangeId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "available",
+    }).lean();
+
+    if (!existing) {
+      throw new Error("Only available drops can be cancelled");
     }
 
     const updated = await ExchangeShift.findOneAndUpdate(

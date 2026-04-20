@@ -4,6 +4,7 @@
 export type {
   ExchangeShiftStatus,
   ExchangeShiftDTO,
+  ExchangeShiftViabilityDTO,
 } from "@sous/types";
 
 import type { ExchangeShiftDTO, ExchangeShiftStatus } from "@sous/types";
@@ -30,6 +31,7 @@ export interface IExchangeShift {
   reason: string;
   approvedByClerkUserId?: string | null;
   approvedAt?: Date | null;
+  managerNotes?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -61,6 +63,7 @@ export function toExchangeShiftDTO(
     reason: doc.reason,
     approvedByClerkUserId: doc.approvedByClerkUserId ?? null,
     approvedAt: doc.approvedAt ?? null,
+    managerNotes: doc.managerNotes ?? null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
