@@ -67,14 +67,21 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     initialData: initialRequirements,
   });
 
-  // Fetch kitchen config with initial data
-  const { data: configResponse, isLoading: isLoadingConfig } = useQuery({
+  // Fetch kitchen config with initial data.
+  // IMPORTANT: this query key is shared across the app (schedule, shift form,
+  // staff dialog, health dialog, etc.), so we MUST store the unwrapped config
+  // in the cache. Otherwise consumers reading the cached value will see the
+  // wrapped { success, data } response and crash on `.scheduleGenerationSettings`.
+  const { data: config = null, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["kitchenConfig"],
-    queryFn: () => getKitchenConfig(),
-    initialData: initialConfig ? { success: true as const, data: initialConfig } : undefined,
+    queryFn: async () => {
+      const result = await getKitchenConfig();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    initialData: initialConfig ?? undefined,
   });
 
-  const config = configResponse?.success ? configResponse.data : null;
   const stations = config?.stations ?? [];
 
   // Group requirements by station and day for easy lookup, sorted by start time

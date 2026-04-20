@@ -57,16 +57,20 @@ export function StaffFormDialog({
   const isEditMode = !!staff;
   const queryClient = useQueryClient();
 
-  // Fetch kitchen config for roles/stations
-  // Uses same pattern as ShiftFormDialog for consistency
-  const { data: configResponse, isLoading: isLoadingConfig } = useQuery({
+  // Fetch kitchen config for roles/stations.
+  // NOTE: this query key is shared across the app, so the cache MUST hold the
+  // unwrapped KitchenConfigDTO (not the { success, data } wrapper). Other
+  // consumers (schedule grid, health dialog, shift form) read this same cache.
+  const { data: configResult = null, isLoading: isLoadingConfig } = useQuery({
     queryKey: ["kitchenConfig"],
-    queryFn: () => getKitchenConfig(),
+    queryFn: async () => {
+      const result = await getKitchenConfig();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
     enabled: open,
   });
 
-  // Extract config data from response
-  const configResult = configResponse?.success ? configResponse.data : null;
   const availableRoles = configResult?.roles ?? [];
   const availableStations = configResult?.stations ?? [];
 

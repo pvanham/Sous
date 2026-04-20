@@ -283,7 +283,7 @@ export function ScheduleHealthDialog({
 
     // 2. Overtime alerts (hours beyond payroll OT threshold — default 40h — not contract max hours)
     const overtimeThresholdHours =
-      config.scheduleGenerationSettings.overtimeThresholdHours ?? 40;
+      config.scheduleGenerationSettings?.overtimeThresholdHours ?? 40;
     const overtimeAlerts: OvertimeAlert[] = [];
     const uniqueStaff = new Set(shifts.map((s) => s.staffId));
     for (const staffId of uniqueStaff) {
