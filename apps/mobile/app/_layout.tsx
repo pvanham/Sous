@@ -1,7 +1,8 @@
 import "react-native-gesture-handler";
 import "../global.css";
+import "@/lib/query-focus";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
@@ -41,7 +42,7 @@ if (!clerkPublishableKey) {
  * from the mobile app. Write-side features stay gated server-side.
  */
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isSignedIn, isLoaded, getToken } = useAuth();
+  const { isSignedIn, isLoaded, userId, getToken } = useAuth();
   const { signOut } = useClerk();
   const segments = useSegments();
   const router = useRouter();
@@ -54,6 +55,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       setTokenGetter(getToken);
     }
   }, [isLoaded, getToken]);
+
+  // Whenever Clerk's `userId` flips — null → someone, A → B, or
+  // someone → null — every cached query in the TanStack store is
+  // owned by the *previous* identity. Dropping the cache forces the
+  // next render to refetch with the new JWT so User B never sees
+  // User A's "My dropped shifts" or week schedule. Scoping the query
+  // keys by userId (done per-screen) is the second line of defence
+  // against this, but the cache drop is what guarantees it even for
+  // keys we may add later and forget to scope.
+  const previousUserIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!isLoaded) return;
+    const previous = previousUserIdRef.current;
+    if (previous !== undefined && previous !== userId) {
+      queryClient.clear();
+      clearMembership();
+    }
+    previousUserIdRef.current = userId ?? null;
+  }, [isLoaded, userId, clearMembership]);
 
   const membershipQuery = useQuery({
     queryKey: ["auth", "membership"],

@@ -1,6 +1,12 @@
 import { useState, useMemo, useCallback } from "react";
-import { View, ScrollView, ActivityIndicator } from "react-native";
+import {
+  View,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+} from "react-native";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-expo";
 import type { ShiftDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
@@ -35,6 +41,9 @@ export function ScheduleScreen() {
   const currentWeekStart = useMemo(() => getWeekStart(today), [today]);
   const [weekStart, setWeekStart] = useState<Date>(currentWeekStart);
   const [rosterShift, setRosterShift] = useState<ShiftDTO | null>(null);
+  // `userId` namespaces the cache per Clerk identity so signing out
+  // and back in as a different user never returns stale shifts.
+  const { userId } = useAuth();
 
   const weekStartIso = useMemo(
     () => weekStart.toISOString().split("T")[0],
@@ -42,14 +51,15 @@ export function ScheduleScreen() {
   );
 
   const shiftsQuery = useQuery({
-    queryKey: ["schedule", "week", weekStartIso],
+    queryKey: ["schedule", userId, "week", weekStartIso],
     queryFn: () => fetchWeekShifts(weekStart),
+    enabled: Boolean(userId),
   });
 
   const rosterQuery = useQuery({
-    queryKey: ["schedule", "roster", rosterShift?.id ?? null],
+    queryKey: ["schedule", userId, "roster", rosterShift?.id ?? null],
     queryFn: () => fetchShiftRoster(rosterShift!.id),
-    enabled: rosterShift !== null,
+    enabled: rosterShift !== null && Boolean(userId),
   });
 
   const days = useMemo(() => buildWeek(weekStart), [weekStart]);
@@ -101,6 +111,10 @@ export function ScheduleScreen() {
     setRosterShift(shift);
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    void shiftsQuery.refetch();
+  }, [shiftsQuery]);
+
   const rosterLabel = rosterShift
     ? `${new Date(rosterShift.start).toLocaleDateString("en-US", {
         weekday: "short",
@@ -130,23 +144,29 @@ export function ScheduleScreen() {
         hours={summary.hours}
       />
 
-      {shiftsQuery.isLoading ? (
-        <View className="py-12 items-center">
-          <ActivityIndicator size="large" />
-        </View>
-      ) : shiftsQuery.isError ? (
-        <View className="py-12 items-center">
-          <StyledText variant="body" className="text-destructive">
-            Couldn&apos;t load your schedule.
-          </StyledText>
-        </View>
-      ) : (
-        <ScrollView
-          className="flex-1"
-          contentContainerClassName="gap-3 pb-8 pt-2"
-          showsVerticalScrollIndicator={false}
-        >
-          {days.map((date) => {
+      <ScrollView
+        className="flex-1"
+        contentContainerClassName="gap-3 pb-8 pt-2"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={shiftsQuery.isFetching}
+            onRefresh={handleRefresh}
+          />
+        }
+      >
+        {shiftsQuery.isLoading ? (
+          <View className="py-12 items-center">
+            <ActivityIndicator size="large" />
+          </View>
+        ) : shiftsQuery.isError ? (
+          <View className="py-12 items-center">
+            <StyledText variant="body" className="text-destructive">
+              Couldn&apos;t load your schedule.
+            </StyledText>
+          </View>
+        ) : (
+          days.map((date) => {
             const iso = toIsoDate(date);
             return (
               <DayRow
@@ -157,9 +177,9 @@ export function ScheduleScreen() {
                 onShiftPress={handleShiftPress}
               />
             );
-          })}
-        </ScrollView>
-      )}
+          })
+        )}
+      </ScrollView>
 
       <RosterModal
         visible={rosterShift !== null}

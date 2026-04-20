@@ -1,6 +1,14 @@
-import { useState, useCallback, useMemo } from "react";
-import { View, Pressable, FlatList, Alert } from "react-native";
+import { useState, useCallback, useMemo, type ReactElement } from "react";
+import {
+  View,
+  Pressable,
+  FlatList,
+  Alert,
+  RefreshControl,
+  type RefreshControlProps,
+} from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-expo";
 import { isAxiosError } from "axios";
 import type { ShiftDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
@@ -60,15 +68,22 @@ export function ExchangeScreen() {
   const [pickingUp, setPickingUp] = useState<string | null>(null);
   const [proposeOpen, setProposeOpen] = useState(false);
   const queryClient = useQueryClient();
+  // Scope every query key by Clerk `userId` so cross-user cache bleed
+  // is impossible even if a future sign-out path forgets to call
+  // `queryClient.clear()`. Prefix-based invalidations below still
+  // work because `userId` is a later segment.
+  const { userId } = useAuth();
 
   const availableQuery = useQuery({
-    queryKey: ["exchange", "available"],
+    queryKey: ["exchange", userId, "available"],
     queryFn: fetchAvailableShifts,
+    enabled: Boolean(userId),
   });
 
   const myDroppedQuery = useQuery({
-    queryKey: ["exchange", "mine"],
+    queryKey: ["exchange", userId, "mine"],
     queryFn: fetchMyDroppedShifts,
+    enabled: Boolean(userId),
   });
 
   const { currentWeekStart, nextWeekStart, currentWeekIso, nextWeekIso } =
@@ -85,15 +100,15 @@ export function ExchangeScreen() {
     }, []);
 
   const currentWeekQuery = useQuery({
-    queryKey: ["schedule", "week", currentWeekIso],
+    queryKey: ["schedule", userId, "week", currentWeekIso],
     queryFn: () => fetchWeekShifts(currentWeekStart),
-    enabled: proposeOpen,
+    enabled: proposeOpen && Boolean(userId),
   });
 
   const nextWeekQuery = useQuery({
-    queryKey: ["schedule", "week", nextWeekIso],
+    queryKey: ["schedule", userId, "week", nextWeekIso],
     queryFn: () => fetchWeekShifts(nextWeekStart),
-    enabled: proposeOpen,
+    enabled: proposeOpen && Boolean(userId),
   });
 
   const droppableShifts = useMemo<ShiftDTO[]>(() => {
@@ -161,6 +176,18 @@ export function ExchangeScreen() {
     [dropMutation],
   );
 
+  // Pull-to-refresh fires whichever list is visible plus the matching
+  // "my dropped" query so the FAB's propose modal sees the latest
+  // droppable shifts without needing a second trip.
+  const handleRefresh = useCallback(() => {
+    void Promise.all([availableQuery.refetch(), myDroppedQuery.refetch()]);
+  }, [availableQuery, myDroppedQuery]);
+
+  const refreshing =
+    activeTab === "available"
+      ? availableQuery.isFetching
+      : myDroppedQuery.isFetching;
+
   const upcomingLoading =
     currentWeekQuery.isLoading ||
     nextWeekQuery.isLoading ||
@@ -190,11 +217,23 @@ export function ExchangeScreen() {
           shifts={availableQuery.data ?? []}
           onPickUp={handlePickUp}
           pickingUp={pickingUp}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+          }
         />
       ) : (
         <MyDroppedList
           shifts={myDroppedQuery.data ?? []}
           loading={myDroppedQuery.isLoading}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+          }
         />
       )}
 
@@ -251,9 +290,11 @@ function SegmentButton({
 function MyDroppedList({
   shifts,
   loading,
+  refreshControl,
 }: {
   shifts: ExchangeShift[];
   loading: boolean;
+  refreshControl?: ReactElement<RefreshControlProps>;
 }) {
   if (loading) {
     return (
@@ -271,6 +312,7 @@ function MyDroppedList({
       keyExtractor={(item) => item.id}
       showsVerticalScrollIndicator={false}
       contentContainerClassName="pb-4"
+      refreshControl={refreshControl}
       renderItem={({ item }) => <DroppedShiftCard shift={item} />}
       ItemSeparatorComponent={() => <View className="h-3" />}
       ListEmptyComponent={

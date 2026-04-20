@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
-import { View, FlatList, Pressable, Alert } from "react-native";
+import { View, FlatList, Pressable, Alert, RefreshControl } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@clerk/clerk-expo";
 import { isAxiosError } from "axios";
 import type { TimeOffRequestDTO, TimeOffRequestStatus } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
@@ -33,16 +34,22 @@ const STATUS_CONFIG: Record<
 export function TimeOffScreen() {
   const [modalVisible, setModalVisible] = useState(false);
   const queryClient = useQueryClient();
+  const { userId } = useAuth();
 
   const requestsQuery = useQuery({
-    queryKey: ["timeOffRequests"],
+    queryKey: ["timeOffRequests", userId],
     queryFn: fetchTimeOffRequests,
+    enabled: Boolean(userId),
   });
 
   const submitMutation = useMutation({
     mutationFn: submitTimeOffRequest,
     onSuccess: () => {
       setModalVisible(false);
+      // Prefix-match invalidation — catches the current user's
+      // scoped key `["timeOffRequests", userId]` regardless of who
+      // is signed in, and is safe because the cache is cleared on
+      // every auth transition.
       queryClient.invalidateQueries({ queryKey: ["timeOffRequests"] });
     },
     onError: (error: unknown) => {
@@ -79,6 +86,10 @@ export function TimeOffScreen() {
         new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
     );
   }, [requestsQuery.data]);
+
+  const handleRefresh = useCallback(() => {
+    void requestsQuery.refetch();
+  }, [requestsQuery]);
 
   return (
     <ScreenWrapper>
@@ -118,6 +129,12 @@ export function TimeOffScreen() {
         keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerClassName="pb-20"
+        refreshControl={
+          <RefreshControl
+            refreshing={requestsQuery.isFetching}
+            onRefresh={handleRefresh}
+          />
+        }
         renderItem={({ item }) => <RequestCard request={item} />}
         ItemSeparatorComponent={() => <View className="h-3" />}
         ListEmptyComponent={

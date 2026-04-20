@@ -1,4 +1,9 @@
-import { View, FlatList } from "react-native";
+import type { ReactElement } from "react";
+import {
+  View,
+  FlatList,
+  type RefreshControlProps,
+} from "react-native";
 import type { ExchangeShift } from "@/types";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -7,6 +12,7 @@ interface AvailableShiftListProps {
   shifts: ExchangeShift[];
   onPickUp: (shiftId: string) => void;
   pickingUp: string | null;
+  refreshControl?: ReactElement<RefreshControlProps>;
 }
 
 /**
@@ -16,6 +22,7 @@ export function AvailableShiftList({
   shifts,
   onPickUp,
   pickingUp,
+  refreshControl,
 }: AvailableShiftListProps) {
   return (
     <FlatList
@@ -23,6 +30,7 @@ export function AvailableShiftList({
       keyExtractor={(item) => item.id}
       showsVerticalScrollIndicator={false}
       contentContainerClassName="pb-4"
+      refreshControl={refreshControl}
       renderItem={({ item }) => (
         <AvailableShiftCard
           shift={item}
