@@ -1,8 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { Types } from "mongoose";
 
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { ExchangeInsightService } from "@/server/services/exchange-insight.service";
 import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -160,6 +161,28 @@ export async function POST(
       exchangeId,
       pickerStaffId: callerStaff.id,
       requireApproval: false,
+    });
+
+    // Kick off the Sous AI insight generation off the response
+    // path. The pickup itself returns immediately with
+    // `aiInsightStatus: "pending"`; the mobile UI polls /
+    // re-fetches to see the populated note. `after()` runs on
+    // the same server process after the response is flushed —
+    // see Next.js 15+ stable `after` API.
+    after(async () => {
+      try {
+        await ExchangeInsightService.generateForExchange({
+          orgId: locationCtx.orgId,
+          locationId: locationCtx.locationId,
+          exchangeId,
+          triggeredByClerkUserId: userId,
+        });
+      } catch (error) {
+        console.error(
+          "[api/exchange/:id/pickup] insight generation crashed:",
+          error,
+        );
+      }
     });
 
     return NextResponse.json(picked);
