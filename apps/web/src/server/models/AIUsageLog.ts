@@ -5,6 +5,7 @@ export const AI_ACTIONS = [
   "schedule_generation",
   "schedule_refinement",
   "message_parsing",
+  "exchange_insight",
 ] as const;
 
 export type AIAction = (typeof AI_ACTIONS)[number];
