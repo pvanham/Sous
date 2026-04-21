@@ -124,8 +124,8 @@ export function ScheduleScreen() {
     : "";
 
   return (
-    <ScreenWrapper>
-      <StyledText variant="title" className="mb-4 mt-2">
+    <ScreenWrapper includeTopInset={false}>
+      <StyledText variant="title" className="mb-4 mt-4">
         Schedule
       </StyledText>
 

@@ -2,38 +2,20 @@ import { useCallback } from "react";
 import {
   View,
   ScrollView,
-  Pressable,
   ActivityIndicator,
-  Alert,
   RefreshControl,
 } from "react-native";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useQuery } from "@tanstack/react-query";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { NextShiftCard } from "../components/next-shift-card";
 import { AnnouncementFeed } from "../components/announcement-feed";
 import { fetchNextShift, fetchAnnouncements } from "../api";
-import { useSignOut } from "@/features/auth/use-sign-out";
 
 export function HomeScreen() {
   const { user } = useUser();
   const { userId } = useAuth();
-  const signOut = useSignOut();
-
-  const handleSignOut = useCallback(() => {
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: () => {
-          void signOut();
-        },
-      },
-    ]);
-  }, [signOut]);
 
   const shiftQuery = useQuery({
     queryKey: ["home", userId, "nextShift"],
@@ -47,10 +29,6 @@ export function HomeScreen() {
     enabled: Boolean(userId),
   });
 
-  const initials = user
-    ? `${(user.firstName?.[0] ?? "").toUpperCase()}${(user.lastName?.[0] ?? "").toUpperCase()}`
-    : "?";
-
   // Pull-to-refresh fires both queries in parallel. `isFetching`
   // drives the spinner so it stays visible for the slower of the
   // two network calls. Swallow rejections because errors are
@@ -63,39 +41,16 @@ export function HomeScreen() {
     shiftQuery.isFetching || announcementsQuery.isFetching;
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper includeTopInset={false}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        <View className="flex-row justify-between items-center mb-6 mt-2">
-          <View>
-            <StyledText variant="caption">Welcome back,</StyledText>
-            <StyledText variant="title">
-              {user?.firstName ?? "Chef"}
-            </StyledText>
-          </View>
-          <View className="flex-row items-center gap-2">
-            <View className="w-10 h-10 rounded-full bg-primary items-center justify-center">
-              <StyledText
-                variant="label"
-                className="text-primary-foreground text-sm"
-              >
-                {initials}
-              </StyledText>
-            </View>
-            <Pressable
-              onPress={handleSignOut}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Sign out"
-              className="w-10 h-10 rounded-full bg-card border border-border items-center justify-center active:opacity-60"
-            >
-              <MaterialIcons name="logout" size={20} color="#78716c" />
-            </Pressable>
-          </View>
+        <View className="mb-6 mt-4">
+          <StyledText variant="caption">Welcome back,</StyledText>
+          <StyledText variant="title">{user?.firstName ?? "Chef"}</StyledText>
         </View>
 
         {shiftQuery.isLoading ? (
