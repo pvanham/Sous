@@ -70,12 +70,24 @@ export const approveExchangeShiftSchema = z.object({
 });
 
 /**
- * Schema for cancelling a still-`available` drop. The dropper or a
- * manager calls this; ownership is enforced in the service.
+ * Schema for cancelling a still-open drop (`available` or
+ * `pending_coverage`). The dropper or a manager calls this;
+ * ownership is enforced in the service.
  */
 export const cancelExchangeShiftSchema = z.object({
   exchangeId: z.string().min(1, "Exchange shift ID is required"),
 });
+
+/**
+ * Schema for `POST /api/exchange/:exchangeId/withdraw` — the picker
+ * rescinds their own `pending_coverage` pickup so the drop returns
+ * to the `available` pool. The `exchangeId` comes from the URL and
+ * the `pickerStaffId` is resolved server-side from the caller's
+ * Clerk JWT; the request body is intentionally empty. Declared as
+ * an explicit object for consistency with `pickupExchangeShiftSchema`
+ * so future fields have an obvious landing spot.
+ */
+export const withdrawPickupSchema = z.object({});
 
 /**
  * Schema for the manager-side denial transition (e.g. shift-lead /
@@ -118,6 +130,7 @@ export type ApproveExchangeShiftInput = z.infer<
 export type CancelExchangeShiftInput = z.infer<
   typeof cancelExchangeShiftSchema
 >;
+export type WithdrawPickupInput = z.infer<typeof withdrawPickupSchema>;
 export type DenyExchangeShiftInput = z.infer<
   typeof denyExchangeShiftSchema
 >;

@@ -402,20 +402,34 @@ export interface AnnouncementDTO {
  *
  * - `available`         The dropper has released the shift; nobody has
  *                       claimed it yet.
- * - `pending_coverage`  Another staff member has clicked "pick up" and
- *                       the system is waiting on shift-lead /
- *                       manager approval (only when KitchenConfig
- *                       requires it).
- * - `covered`           A pickup was accepted automatically (no
- *                       approval required) or after manager sign-off.
- *                       The underlying Shift's `staffId` has been
+ * - `pending_coverage`  Another staff member has clicked "pick up"
+ *                       and the system is waiting on shift-lead /
+ *                       manager approval. v1 always routes pickups
+ *                       through this state; `Shift.staffId` stays
+ *                       with the original dropper until approval.
+ * - `covered`           Historical status for pickups that bypassed
+ *                       approval (legacy / scripted paths). The
+ *                       underlying `Shift.staffId` has been
  *                       reassigned by `ExchangeShiftService.pickup`.
- * - `manager_approved`  Terminal historical status used when the
- *                       coverage flow involved manager approval. Kept
- *                       distinct from `covered` so the audit trail can
- *                       distinguish the two paths.
- * - `cancelled`         The dropper rescinded the drop before it was
- *                       picked up. Terminal.
+ *                       Still accepted by the schema so existing
+ *                       rows render, but the mobile pickup route
+ *                       does not emit this status anymore.
+ * - `manager_approved`  Terminal status emitted by
+ *                       `ExchangeShiftService.approve`. Kept
+ *                       distinct from `covered` so the audit trail
+ *                       can distinguish the two paths. The
+ *                       underlying Shift has been reassigned to the
+ *                       picker at this point.
+ * - `denied`            Terminal status emitted by
+ *                       `ExchangeShiftService.deny`. The underlying
+ *                       Shift stays with the original dropper; the
+ *                       picker is cleared. Manager notes (optional)
+ *                       are surfaced to both sides.
+ * - `cancelled`         The dropper (or a manager) rescinded the
+ *                       drop while it was still `available` or
+ *                       `pending_coverage`. Terminal. If there was
+ *                       a picker, their pickup effectively
+ *                       disappears.
  */
 export type ExchangeShiftStatus =
   | "available"

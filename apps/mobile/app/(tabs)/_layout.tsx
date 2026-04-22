@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useExchangeBadge } from "@/features/exchange/use-exchange-badge";
 
 /**
  * Expo Router ships a bottom-tab navigator out of the box, but it has
@@ -107,6 +108,11 @@ function CustomTabBar({
   palette,
   bottomInset,
 }: CustomTabBarProps) {
+  // Unseen-activity indicator for the Exchange tab. The hook runs
+  // regardless of which tab is focused so the badge updates as
+  // background react-query refetches land.
+  const { count: exchangeUnseen } = useExchangeBadge();
+
   return (
     <View
       style={[
@@ -145,6 +151,8 @@ function CustomTabBar({
             ? descriptor.options.title
             : tab.title;
 
+        const badgeCount = route.name === "exchange" ? exchangeUnseen : 0;
+
         return (
           <Pressable
             key={route.key}
@@ -154,7 +162,16 @@ function CustomTabBar({
             style={styles.tab}
             android_ripple={{ color: palette.icon, borderless: true }}
           >
-            <IconSymbol size={24} name={tab.icon} color={color} />
+            <View style={styles.iconWrap}>
+              <IconSymbol size={24} name={tab.icon} color={color} />
+              {badgeCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>
+                    {badgeCount > 9 ? "9+" : String(badgeCount)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={[styles.label, { color }]}>{label}</Text>
           </Pressable>
         );
@@ -175,6 +192,27 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 4,
     gap: 2,
+  },
+  iconWrap: {
+    position: "relative",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -10,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ef4444",
+  },
+  badgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+    lineHeight: 12,
   },
   label: {
     fontSize: 11,

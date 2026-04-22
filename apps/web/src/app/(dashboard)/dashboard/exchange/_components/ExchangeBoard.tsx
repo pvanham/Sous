@@ -118,8 +118,21 @@ export function ExchangeBoard({ initialRows }: ExchangeBoardProps) {
   });
 
   const filteredRows = useMemo(() => {
-    if (statusFilter === "all") return rows ?? [];
-    return (rows ?? []).filter((r) => r.status === statusFilter);
+    const base =
+      statusFilter === "all"
+        ? (rows ?? [])
+        : (rows ?? []).filter((r) => r.status === statusFilter);
+
+    // Pending is the action-required bucket — sort by shift start
+    // ascending so the soonest shift bubbles to the top. All other
+    // tabs keep the server's "most recent activity first" ordering.
+    if (statusFilter === "pending_coverage") {
+      return [...base].sort(
+        (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
+      );
+    }
+
+    return base;
   }, [rows, statusFilter]);
 
   const counts = useMemo(() => {
@@ -163,7 +176,9 @@ export function ExchangeBoard({ initialRows }: ExchangeBoardProps) {
           <p className="mt-2 text-sm text-muted-foreground">
             {statusFilter === "all"
               ? "Nobody has dropped a shift onto the exchange board yet."
-              : `No exchanges in the "${STATUS_LABELS[statusFilter as ExchangeShiftStatus] ?? statusFilter}" bucket.`}
+              : statusFilter === "pending_coverage"
+                ? "No pickups awaiting approval — staff pickups land here once submitted."
+                : `No exchanges in the "${STATUS_LABELS[statusFilter as ExchangeShiftStatus] ?? statusFilter}" bucket.`}
           </p>
         </div>
       ) : (
@@ -219,13 +234,19 @@ export function ExchangeBoard({ initialRows }: ExchangeBoardProps) {
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
-                      {row.status === "available" && (
+                      {(row.status === "available" ||
+                        row.status === "pending_coverage") && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => cancelMutation.mutate(row.id)}
                           disabled={cancelMutation.isPending}
                           className="text-destructive hover:text-destructive"
+                          title={
+                            row.status === "available"
+                              ? "Cancel this drop"
+                              : "Cancel this drop (picker loses the pickup)"
+                          }
                         >
                           {cancelMutation.isPending && (
                             <Loader2 className="mr-1 h-3 w-3 animate-spin" />
