@@ -1,4 +1,10 @@
-import { useState, useCallback, useMemo, type ReactElement } from "react";
+import {
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  type ReactElement,
+} from "react";
 import {
   View,
   Pressable,
@@ -13,18 +19,23 @@ import { isAxiosError } from "axios";
 import type { ShiftDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
+import { Button } from "@/components/ui/button";
 import { AvailableShiftList } from "../components/available-shift-list";
 import { ProposeExchangeModal } from "../components/propose-exchange-modal";
 import {
+  cancelOwnDrop,
   dropShift,
   fetchAvailableShifts,
   fetchMyDroppedShifts,
+  fetchMyPickups,
   pickUpShift,
+  withdrawPickup,
 } from "../api";
+import { useExchangeLastSeen } from "../last-seen-store";
 import { fetchWeekShifts } from "@/features/schedule/api";
 import type { ExchangeShift, ExchangeShiftStatus } from "@/types";
 
-type SegmentTab = "available" | "mine";
+type SegmentTab = "available" | "mine" | "pickups";
 
 const STATUS_LABELS: Record<ExchangeShiftStatus, string> = {
   available: "Available",
@@ -63,9 +74,18 @@ const OPEN_DROP_STATUSES: ExchangeShiftStatus[] = [
   "pending_coverage",
 ];
 
+// Terminal statuses that represent a manager decision on a row. Used
+// to surface an "a manager responded since your last visit" banner
+// the next time the user opens the tab.
+const DECISION_STATUSES: ExchangeShiftStatus[] = [
+  "manager_approved",
+  "denied",
+  "cancelled",
+];
+
 export function ExchangeScreen() {
   const [activeTab, setActiveTab] = useState<SegmentTab>("available");
-  const [pickingUp, setPickingUp] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [proposeOpen, setProposeOpen] = useState(false);
   const queryClient = useQueryClient();
   // Scope every query key by Clerk `userId` so cross-user cache bleed
@@ -73,6 +93,7 @@ export function ExchangeScreen() {
   // `queryClient.clear()`. Prefix-based invalidations below still
   // work because `userId` is a later segment.
   const { userId } = useAuth();
+  const { lastSeenAt, markSeen, hasHydrated } = useExchangeLastSeen();
 
   const availableQuery = useQuery({
     queryKey: ["exchange", userId, "available"],
@@ -85,6 +106,40 @@ export function ExchangeScreen() {
     queryFn: fetchMyDroppedShifts,
     enabled: Boolean(userId),
   });
+
+  const myPickupsQuery = useQuery({
+    queryKey: ["exchange", userId, "pickups"],
+    queryFn: fetchMyPickups,
+    enabled: Boolean(userId),
+  });
+
+  // Snapshot the banner data once per visit (using a ref-like state
+  // so `markSeen()` below doesn't immediately erase the banner).
+  // `bannerSeenAt` latches to the mount-time `lastSeenAt` and only
+  // updates on unmount so the banner stays visible for the whole
+  // visit rather than disappearing the instant we record the visit.
+  const [bannerBaseline, setBannerBaseline] = useState<number | null>(null);
+  useEffect(() => {
+    if (!hasHydrated) return;
+    setBannerBaseline(lastSeenAt);
+    markSeen();
+    // Intentionally run once on mount after hydration — subsequent
+    // query refetches should not rebaseline the banner mid-visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasHydrated]);
+
+  const freshDecisions = useMemo<ExchangeShift[]>(() => {
+    if (!hasHydrated) return [];
+    const rows = [
+      ...(myDroppedQuery.data ?? []),
+      ...(myPickupsQuery.data ?? []),
+    ];
+    return rows.filter((r) => {
+      if (!DECISION_STATUSES.includes(r.status)) return false;
+      if (bannerBaseline === null) return false;
+      return new Date(r.updatedAt).getTime() > bannerBaseline;
+    });
+  }, [hasHydrated, bannerBaseline, myDroppedQuery.data, myPickupsQuery.data]);
 
   const { currentWeekStart, nextWeekStart, currentWeekIso, nextWeekIso } =
     useMemo(() => {
@@ -131,18 +186,73 @@ export function ExchangeScreen() {
       );
   }, [currentWeekQuery.data, nextWeekQuery.data, myDroppedQuery.data]);
 
+  const invalidateExchangeAndSchedule = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["exchange"] });
+    queryClient.invalidateQueries({ queryKey: ["schedule"] });
+  }, [queryClient]);
+
+  const reportMutationError = useCallback((error: unknown) => {
+    const message =
+      isAxiosError(error) && typeof error.response?.data?.error === "string"
+        ? error.response.data.error
+        : error instanceof Error
+          ? error.message
+          : "Something went wrong. Please try again.";
+    Alert.alert("Exchange", message);
+  }, []);
+
   const pickUpMutation = useMutation({
     mutationFn: pickUpShift,
-    onMutate: (shiftId) => setPickingUp(shiftId),
+    onMutate: (shiftId) => setBusyId(shiftId),
+    onSuccess: () => {
+      Alert.alert(
+        "Pickup submitted",
+        "Waiting on a manager to approve. The shift will appear on your schedule once it's official.",
+      );
+      // Move the user over to the pickups tab so they can see the
+      // row they just claimed — without this, tapping Pick Up looks
+      // like the row silently vanished.
+      setActiveTab("pickups");
+    },
+    onError: reportMutationError,
+    // Pickup mutates BOTH the exchange board (the row leaves
+    // `available` and joins someone's pickups list) AND potentially
+    // the caller's weekly schedule (on eventual approval).
+    // Invalidate both query trees so the schedule tab re-fetches
+    // next time it mounts and any open exchange queries refresh now.
     onSettled: () => {
-      setPickingUp(null);
-      // Pickup mutates BOTH the exchange board (the row leaves
-      // `available` and joins someone's "covered" history) AND the
-      // caller's weekly schedule (a new shift was added). Invalidate
-      // both query trees so the schedule tab re-fetches next time
-      // it mounts and any open exchange queries refresh now.
-      queryClient.invalidateQueries({ queryKey: ["exchange"] });
-      queryClient.invalidateQueries({ queryKey: ["schedule"] });
+      setBusyId(null);
+      invalidateExchangeAndSchedule();
+    },
+  });
+
+  const withdrawMutation = useMutation({
+    mutationFn: withdrawPickup,
+    onMutate: (shiftId) => setBusyId(shiftId),
+    onSuccess: () =>
+      Alert.alert(
+        "Pickup withdrawn",
+        "The shift is back on the exchange board.",
+      ),
+    onError: reportMutationError,
+    onSettled: () => {
+      setBusyId(null);
+      invalidateExchangeAndSchedule();
+    },
+  });
+
+  const cancelDropMutation = useMutation({
+    mutationFn: cancelOwnDrop,
+    onMutate: (shiftId) => setBusyId(shiftId),
+    onSuccess: () =>
+      Alert.alert(
+        "Drop cancelled",
+        "Your shift is no longer on the exchange board.",
+      ),
+    onError: reportMutationError,
+    onSettled: () => {
+      setBusyId(null);
+      invalidateExchangeAndSchedule();
     },
   });
 
@@ -151,23 +261,48 @@ export function ExchangeScreen() {
       dropShift(shiftId, { reason }),
     onSuccess: () => {
       setProposeOpen(false);
-      queryClient.invalidateQueries({ queryKey: ["exchange"] });
-      queryClient.invalidateQueries({ queryKey: ["schedule"] });
+      invalidateExchangeAndSchedule();
     },
-    onError: (error: unknown) => {
-      const message =
-        isAxiosError(error) && typeof error.response?.data?.error === "string"
-          ? error.response.data.error
-          : error instanceof Error
-            ? error.message
-            : "Could not propose shift exchange. Please try again.";
-      Alert.alert("Exchange", message);
-    },
+    onError: reportMutationError,
   });
 
   const handlePickUp = useCallback(
     (shiftId: string) => pickUpMutation.mutate(shiftId),
     [pickUpMutation],
+  );
+
+  const handleWithdraw = useCallback(
+    (exchangeId: string) =>
+      Alert.alert(
+        "Withdraw pickup?",
+        "The shift will go back on the exchange board and someone else can claim it.",
+        [
+          { text: "Keep pending", style: "cancel" },
+          {
+            text: "Withdraw",
+            style: "destructive",
+            onPress: () => withdrawMutation.mutate(exchangeId),
+          },
+        ],
+      ),
+    [withdrawMutation],
+  );
+
+  const handleCancelDrop = useCallback(
+    (exchangeId: string) =>
+      Alert.alert(
+        "Cancel drop?",
+        "The shift stays on your schedule and will no longer appear on the exchange board.",
+        [
+          { text: "Keep on board", style: "cancel" },
+          {
+            text: "Cancel drop",
+            style: "destructive",
+            onPress: () => cancelDropMutation.mutate(exchangeId),
+          },
+        ],
+      ),
+    [cancelDropMutation],
   );
 
   const handleProposeSubmit = useCallback(
@@ -176,17 +311,23 @@ export function ExchangeScreen() {
     [dropMutation],
   );
 
-  // Pull-to-refresh fires whichever list is visible plus the matching
-  // "my dropped" query so the FAB's propose modal sees the latest
-  // droppable shifts without needing a second trip.
+  // Pull-to-refresh fires all three list queries so the FAB's propose
+  // modal and the unseen-banner computation both see the latest data
+  // without needing a second trip.
   const handleRefresh = useCallback(() => {
-    void Promise.all([availableQuery.refetch(), myDroppedQuery.refetch()]);
-  }, [availableQuery, myDroppedQuery]);
+    void Promise.all([
+      availableQuery.refetch(),
+      myDroppedQuery.refetch(),
+      myPickupsQuery.refetch(),
+    ]);
+  }, [availableQuery, myDroppedQuery, myPickupsQuery]);
 
   const refreshing =
     activeTab === "available"
       ? availableQuery.isFetching
-      : myDroppedQuery.isFetching;
+      : activeTab === "mine"
+        ? myDroppedQuery.isFetching
+        : myPickupsQuery.isFetching;
 
   const upcomingLoading =
     currentWeekQuery.isLoading ||
@@ -199,16 +340,29 @@ export function ExchangeScreen() {
         Shift Exchange
       </StyledText>
 
+      {freshDecisions.length > 0 ? (
+        <View className="mb-3 bg-primary/10 border border-primary/20 rounded-md px-3 py-2">
+          <StyledText variant="caption" className="text-primary">
+            {decisionBannerCopy(freshDecisions)}
+          </StyledText>
+        </View>
+      ) : null}
+
       <View className="flex-row bg-card border border-border rounded-md p-1 mb-4">
         <SegmentButton
-          label="Available Shifts"
+          label="Available"
           active={activeTab === "available"}
           onPress={() => setActiveTab("available")}
         />
         <SegmentButton
-          label="My Dropped Shifts"
+          label="My Drops"
           active={activeTab === "mine"}
           onPress={() => setActiveTab("mine")}
+        />
+        <SegmentButton
+          label="My Pickups"
+          active={activeTab === "pickups"}
+          onPress={() => setActiveTab("pickups")}
         />
       </View>
 
@@ -216,7 +370,20 @@ export function ExchangeScreen() {
         <AvailableShiftList
           shifts={availableQuery.data ?? []}
           onPickUp={handlePickUp}
-          pickingUp={pickingUp}
+          pickingUp={busyId}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+            />
+          }
+        />
+      ) : activeTab === "mine" ? (
+        <MyDroppedList
+          shifts={myDroppedQuery.data ?? []}
+          loading={myDroppedQuery.isLoading}
+          busyId={busyId}
+          onCancel={handleCancelDrop}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -225,9 +392,11 @@ export function ExchangeScreen() {
           }
         />
       ) : (
-        <MyDroppedList
-          shifts={myDroppedQuery.data ?? []}
-          loading={myDroppedQuery.isLoading}
+        <MyPickupsList
+          shifts={myPickupsQuery.data ?? []}
+          loading={myPickupsQuery.isLoading}
+          busyId={busyId}
+          onWithdraw={handleWithdraw}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -290,10 +459,14 @@ function SegmentButton({
 function MyDroppedList({
   shifts,
   loading,
+  busyId,
+  onCancel,
   refreshControl,
 }: {
   shifts: ExchangeShift[];
   loading: boolean;
+  busyId: string | null;
+  onCancel: (exchangeId: string) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
 }) {
   if (loading) {
@@ -313,7 +486,13 @@ function MyDroppedList({
       showsVerticalScrollIndicator={false}
       contentContainerClassName="pb-4"
       refreshControl={refreshControl}
-      renderItem={({ item }) => <DroppedShiftCard shift={item} />}
+      renderItem={({ item }) => (
+        <DroppedShiftCard
+          shift={item}
+          onCancel={onCancel}
+          canceling={busyId === item.id}
+        />
+      )}
       ItemSeparatorComponent={() => <View className="h-3" />}
       ListEmptyComponent={
         <View className="py-12 items-center">
@@ -326,7 +505,64 @@ function MyDroppedList({
   );
 }
 
-function DroppedShiftCard({ shift }: { shift: ExchangeShift }) {
+function MyPickupsList({
+  shifts,
+  loading,
+  busyId,
+  onWithdraw,
+  refreshControl,
+}: {
+  shifts: ExchangeShift[];
+  loading: boolean;
+  busyId: string | null;
+  onWithdraw: (exchangeId: string) => void;
+  refreshControl?: ReactElement<RefreshControlProps>;
+}) {
+  if (loading) {
+    return (
+      <View className="py-12 items-center">
+        <StyledText variant="body" className="text-muted-foreground">
+          Loading...
+        </StyledText>
+      </View>
+    );
+  }
+
+  return (
+    <FlatList
+      data={shifts}
+      keyExtractor={(item) => item.id}
+      showsVerticalScrollIndicator={false}
+      contentContainerClassName="pb-4"
+      refreshControl={refreshControl}
+      renderItem={({ item }) => (
+        <PickupShiftCard
+          shift={item}
+          onWithdraw={onWithdraw}
+          withdrawing={busyId === item.id}
+        />
+      )}
+      ItemSeparatorComponent={() => <View className="h-3" />}
+      ListEmptyComponent={
+        <View className="py-12 items-center">
+          <StyledText variant="body" className="text-muted-foreground">
+            You haven&apos;t picked up any shifts.
+          </StyledText>
+        </View>
+      }
+    />
+  );
+}
+
+function DroppedShiftCard({
+  shift,
+  onCancel,
+  canceling,
+}: {
+  shift: ExchangeShift;
+  onCancel: (exchangeId: string) => void;
+  canceling: boolean;
+}) {
   const start = new Date(shift.start);
   const end = new Date(shift.end);
 
@@ -337,11 +573,13 @@ function DroppedShiftCard({ shift }: { shift: ExchangeShift }) {
   });
 
   const timeRange = `${formatTime(start)} – ${formatTime(end)}`;
+  const canCancel =
+    shift.status === "available" || shift.status === "pending_coverage";
 
   return (
     <View className="bg-card border border-border rounded-md p-4">
       <View className="flex-row justify-between items-start">
-        <View>
+        <View className="flex-1 pr-3">
           <StyledText variant="label">{dateLabel}</StyledText>
           <StyledText variant="caption" className="mt-0.5">
             {timeRange} · {shift.station}
@@ -358,8 +596,201 @@ function DroppedShiftCard({ shift }: { shift: ExchangeShift }) {
           </StyledText>
         </View>
       </View>
+
+      <DroppedShiftSubtext shift={shift} />
+
+      {canCancel ? (
+        <View className="mt-3 flex-row justify-end">
+          <Button
+            title="Cancel drop"
+            variant="destructive"
+            size="sm"
+            loading={canceling}
+            onPress={() => onCancel(shift.id)}
+          />
+        </View>
+      ) : null}
     </View>
   );
+}
+
+function DroppedShiftSubtext({ shift }: { shift: ExchangeShift }) {
+  const lines: string[] = [];
+
+  if (shift.pickedUpByName) {
+    lines.push(`Picked up by ${shift.pickedUpByName}`);
+  }
+
+  switch (shift.status) {
+    case "available":
+      lines.push("Waiting for someone to pick up.");
+      break;
+    case "pending_coverage":
+      lines.push("Awaiting manager approval.");
+      break;
+    case "manager_approved":
+    case "covered":
+      lines.push("Confirmed — your schedule has been updated.");
+      break;
+    case "denied":
+      if (shift.managerNotes) {
+        lines.push(`Manager note: ${shift.managerNotes}`);
+      } else {
+        lines.push("Manager denied this swap. The shift stays on your schedule.");
+      }
+      break;
+    case "cancelled":
+      lines.push("You cancelled this drop.");
+      break;
+  }
+
+  if (lines.length === 0) return null;
+
+  return (
+    <View className="mt-2 gap-0.5">
+      {lines.map((line, idx) => (
+        <StyledText
+          key={idx}
+          variant="caption"
+          className="text-muted-foreground"
+        >
+          {line}
+        </StyledText>
+      ))}
+    </View>
+  );
+}
+
+function PickupShiftCard({
+  shift,
+  onWithdraw,
+  withdrawing,
+}: {
+  shift: ExchangeShift;
+  onWithdraw: (exchangeId: string) => void;
+  withdrawing: boolean;
+}) {
+  const start = new Date(shift.start);
+  const end = new Date(shift.end);
+
+  const dateLabel = start.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+
+  const timeRange = `${formatTime(start)} – ${formatTime(end)}`;
+
+  return (
+    <View className="bg-card border border-border rounded-md p-4">
+      <View className="flex-row justify-between items-start">
+        <View className="flex-1 pr-3">
+          <StyledText variant="label">{dateLabel}</StyledText>
+          <StyledText variant="caption" className="mt-0.5">
+            {timeRange} · {shift.station}
+          </StyledText>
+        </View>
+        <View
+          className={`px-2.5 py-1 rounded-sm ${STATUS_BADGE_CLASSES[shift.status]}`}
+        >
+          <StyledText
+            variant="label"
+            className={`text-xs ${STATUS_TEXT_CLASSES[shift.status]}`}
+          >
+            {STATUS_LABELS[shift.status]}
+          </StyledText>
+        </View>
+      </View>
+
+      <StyledText
+        variant="caption"
+        className="text-muted-foreground mt-2"
+      >
+        Dropped by {shift.droppedByName}
+      </StyledText>
+
+      <PickupSubtext shift={shift} />
+
+      {shift.status === "pending_coverage" ? (
+        <View className="mt-3 flex-row justify-end">
+          <Button
+            title="Withdraw"
+            variant="destructive"
+            size="sm"
+            loading={withdrawing}
+            onPress={() => onWithdraw(shift.id)}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PickupSubtext({ shift }: { shift: ExchangeShift }) {
+  switch (shift.status) {
+    case "pending_coverage":
+      return (
+        <StyledText
+          variant="caption"
+          className="text-muted-foreground mt-0.5"
+        >
+          Awaiting manager approval.
+        </StyledText>
+      );
+    case "manager_approved":
+    case "covered":
+      return (
+        <StyledText
+          variant="caption"
+          className="text-muted-foreground mt-0.5"
+        >
+          Approved — the shift is now on your schedule.
+        </StyledText>
+      );
+    case "denied":
+      return (
+        <StyledText
+          variant="caption"
+          className="text-muted-foreground mt-0.5"
+        >
+          {shift.managerNotes
+            ? `Manager note: ${shift.managerNotes}`
+            : "Manager denied this swap."}
+        </StyledText>
+      );
+    case "cancelled":
+      return (
+        <StyledText
+          variant="caption"
+          className="text-muted-foreground mt-0.5"
+        >
+          The dropper cancelled this shift.
+        </StyledText>
+      );
+    default:
+      return null;
+  }
+}
+
+/**
+ * Build a short banner message summarising manager decisions the
+ * user has not yet seen. We collapse counts so the banner stays one
+ * line regardless of how many rows transitioned.
+ */
+function decisionBannerCopy(rows: ExchangeShift[]): string {
+  const approvals = rows.filter(
+    (r) => r.status === "manager_approved" || r.status === "covered",
+  ).length;
+  const denials = rows.filter((r) => r.status === "denied").length;
+  const cancellations = rows.filter((r) => r.status === "cancelled").length;
+
+  const parts: string[] = [];
+  if (approvals > 0) parts.push(`${approvals} approved`);
+  if (denials > 0) parts.push(`${denials} denied`);
+  if (cancellations > 0) parts.push(`${cancellations} cancelled`);
+
+  if (parts.length === 0) return "New activity on your exchanges.";
+  return `Since you last checked: ${parts.join(", ")}.`;
 }
 
 function formatTime(date: Date): string {

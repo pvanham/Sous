@@ -128,6 +128,32 @@ export const ExchangeShiftService = {
   },
 
   /**
+   * List every ExchangeShift the given staff member has picked up,
+   * in any status. Used by the mobile "My Pickups" view so the
+   * picker can track pending / approved / denied submissions after
+   * tapping "Pick Up".
+   */
+  async listByPicker(
+    orgId: string,
+    locationId: string,
+    pickerStaffId: string,
+    options: { limit?: number } = {}
+  ): Promise<ExchangeShiftDTO[]> {
+    const { limit = 50 } = options;
+
+    const docs = await ExchangeShift.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      pickedUpByStaffId: new Types.ObjectId(pickerStaffId),
+    })
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return docs.map(toExchangeShiftDTO);
+  },
+
+  /**
    * Drop a shift onto the exchange board.
    *
    * Validates that:
@@ -670,10 +696,16 @@ export const ExchangeShiftService = {
   },
 
   /**
-   * Dropper rescinds a still-`available` drop. The exchange row is
-   * not deleted (we keep an audit trail) but transitions to
-   * `cancelled`, which frees the underlying Shift to be dropped
-   * again later (the partial unique index excludes this status).
+   * Dropper rescinds a still-open drop (`available` or
+   * `pending_coverage`). The exchange row is not deleted (we keep an
+   * audit trail) but transitions to `cancelled`, which frees the
+   * underlying Shift to be dropped again later (the partial unique
+   * index excludes this status).
+   *
+   * Because `Shift.staffId` stays with the dropper during both
+   * `available` and `pending_coverage`, cancelling from either is a
+   * safe no-op on the schedule side — we just clear the picker's
+   * interest if one existed.
    */
   async cancel(input: {
     orgId: string;
@@ -687,12 +719,12 @@ export const ExchangeShiftService = {
       _id: exchangeId,
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
-      status: "available",
+      status: { $in: OPEN_STATUSES },
     }).lean();
 
     if (!existing) {
       throw new Error(
-        "Only available drops can be cancelled"
+        "Only available or pending drops can be cancelled"
       );
     }
 
@@ -706,9 +738,15 @@ export const ExchangeShiftService = {
       {
         _id: existing._id,
         updatedAt: existing.updatedAt,
-        status: "available",
+        status: { $in: OPEN_STATUSES },
       },
-      { $set: { status: "cancelled" } },
+      {
+        $set: {
+          status: "cancelled",
+          pickedUpByStaffId: null,
+          pickedUpByName: null,
+        },
+      },
       { new: true }
     ).lean();
 
@@ -722,10 +760,11 @@ export const ExchangeShiftService = {
   },
 
   /**
-   * Manager-side cancel of a still-`available` drop. Identical to
-   * `cancel` but skips the ownership check; used by the web manager
-   * dashboard so a manager can clean up an in-flight drop without
-   * impersonating the dropping staff member.
+   * Manager-side cancel of a still-open drop. Identical to `cancel`
+   * but skips the ownership check; used by the web manager dashboard
+   * so a manager can clean up an in-flight drop (either `available`
+   * or `pending_coverage`) without impersonating the dropping staff
+   * member.
    */
   async cancelAsManager(input: {
     orgId: string;
@@ -738,20 +777,93 @@ export const ExchangeShiftService = {
       _id: exchangeId,
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
-      status: "available",
+      status: { $in: OPEN_STATUSES },
     }).lean();
 
     if (!existing) {
-      throw new Error("Only available drops can be cancelled");
+      throw new Error(
+        "Only available or pending drops can be cancelled"
+      );
     }
 
     const updated = await ExchangeShift.findOneAndUpdate(
       {
         _id: existing._id,
         updatedAt: existing.updatedAt,
-        status: "available",
+        status: { $in: OPEN_STATUSES },
       },
-      { $set: { status: "cancelled" } },
+      {
+        $set: {
+          status: "cancelled",
+          pickedUpByStaffId: null,
+          pickedUpByName: null,
+        },
+      },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      throw new Error(
+        "Exchange shift was modified by someone else; please refresh"
+      );
+    }
+
+    return toExchangeShiftDTO(updated);
+  },
+
+  /**
+   * Picker rescinds a `pending_coverage` pickup so the drop returns
+   * to the `available` pool. The underlying `Shift.staffId` was
+   * never reassigned (the approval path leaves that to `approve()`),
+   * so withdrawal is a pure exchange-row transition.
+   *
+   * Auth: caller must be the current `pickedUpByStaffId`. The action
+   * / route layer is responsible for resolving that from the Clerk
+   * JWT before calling in.
+   */
+  async withdrawPickup(input: {
+    orgId: string;
+    locationId: string;
+    exchangeId: string;
+    pickerStaffId: string;
+  }): Promise<ExchangeShiftDTO> {
+    const { orgId, locationId, exchangeId, pickerStaffId } = input;
+
+    const existing = await ExchangeShift.findOne({
+      _id: exchangeId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "pending_coverage",
+    }).lean();
+
+    if (!existing) {
+      throw new Error(
+        "This pickup is no longer pending — a manager may have already decided"
+      );
+    }
+
+    if (
+      !existing.pickedUpByStaffId ||
+      String(existing.pickedUpByStaffId) !== pickerStaffId
+    ) {
+      throw new Error(
+        "You can only withdraw your own pending pickups"
+      );
+    }
+
+    const updated = await ExchangeShift.findOneAndUpdate(
+      {
+        _id: existing._id,
+        updatedAt: existing.updatedAt,
+        status: "pending_coverage",
+      },
+      {
+        $set: {
+          status: "available",
+          pickedUpByStaffId: null,
+          pickedUpByName: null,
+        },
+      },
       { new: true }
     ).lean();
 

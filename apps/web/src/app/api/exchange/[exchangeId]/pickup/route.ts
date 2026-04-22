@@ -13,11 +13,12 @@ import { StaffService } from "@/server/services/staff.service";
 // Backs `apps/mobile/features/exchange/api.ts → pickUpShift()`.
 //
 // Purpose
-//   Let an eligible staff member claim a dropped shift. Atomically
-//   transfers ownership of the underlying Shift and transitions the
-//   ExchangeShift's status. The route is a thin adapter over
-//   `ExchangeShiftService.pickup`, which already implements the OCC
-//   update against `ExchangeShift.updatedAt`.
+//   Let an eligible staff member claim a dropped shift. Pickups are
+//   always manager-approval-gated: the ExchangeShift transitions to
+//   `pending_coverage` and the underlying `Shift.staffId` stays with
+//   the original dropper until a manager approves on the web. Both
+//   staff schedules remain unchanged until that approval lands via
+//   `ExchangeShiftService.approve`.
 //
 // Auth & tenancy
 //   - `auth()` → `getLocationContext(userId)`.
@@ -41,15 +42,17 @@ import { StaffService } from "@/server/services/staff.service";
 //     `CandidateService` and is intentionally out of scope for v1.
 //
 // `requireApproval`
-//   The service supports a two-step `pending_coverage → manager_approved`
-//   flow, but `KitchenConfig` does not yet carry an
-//   "exchange-requires-approval" toggle. v1 picks up directly with
-//   `requireApproval: false` (status moves straight to `covered` and
-//   the underlying Shift is reassigned). When the config flag lands,
-//   read it here and pass through to the service.
+//   v1 always requires manager approval. The service supports a
+//   direct `available → covered` path (`requireApproval: false`) but
+//   this route never uses it — picker submissions always land in
+//   `pending_coverage` and wait for `ExchangeShiftService.approve` or
+//   `deny`.
 //
 // Response
-//   - 200 → updated `ExchangeShiftDTO`.
+//   - 200 → updated `ExchangeShiftDTO` (status = `pending_coverage`).
+//           `pendingApproval: true` is attached so the mobile client
+//           can branch on a single field rather than inspecting
+//           `status`.
 //   - 400 → `{ error }` for invalid `exchangeId` or when the caller
 //           has no `Staff` row at the active location.
 //   - 401 → `{ error }` when the JWT is missing.
@@ -159,10 +162,12 @@ export async function POST(
       locationId: locationCtx.locationId,
       exchangeId,
       pickerStaffId: callerStaff.id,
-      requireApproval: false,
+      // v1 always routes picks through manager approval so both
+      // staffers' schedules stay intact until a manager signs off.
+      requireApproval: true,
     });
 
-    return NextResponse.json(picked);
+    return NextResponse.json({ ...picked, pendingApproval: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[api/exchange/:id/pickup] failed:", message);
