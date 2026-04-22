@@ -37,6 +37,30 @@ export const skillSchema = z.object({
     .max(5, "Proficiency cannot exceed 5"),
 });
 
+// Physical address schema. All fields are trimmed on the server when
+// persisted; zod lets empty strings through at this layer so the
+// client-side form can distinguish "not entered" from "intentionally
+// cleared" before submission.
+export const addressSchema = z.object({
+  line1: z
+    .string()
+    .min(1, "Street address is required")
+    .max(200, "Street address is too long"),
+  line2: z.string().max(200, "Address line 2 is too long").optional(),
+  city: z
+    .string()
+    .min(1, "City is required")
+    .max(100, "City is too long"),
+  state: z
+    .string()
+    .min(2, "State must be at least 2 characters")
+    .max(3, "State must be at most 3 characters"),
+  postalCode: z
+    .string()
+    .min(3, "Postal code is required")
+    .max(10, "Postal code is too long"),
+});
+
 // Base staff object schema (without refinements)
 // This is used for .partial() and .omit() which don't work on refined schemas
 const staffBaseSchema = z.object({
@@ -72,6 +96,9 @@ const staffBaseSchema = z.object({
     .min(0, "Hourly rate cannot be negative")
     .optional()
     .default(0),
+  // Optional mailing address. Nullable so callers can explicitly
+  // clear an existing address through the same update path.
+  address: addressSchema.nullable().optional(),
 });
 
 // Extended staff schema with optional sendInvite flag for the creation form
@@ -143,6 +170,7 @@ export type StaffUpdateInput = z.infer<typeof staffUpdateSchema>;
 export type CsvRowInput = z.infer<typeof csvRowSchema>;
 export type ImportStaffInput = z.infer<typeof importStaffSchema>;
 export type SkillInput = z.infer<typeof skillSchema>;
+export type AddressInput = z.infer<typeof addressSchema>;
 
 // Explicit form values type for react-hook-form compatibility
 // This ensures consistent types between the form and zodResolver

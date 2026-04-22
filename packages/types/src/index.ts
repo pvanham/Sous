@@ -14,6 +14,21 @@ export interface StaffSkill {
   proficiency: 1 | 2 | 3 | 4 | 5;
 }
 
+/**
+ * Physical mailing address attached to a staff record. Populated by
+ * the staff member from the mobile profile screen; managers do not
+ * currently see or edit this on the web dashboard. All fields are
+ * required when the address is present — to "remove" an address,
+ * callers send `address: null` (or `undefined`) to the patch route.
+ */
+export interface StaffAddress {
+  line1: string;
+  line2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+}
+
 export type InvitationStatus = "not_invited" | "pending" | "accepted";
 
 export interface StaffDTO {
@@ -31,6 +46,7 @@ export interface StaffDTO {
   preferredStations: string[];
   certifications: string[];
   hourlyRate: number;
+  address?: StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: InvitationStatus;
   createdAt: Date;

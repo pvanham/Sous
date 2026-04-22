@@ -1,93 +1,43 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   View,
   ScrollView,
-  TextInput,
   Pressable,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useUser, useClerk, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import type { StaffAddress, StaffDTO } from "@sous/types";
 
-import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useSignOut } from "@/features/auth/use-sign-out";
+import { EditFieldSheet } from "../components/edit-field-sheet";
+import { AddressSheet } from "../components/address-sheet";
+import { SkillsSection } from "../components/skills-section";
+import { useMyStaff, useUpdateMyStaff } from "../hooks";
 
-const PLACEHOLDER_COLOR = "#a8a29e";
 const ICON_COLOR = "#78716c";
+const CHEVRON_COLOR = "#a8a29e";
 
 /**
- * Shape stored under `user.unsafeMetadata.staffProfile`.
+ * Profile tab.
  *
- * Clerk only has first-class support for names, emails, phone numbers,
- * and a handful of other identity primitives. Anything else — including
- * a "contact phone" that isn't part of the auth flow, and a postal
- * address — lives in `unsafeMetadata`, which the Clerk JS SDK lets the
- * user edit directly without a server action.
+ * The screen is a **read-only list**. Tapping any editable row opens
+ * a `BottomSheet` with a single input (or the five address inputs)
+ * and an **Update** button. There is no screen-level "edit mode" —
+ * edits are atomic, per-field, and commit immediately on Update.
+ *
+ * Data sources
+ *   - Clerk `user`: first name, last name, email, avatar initials.
+ *   - `GET /api/me/staff` via `useMyStaff`: phone, address, skills.
+ *     404 (manager / owner with no staff row) is surfaced as
+ *     `data === null`; the profile then hides the phone / address /
+ *     skills sections and shows only name + email.
  */
-type StaffProfileMetadata = {
-  phone?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-};
-
-interface FormState {
-  firstName: string;
-  lastName: string;
-  phone: string;
-  addressLine1: string;
-  addressLine2: string;
-  city: string;
-  state: string;
-  postalCode: string;
-}
-
-function readStaffProfile(
-  metadata: Record<string, unknown> | undefined,
-): StaffProfileMetadata {
-  if (!metadata || typeof metadata !== "object") return {};
-  const raw = metadata.staffProfile;
-  if (!raw || typeof raw !== "object") return {};
-  const obj = raw as Record<string, unknown>;
-  const pick = (key: keyof StaffProfileMetadata): string | undefined => {
-    const value = obj[key];
-    return typeof value === "string" ? value : undefined;
-  };
-  return {
-    phone: pick("phone"),
-    addressLine1: pick("addressLine1"),
-    addressLine2: pick("addressLine2"),
-    city: pick("city"),
-    state: pick("state"),
-    postalCode: pick("postalCode"),
-  };
-}
-
-function buildInitialState(user: ReturnType<typeof useUser>["user"]): FormState {
-  const staffProfile = readStaffProfile(
-    user?.unsafeMetadata as Record<string, unknown> | undefined,
-  );
-  return {
-    firstName: user?.firstName ?? "",
-    lastName: user?.lastName ?? "",
-    phone: staffProfile.phone ?? "",
-    addressLine1: staffProfile.addressLine1 ?? "",
-    addressLine2: staffProfile.addressLine2 ?? "",
-    city: staffProfile.city ?? "",
-    state: staffProfile.state ?? "",
-    postalCode: staffProfile.postalCode ?? "",
-  };
-}
-
 export function ProfileScreen() {
   const { user, isLoaded } = useUser();
   const { signOut: clerkSignOut } = useClerk();
@@ -95,81 +45,19 @@ export function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const signOut = useSignOut();
 
-  const initialState = useMemo(() => buildInitialState(user), [user]);
+  const myStaffQuery = useMyStaff();
+  const updateMyStaff = useUpdateMyStaff();
 
-  const [form, setForm] = useState<FormState>(initialState);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  type FieldKey = "firstName" | "lastName" | "phone" | "address";
+  const [openField, setOpenField] = useState<FieldKey | null>(null);
 
-  useEffect(() => {
-    setForm(initialState);
-  }, [initialState]);
-
-  const dirty = useMemo(() => {
-    return (Object.keys(form) as (keyof FormState)[]).some(
-      (key) => form[key].trim() !== initialState[key].trim(),
-    );
-  }, [form, initialState]);
-
-  const setField = useCallback(
-    (key: keyof FormState) => (value: string) => {
-      setForm((prev) => ({ ...prev, [key]: value }));
-    },
-    [],
-  );
-
-  const handleSave = useCallback(async () => {
-    if (!user || saving || !dirty) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const trimmed: FormState = {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
-        phone: form.phone.trim(),
-        addressLine1: form.addressLine1.trim(),
-        addressLine2: form.addressLine2.trim(),
-        city: form.city.trim(),
-        state: form.state.trim(),
-        postalCode: form.postalCode.trim(),
-      };
-
-      const existingMetadata =
-        (user.unsafeMetadata as Record<string, unknown> | undefined) ?? {};
-
-      await user.update({
-        firstName: trimmed.firstName,
-        lastName: trimmed.lastName,
-        unsafeMetadata: {
-          ...existingMetadata,
-          staffProfile: {
-            phone: trimmed.phone,
-            addressLine1: trimmed.addressLine1,
-            addressLine2: trimmed.addressLine2,
-            city: trimmed.city,
-            state: trimmed.state,
-            postalCode: trimmed.postalCode,
-          },
-        },
-      });
-
-      // Re-read Clerk's resource so `user.*` reflects the persisted
-      // values and the form's "dirty" state resets cleanly.
-      await user.reload();
-      Alert.alert("Profile", "Your profile has been updated.");
-    } catch (err) {
-      const message = isClerkAPIResponseError(err)
-        ? (err.errors?.[0]?.longMessage ??
-          err.errors?.[0]?.message ??
-          "Could not update your profile.")
-        : err instanceof Error
-          ? err.message
-          : "Could not update your profile.";
-      setError(message);
-    } finally {
-      setSaving(false);
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
     }
-  }, [user, saving, dirty, form]);
+  }, [router]);
 
   const handleSignOut = useCallback(() => {
     Alert.alert("Sign out", "Are you sure you want to sign out?", [
@@ -184,34 +72,57 @@ export function ProfileScreen() {
     ]);
   }, [signOut]);
 
-  const handleBack = useCallback(() => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/(tabs)");
-    }
-  }, [router]);
-
   // Hide the Clerk sign-out loop guard. If Clerk is still booting
-  // (`isLoaded === false`) we just spin — the AuthGate would have
+  // (`isLoaded === false`) we just spin — AuthGate would have
   // redirected an unauthenticated user to sign-in before this page
   // ever mounted.
   if (!isLoaded || !user) {
-    // Guard against race on sign-out.
     void clerkSignOut;
     return (
-      <ScreenWrapper>
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" />
-        </View>
-      </ScreenWrapper>
+      <View
+        className="flex-1 bg-background items-center justify-center"
+        style={{ paddingTop: insets.top }}
+      >
+        <ActivityIndicator size="large" />
+      </View>
     );
   }
 
+  const staff: StaffDTO | null = myStaffQuery.data ?? null;
+  const hasStaffRow = staff !== null;
   const primaryEmail =
     user.primaryEmailAddress?.emailAddress ??
     user.emailAddresses[0]?.emailAddress ??
     "No email on file";
+
+  const firstName = user.firstName ?? "";
+  const lastName = user.lastName ?? "";
+  const phone = staff?.phone ?? "";
+  const address = staff?.address ?? null;
+
+  // ── Mutations wired through the sheets ──────────────────────
+
+  const updateClerkName = async (
+    field: "firstName" | "lastName",
+    value: string,
+  ) => {
+    try {
+      await user.update({ [field]: value });
+      await user.reload();
+    } catch (err) {
+      throw new Error(clerkErrorMessage(err));
+    }
+  };
+
+  const updatePhone = async (value: string) => {
+    await updateMyStaff.mutateAsync({ phone: value });
+  };
+
+  const updateAddress = async (value: StaffAddress | null) => {
+    await updateMyStaff.mutateAsync({ address: value });
+  };
+
+  // ── Render ──────────────────────────────────────────────────
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
@@ -226,150 +137,235 @@ export function ProfileScreen() {
           <MaterialIcons name="arrow-back" size={22} color={ICON_COLOR} />
         </Pressable>
         <StyledText variant="subtitle">Profile</StyledText>
-        {/* Spacer so the title stays centered relative to the back
-            button. Width must match the back button's hit area. */}
         <View className="w-10" />
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
-          contentContainerClassName="px-4 pt-6 pb-10"
-          keyboardShouldPersistTaps="handled"
-        >
-          <View className="items-center mb-6">
-            <View className="w-20 h-20 rounded-full bg-primary items-center justify-center">
-              <StyledText
-                variant="title"
-                className="text-primary-foreground text-2xl"
-              >
-                {(
-                  (user.firstName?.[0] ?? "") + (user.lastName?.[0] ?? "")
-                ).toUpperCase() || "?"}
-              </StyledText>
-            </View>
-            <StyledText variant="title" className="mt-3">
-              {[user.firstName, user.lastName].filter(Boolean).join(" ") ||
-                "Unnamed"}
-            </StyledText>
-            <StyledText variant="caption" className="mt-1">
-              {primaryEmail}
+      <ScrollView contentContainerClassName="px-4 pt-6 pb-10">
+        <View className="items-center mb-6">
+          <View className="w-20 h-20 rounded-full bg-primary items-center justify-center">
+            <StyledText
+              variant="title"
+              className="text-primary-foreground text-2xl"
+            >
+              {((firstName[0] ?? "") + (lastName[0] ?? "")).toUpperCase() ||
+                "?"}
             </StyledText>
           </View>
+          <StyledText variant="title" className="mt-3">
+            {[firstName, lastName].filter(Boolean).join(" ") || "Unnamed"}
+          </StyledText>
+          <StyledText variant="caption" className="mt-1">
+            {primaryEmail}
+          </StyledText>
+        </View>
 
-          <SectionHeader label="Personal" />
-          <Field
+        <SectionHeader label="Personal" />
+        <View className="bg-card border border-border rounded-md overflow-hidden mb-4">
+          <InfoRow
             label="First name"
-            value={form.firstName}
-            onChangeText={setField("firstName")}
-            autoCapitalize="words"
-            textContentType="givenName"
-            autoComplete="given-name"
-            placeholder="First name"
+            value={firstName}
+            onPress={() => setOpenField("firstName")}
           />
-          <Field
+          <InfoRow
             label="Last name"
-            value={form.lastName}
-            onChangeText={setField("lastName")}
-            autoCapitalize="words"
-            textContentType="familyName"
-            autoComplete="family-name"
-            placeholder="Last name"
+            value={lastName}
+            onPress={() => setOpenField("lastName")}
+            divider
           />
+        </View>
 
-          <SectionHeader label="Contact" />
-          <ReadonlyField label="Email" value={primaryEmail} />
-          <Field
-            label="Phone number"
-            value={form.phone}
-            onChangeText={setField("phone")}
-            keyboardType="phone-pad"
-            autoComplete="tel"
-            textContentType="telephoneNumber"
-            placeholder="(555) 123-4567"
-          />
-
-          <SectionHeader label="Address" />
-          <Field
-            label="Street address"
-            value={form.addressLine1}
-            onChangeText={setField("addressLine1")}
-            autoCapitalize="words"
-            autoComplete="street-address"
-            textContentType="fullStreetAddress"
-            placeholder="123 Main St"
-          />
-          <Field
-            label="Apt / suite"
-            value={form.addressLine2}
-            onChangeText={setField("addressLine2")}
-            autoCapitalize="words"
-            placeholder="Optional"
-          />
-          <View className="flex-row gap-3">
-            <View className="flex-1">
-              <Field
-                label="City"
-                value={form.city}
-                onChangeText={setField("city")}
-                autoCapitalize="words"
-                autoComplete="postal-address-locality"
-                placeholder="City"
-              />
-            </View>
-            <View className="w-24">
-              <Field
-                label="State"
-                value={form.state}
-                onChangeText={setField("state")}
-                autoCapitalize="characters"
-                autoComplete="postal-address-region"
-                maxLength={3}
-                placeholder="NY"
-              />
-            </View>
-          </View>
-          <Field
-            label="ZIP / postal code"
-            value={form.postalCode}
-            onChangeText={setField("postalCode")}
-            keyboardType="number-pad"
-            autoComplete="postal-code"
-            textContentType="postalCode"
-            maxLength={10}
-            placeholder="10001"
-          />
-
-          {error ? (
-            <View className="border border-destructive rounded-md px-3 py-2 mt-2">
-              <StyledText variant="caption" className="text-destructive text-sm">
-                {error}
-              </StyledText>
-            </View>
+        <SectionHeader label="Contact" />
+        <View className="bg-card border border-border rounded-md overflow-hidden mb-4">
+          <InfoRow label="Email" value={primaryEmail} readOnly />
+          {hasStaffRow ? (
+            <InfoRow
+              label="Phone"
+              value={formatPhone(phone)}
+              onPress={() => setOpenField("phone")}
+              divider
+            />
           ) : null}
+        </View>
 
-          <Button
-            title="Save changes"
-            onPress={handleSave}
-            loading={saving}
-            disabled={!dirty || saving}
-            size="lg"
-            className="mt-6"
-          />
+        {hasStaffRow ? (
+          <>
+            <SectionHeader label="Address" />
+            <Pressable
+              onPress={() => setOpenField("address")}
+              className="bg-card border border-border rounded-md px-4 py-4 mb-4 flex-row items-center active:opacity-80"
+              accessibilityRole="button"
+              accessibilityLabel="Edit address"
+            >
+              <View className="flex-1 pr-3">
+                {address ? (
+                  <AddressLines address={address} />
+                ) : (
+                  <StyledText
+                    variant="body"
+                    className="text-muted-foreground"
+                  >
+                    Add address
+                  </StyledText>
+                )}
+              </View>
+              <MaterialIcons
+                name="chevron-right"
+                size={22}
+                color={CHEVRON_COLOR}
+              />
+            </Pressable>
 
-          <Button
-            title="Sign out"
+            <SectionHeader label="Stations & Skills" />
+            <View className="mb-6">
+              <SkillsSection skills={staff?.skills ?? []} />
+            </View>
+          </>
+        ) : null}
+
+        {myStaffQuery.isError ? (
+          <View className="border border-destructive rounded-md px-3 py-2 mb-4">
+            <StyledText
+              variant="caption"
+              className="text-destructive text-sm"
+            >
+              Couldn&apos;t load your profile details. Pull to refresh or try
+              again later.
+            </StyledText>
+          </View>
+        ) : null}
+
+        <View className="border-t border-border mt-2 pt-4">
+          <StyledText
+            variant="caption"
+            className="uppercase tracking-wider mb-2"
+          >
+            Account
+          </StyledText>
+          <Pressable
             onPress={handleSignOut}
-            variant="ghost"
-            size="md"
-            className="mt-2"
-          />
-        </ScrollView>
-      </KeyboardAvoidingView>
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            className="flex-row items-center justify-center gap-2 border border-destructive rounded-md px-6 py-3.5 active:opacity-80"
+          >
+            <MaterialIcons name="logout" size={18} color="#dc2626" />
+            <StyledText
+              variant="label"
+              className="text-destructive text-base font-semibold"
+            >
+              Sign out
+            </StyledText>
+          </Pressable>
+        </View>
+      </ScrollView>
+
+      <EditFieldSheet
+        visible={openField === "firstName"}
+        onClose={() => setOpenField(null)}
+        label="First name"
+        initialValue={firstName}
+        placeholder="First name"
+        autoCapitalize="words"
+        autoComplete="given-name"
+        textContentType="givenName"
+        validate={(value) =>
+          value.length === 0 ? "First name can't be empty." : null
+        }
+        onSubmit={(value) => updateClerkName("firstName", value)}
+      />
+      <EditFieldSheet
+        visible={openField === "lastName"}
+        onClose={() => setOpenField(null)}
+        label="Last name"
+        initialValue={lastName}
+        placeholder="Last name"
+        autoCapitalize="words"
+        autoComplete="family-name"
+        textContentType="familyName"
+        validate={(value) =>
+          value.length === 0 ? "Last name can't be empty." : null
+        }
+        onSubmit={(value) => updateClerkName("lastName", value)}
+      />
+      <EditFieldSheet
+        visible={openField === "phone"}
+        onClose={() => setOpenField(null)}
+        label="Phone number"
+        initialValue={phone}
+        placeholder="(555) 123-4567"
+        keyboardType="phone-pad"
+        autoComplete="tel"
+        textContentType="telephoneNumber"
+        validate={validatePhone}
+        onSubmit={updatePhone}
+      />
+      <AddressSheet
+        visible={openField === "address"}
+        onClose={() => setOpenField(null)}
+        initialValue={address}
+        onSubmit={updateAddress}
+      />
     </View>
   );
+}
+
+// ── Row primitives ────────────────────────────────────────────
+
+interface InfoRowProps {
+  label: string;
+  value: string;
+  onPress?: () => void;
+  readOnly?: boolean;
+  divider?: boolean;
+}
+
+function InfoRow({
+  label,
+  value,
+  onPress,
+  readOnly = false,
+  divider = false,
+}: InfoRowProps) {
+  const content = (
+    <View
+      className={`flex-row items-center justify-between px-4 py-3 ${
+        divider ? "border-t border-border" : ""
+      }`}
+    >
+      <View className="flex-1 pr-3">
+        <StyledText variant="caption" className="mb-0.5">
+          {label}
+        </StyledText>
+        <StyledText
+          variant="body"
+          className={value ? "text-foreground" : "text-muted-foreground"}
+        >
+          {value || "Not set"}
+        </StyledText>
+      </View>
+      {onPress && !readOnly ? (
+        <MaterialIcons
+          name="chevron-right"
+          size={22}
+          color={CHEVRON_COLOR}
+        />
+      ) : null}
+    </View>
+  );
+
+  if (onPress && !readOnly) {
+    return (
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Edit ${label.toLowerCase()}`}
+        className="active:opacity-80"
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return content;
 }
 
 function SectionHeader({ label }: { label: string }) {
@@ -383,62 +379,70 @@ function SectionHeader({ label }: { label: string }) {
   );
 }
 
-interface FieldProps {
-  label: string;
-  value: string;
-  onChangeText: (value: string) => void;
-  placeholder?: string;
-  autoCapitalize?: "none" | "sentences" | "words" | "characters";
-  autoComplete?: React.ComponentProps<typeof TextInput>["autoComplete"];
-  textContentType?: React.ComponentProps<typeof TextInput>["textContentType"];
-  keyboardType?: React.ComponentProps<typeof TextInput>["keyboardType"];
-  maxLength?: number;
-}
-
-function Field({
-  label,
-  value,
-  onChangeText,
-  placeholder,
-  autoCapitalize = "sentences",
-  autoComplete,
-  textContentType,
-  keyboardType,
-  maxLength,
-}: FieldProps) {
+function AddressLines({ address }: { address: StaffAddress }) {
+  const line2 = [
+    address.city,
+    [address.state, address.postalCode].filter(Boolean).join(" "),
+  ]
+    .filter((segment) => segment && segment.length > 0)
+    .join(", ");
   return (
-    <View className="mb-3">
-      <StyledText variant="label" className="mb-1.5">
-        {label}
+    <View>
+      <StyledText variant="caption" className="mb-0.5">
+        Address
       </StyledText>
-      <TextInput
-        value={value}
-        onChangeText={onChangeText}
-        placeholder={placeholder}
-        placeholderTextColor={PLACEHOLDER_COLOR}
-        autoCapitalize={autoCapitalize}
-        autoCorrect={false}
-        autoComplete={autoComplete}
-        textContentType={textContentType}
-        keyboardType={keyboardType}
-        maxLength={maxLength}
-        className="bg-background text-foreground border border-border rounded-md px-4 py-3 text-base"
-      />
+      <StyledText variant="body">{address.line1}</StyledText>
+      {address.line2 ? (
+        <StyledText variant="body">{address.line2}</StyledText>
+      ) : null}
+      {line2 ? <StyledText variant="body">{line2}</StyledText> : null}
     </View>
   );
 }
 
-function ReadonlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <View className="mb-3">
-      <StyledText variant="label" className="mb-1.5">
-        {label}
-      </StyledText>
-      <View className="bg-card border border-border rounded-md px-4 py-3">
-        <StyledText variant="body" className="text-muted-foreground">
-          {value}
-        </StyledText>
-      </View>
-    </View>
-  );
+// ── Helpers ───────────────────────────────────────────────────
+
+/**
+ * Mirrors `phoneSchema` in
+ * `packages/types/src/validations/staff.schema.ts` so the client
+ * gives immediate feedback before it round-trips to the server.
+ */
+function validatePhone(value: string): string | null {
+  if (value.length === 0) return "Phone number can't be empty.";
+  const digits = value.replace(/\D/g, "");
+  if (
+    digits.length === 10 ||
+    (digits.length === 11 && digits.startsWith("1"))
+  ) {
+    return null;
+  }
+  return "Phone number must contain 10 digits (or 11 with country code).";
+}
+
+/**
+ * Pretty-print a phone number for the read-only row. Accepts any
+ * format the server happens to have stored (the mongoose setter
+ * strips most separators) and reformats to `(AAA) XXX-YYYY`.
+ */
+function formatPhone(raw: string): string {
+  if (!raw) return "";
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return raw;
+}
+
+function clerkErrorMessage(err: unknown): string {
+  if (isClerkAPIResponseError(err)) {
+    return (
+      err.errors?.[0]?.longMessage ??
+      err.errors?.[0]?.message ??
+      "Could not update your profile."
+    );
+  }
+  return err instanceof Error ? err.message : "Could not update your profile.";
 }

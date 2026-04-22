@@ -1,6 +1,7 @@
 // Re-export shared types from @sous/types
 export type {
   StaffSkill,
+  StaffAddress,
   StaffDTO,
   InvitationStatus,
   StaffListParams,
@@ -25,6 +26,7 @@ export interface IStaff {
   preferredStations: string[];
   certifications: string[];
   hourlyRate: number;
+  address?: import("@sous/types").StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: import("@sous/types").InvitationStatus;
   createdAt: Date;
@@ -48,6 +50,7 @@ export function toStaffDTO(doc: IStaff & { _id: unknown }): import("@sous/types"
     preferredStations: doc.preferredStations,
     certifications: doc.certifications,
     hourlyRate: doc.hourlyRate,
+    address: doc.address ?? null,
     clerkUserId: doc.clerkUserId ?? null,
     invitationStatus: doc.invitationStatus ?? "not_invited",
     createdAt: doc.createdAt,

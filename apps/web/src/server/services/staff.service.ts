@@ -219,6 +219,7 @@ export const StaffService = {
     data: Partial<StaffInput>
   ): Promise<StaffDTO | null> {
     const updateData: Record<string, unknown> = {};
+    const unsetData: Record<string, unknown> = {};
 
     if (data.name !== undefined) updateData.name = data.name;
     if (data.email !== undefined) updateData.email = data.email.toLowerCase();
@@ -236,6 +237,18 @@ export const StaffService = {
     if (data.certifications !== undefined)
       updateData.certifications = data.certifications;
     if (data.hourlyRate !== undefined) updateData.hourlyRate = data.hourlyRate;
+    // Address: `null` clears the field entirely ($unset), a present
+    // object replaces it. Leaving `address` undefined keeps whatever
+    // is already on the document.
+    if (data.address === null) {
+      unsetData.address = "";
+    } else if (data.address !== undefined) {
+      updateData.address = data.address;
+    }
+
+    const mutation: Record<string, unknown> = {};
+    if (Object.keys(updateData).length > 0) mutation.$set = updateData;
+    if (Object.keys(unsetData).length > 0) mutation.$unset = unsetData;
 
     const doc = await Staff.findOneAndUpdate(
       {
@@ -243,7 +256,7 @@ export const StaffService = {
         orgId: new Types.ObjectId(orgId),
         locationId: new Types.ObjectId(locationId),
       },
-      { $set: updateData },
+      mutation,
       { new: true, runValidators: true }
     ).lean();
 
