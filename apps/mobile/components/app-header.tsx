@@ -42,7 +42,7 @@ export function AppHeader() {
 
   return (
     <View
-      className="bg-background border-b border-border"
+      className="bg-background"
       style={{ paddingTop: insets.top }}
     >
       <View className="flex-row items-center justify-between px-4 py-2">

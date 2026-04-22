@@ -16,7 +16,6 @@ import { WeekStatsCard } from "../components/week-stats-card";
 import { UpcomingShifts } from "../components/upcoming-shifts";
 import { AnnouncementFeed } from "../components/announcement-feed";
 import { fetchNextShift, fetchAnnouncements, fetchWeekShifts } from "../api";
-import { useSignOut } from "@/features/auth/use-sign-out";
 
 /**
  * Home hub for the mobile app. This is the first thing a signed-in
@@ -66,8 +65,6 @@ export function HomeScreen() {
   // drives the spinner so it stays visible for the slower of the
   // two network calls. Swallow rejections because errors are
   // already surfaced through each query's `isError` branch.
-  const initials = buildInitials(user?.firstName, user?.lastName);
-
   const handleRefresh = useCallback(() => {
     void Promise.all([
       shiftQuery.refetch(),
@@ -92,9 +89,7 @@ export function HomeScreen() {
     return all
       .filter((shift) => new Date(shift.start).getTime() > now)
       .filter((shift) => shift.id !== nextId)
-      .sort(
-        (a, b) => new Date(a.start).getTime() - new Date(b.start).getTime(),
-      )
+      .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
       .slice(0, 3);
   }, [weekShiftsQuery.data, shiftQuery.data]);
 
@@ -107,24 +102,19 @@ export function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
-        <View className="mb-6 mt-4">
-          <StyledText variant="caption">Welcome back,</StyledText>
-          <StyledText variant="title">{user?.firstName ?? "Chef"}</StyledText>
-        <GreetingHeader
-          firstName={user?.firstName}
-          initials={initials}
-          onSignOut={handleSignOut}
-        />
+        <GreetingHeader firstName={user?.firstName} />
 
         <NextShiftSection
           loading={shiftQuery.isLoading}
           error={shiftQuery.isError}
           shift={shiftQuery.data ?? null}
         />
-        <WeekStatsCard
-          shifts={weekShiftsQuery.data}
-          loading={weekShiftsQuery.isLoading}
-        />
+
+        <View className="mt-4">
+          <WeekStatsCard
+            shifts={weekShiftsQuery.data}
+            loading={weekShiftsQuery.isLoading}
+          />
         </View>
 
         <UpcomingShifts shifts={upcomingShifts} />
@@ -157,7 +147,10 @@ function NextShiftSection({ loading, error, shift }: NextShiftSectionProps) {
   if (error) {
     return (
       <View className="bg-card border border-border rounded-md p-5 items-center">
-        <StyledText variant="body" className="text-muted-foreground text-center">
+        <StyledText
+          variant="body"
+          className="text-muted-foreground text-center"
+        >
           Couldn&apos;t load your next shift. Pull down to retry.
         </StyledText>
       </View>
@@ -174,8 +167,8 @@ function NextShiftSection({ loading, error, shift }: NextShiftSectionProps) {
           variant="caption"
           className="text-center text-muted-foreground"
         >
-          You&apos;re all caught up. Check the Schedule tab when your next
-          week is published.
+          You&apos;re all caught up. Check the Schedule tab when your next week
+          is published.
         </StyledText>
       </View>
     );
@@ -193,12 +186,3 @@ function getWeekStart(date: Date): Date {
   return d;
 }
 
-function buildInitials(
-  firstName: string | null | undefined,
-  lastName: string | null | undefined,
-): string {
-  const first = (firstName?.[0] ?? "").toUpperCase();
-  const last = (lastName?.[0] ?? "").toUpperCase();
-  const combined = `${first}${last}`;
-  return combined.length > 0 ? combined : "?";
-}
