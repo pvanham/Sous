@@ -5,6 +5,8 @@ import { StyledText } from "@/components/ui/text";
 
 interface AnnouncementFeedProps {
   announcements: Announcement[];
+  loading?: boolean;
+  error?: boolean;
 }
 
 interface PriorityStyle {
@@ -51,24 +53,61 @@ const PRIORITY_STYLES: Record<AnnouncementPriority, PriorityStyle> = {
   },
 };
 
-export function AnnouncementFeed({ announcements }: AnnouncementFeedProps) {
+export function AnnouncementFeed({
+  announcements,
+  loading = false,
+  error = false,
+}: AnnouncementFeedProps) {
+  const hasAnnouncements = announcements.length > 0;
+
   return (
     <View className="mt-6">
       <View className="flex-row items-center mb-3">
         <StyledText variant="subtitle">Announcements</StyledText>
-        <View className="ml-2 px-2 py-0.5 rounded-sm bg-muted">
-          <StyledText variant="label" className="text-xs text-muted-foreground">
-            {announcements.length}
-          </StyledText>
-        </View>
+        {hasAnnouncements ? (
+          <View className="ml-2 px-2 py-0.5 rounded-sm bg-muted">
+            <StyledText
+              variant="label"
+              className="text-xs text-muted-foreground"
+            >
+              {announcements.length}
+            </StyledText>
+          </View>
+        ) : null}
       </View>
-      <FlatList
-        data={announcements}
-        keyExtractor={(item) => item.id}
-        scrollEnabled={false}
-        renderItem={({ item }) => <AnnouncementItem announcement={item} />}
-        ItemSeparatorComponent={() => <View className="h-2.5" />}
-      />
+      {hasAnnouncements ? (
+        <FlatList
+          data={announcements}
+          keyExtractor={(item) => item.id}
+          scrollEnabled={false}
+          renderItem={({ item }) => <AnnouncementItem announcement={item} />}
+          ItemSeparatorComponent={() => <View className="h-2.5" />}
+        />
+      ) : (
+        <EmptyState loading={loading} error={error} />
+      )}
+    </View>
+  );
+}
+
+function EmptyState({ loading, error }: { loading: boolean; error: boolean }) {
+  let message: string;
+  if (error) {
+    message = "Couldn't load announcements.";
+  } else if (loading) {
+    message = "Loading announcements…";
+  } else {
+    message = "No announcements right now. You're all caught up.";
+  }
+
+  return (
+    <View className="py-3">
+      <StyledText
+        variant="caption"
+        className="text-muted-foreground text-center"
+      >
+        {message}
+      </StyledText>
     </View>
   );
 }

@@ -15,7 +15,6 @@ import { GreetingHeader } from "../components/greeting-header";
 import { NextShiftCard } from "../components/next-shift-card";
 import { WeekStatsCard } from "../components/week-stats-card";
 import { UpcomingShifts } from "../components/upcoming-shifts";
-import { QuickActions } from "../components/quick-actions";
 import { AnnouncementFeed } from "../components/announcement-feed";
 import { fetchNextShift, fetchAnnouncements, fetchWeekShifts } from "../api";
 import { useSignOut } from "@/features/auth/use-sign-out";
@@ -27,8 +26,7 @@ import { useSignOut } from "@/features/auth/use-sign-out";
  *
  *   1. "When do I work next?"            → NextShiftCard
  *   2. "How does my week look overall?"  → WeekStatsCard + UpcomingShifts
- *   3. "Anything I need to act on?"      → QuickActions + AnnouncementFeed
- *   4. "Anything my manager posted?"     → AnnouncementFeed
+ *   3. "Anything my manager posted?"     → AnnouncementFeed
  *
  * Server state is split across three queries so each section can load,
  * error, and refresh independently. Pull-to-refresh triggers all three
@@ -141,17 +139,11 @@ export function HomeScreen() {
 
         <UpcomingShifts shifts={upcomingShifts} />
 
-        <QuickActions />
-
-        {announcementsQuery.isError ? (
-          <View className="bg-card border border-border rounded-md p-5 mt-6 items-center">
-            <StyledText variant="body" className="text-muted-foreground">
-              Couldn&apos;t load announcements.
-            </StyledText>
-          </View>
-        ) : announcementsQuery.data && announcementsQuery.data.length > 0 ? (
-          <AnnouncementFeed announcements={announcementsQuery.data} />
-        ) : null}
+        <AnnouncementFeed
+          announcements={announcementsQuery.data ?? []}
+          loading={announcementsQuery.isLoading}
+          error={announcementsQuery.isError}
+        />
       </ScrollView>
     </ScreenWrapper>
   );
