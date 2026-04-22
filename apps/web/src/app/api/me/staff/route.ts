@@ -16,13 +16,22 @@ import { addressSchema } from "@sous/types/validations/staff.schema";
 // staff member is allowed to edit themselves.
 //
 // Self-editable fields (PATCH body)
-//   - `phone`   (string, validated by the same phone rules used on web)
-//   - `address` (`StaffAddress` | `null`) — send `null` to clear
+//   - `phone`             (string, validated by the same phone rules used on web)
+//   - `address`           (`StaffAddress` | `null`) — send `null` to clear
+//   - `minHoursPerWeek`   (int, 0..168)  — the staff member's own desired floor
+//   - `maxHoursPerWeek`   (int, 0..168)  — the staff member's own desired ceiling
+//   - `preferredStations` (string[])     — preferred kitchen stations
 //
-// Manager-controlled fields — `roles`, `skills`, `preferredStations`,
-// `isActive`, `maxHoursPerWeek`, `minHoursPerWeek`, `hourlyRate`,
-// `certifications` — are **rejected** by the schema below. They flow
-// through the existing web `updateStaff` server action instead.
+// Manager-controlled fields — `roles`, `skills`, `isActive`,
+// `hourlyRate`, `certifications` — are **rejected** by the schema below.
+// They flow through the existing web `updateStaff` server action instead.
+//
+// Why hours and preferredStations are self-editable:
+//   The manager still sees these on the web dashboard, but staff members
+//   fill them in themselves from the mobile Settings screen so the AI
+//   scheduler picks shifts that actually match their lifestyle. The
+//   cross-field invariant (`max >= min`) is enforced below and mirrors
+//   `staffBaseSchema` + the `pre-save` hook on the Staff model.
 //
 // Auth & tenancy
 //   - `auth()` resolves the Clerk user; `getLocationContext` resolves
@@ -65,6 +74,28 @@ const selfUpdateSchema = z
   .object({
     phone: phoneSchema.optional(),
     address: addressSchema.nullable().optional(),
+    minHoursPerWeek: z
+      .number()
+      .int("Minimum hours must be a whole number.")
+      .min(0, "Minimum hours cannot be negative.")
+      .max(168, "Minimum hours cannot exceed 168 (24*7).")
+      .optional(),
+    maxHoursPerWeek: z
+      .number()
+      .int("Maximum hours must be a whole number.")
+      .min(0, "Maximum hours cannot be negative.")
+      .max(168, "Maximum hours cannot exceed 168 (24*7).")
+      .optional(),
+    preferredStations: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1, "Station name cannot be empty.")
+          .max(100, "Station name is too long."),
+      )
+      .max(50, "Too many preferred stations.")
+      .optional(),
   })
   .strict();
 
@@ -158,6 +189,22 @@ export async function PATCH(req: NextRequest): Promise<Response> {
       return NextResponse.json(
         { error: "No staff record linked to this account." },
         { status: 404 },
+      );
+    }
+
+    // Cross-field invariant: max >= min. When a caller updates only one
+    // of the two, compare the new value against whatever's already on
+    // the record so the staff member doesn't have to PATCH both keys
+    // to get a valid result.
+    const nextMin = parsed.data.minHoursPerWeek ?? staff.minHoursPerWeek;
+    const nextMax = parsed.data.maxHoursPerWeek ?? staff.maxHoursPerWeek;
+    if (nextMax < nextMin) {
+      return NextResponse.json(
+        {
+          error:
+            "Maximum hours per week must be greater than or equal to minimum hours.",
+        },
+        { status: 400 },
       );
     }
 

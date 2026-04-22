@@ -37,13 +37,25 @@ export async function fetchMyStaff(): Promise<StaffDTO> {
 }
 
 /**
- * Patch the caller's own profile. Only `phone` and `address` are
- * accepted — the server rejects any other key. Send `address: null`
- * to clear a previously-entered address.
+ * Patch the caller's own profile. The server's PATCH /me/staff route
+ * accepts only the narrow subset of self-editable fields; any other
+ * key is rejected. Send `address: null` to clear a previously-entered
+ * address.
+ *
+ * Self-editable fields (kept in sync with `selfUpdateSchema` in
+ * `apps/web/src/app/api/me/staff/route.ts`):
+ *   - `phone`             — primary contact number
+ *   - `address`           — physical mailing address (or `null` to clear)
+ *   - `minHoursPerWeek`   — staff-preferred floor for weekly hours
+ *   - `maxHoursPerWeek`   — staff-preferred ceiling for weekly hours
+ *   - `preferredStations` — preferred kitchen stations (subset of approved skills)
  */
 export type UpdateMyStaffInput = {
   phone?: string;
   address?: StaffAddress | null;
+  minHoursPerWeek?: number;
+  maxHoursPerWeek?: number;
+  preferredStations?: string[];
 };
 
 export async function updateMyStaff(

@@ -1,4 +1,4 @@
-import { View, Pressable, Alert } from "react-native";
+import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -11,8 +11,8 @@ const ICON_COLOR = "#78716c";
 /**
  * Persistent top-of-screen header rendered inside the (tabs) layout so
  * the profile avatar and settings cog stay visible regardless of which
- * tab is active. The avatar navigates to the profile page; the cog is
- * a placeholder that will eventually open settings.
+ * tab is active. The avatar navigates to the profile page; the cog
+ * opens the Settings hub.
  *
  * The header owns the top safe-area inset on behalf of the tab
  * screens: inside the (tabs) stack, screens render with
@@ -34,10 +34,7 @@ export function AppHeader() {
   };
 
   const goToSettings = () => {
-    // Settings isn't implemented yet; surface a friendly message
-    // instead of navigating to a nonexistent route. Remove this
-    // once a real `/settings` route lands.
-    Alert.alert("Settings", "Settings are coming soon.");
+    router.push("/settings");
   };
 
   return (
