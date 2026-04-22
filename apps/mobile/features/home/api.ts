@@ -2,6 +2,11 @@ import type { ShiftDTO } from "@sous/types";
 import { apiClient } from "@/lib/api-client";
 import type { Announcement } from "@/types";
 
+// Re-export `fetchWeekShifts` from the schedule feature so the home
+// tab can surface the rest of the current week without duplicating
+// the wire contract / date-revive logic that lives there.
+export { fetchWeekShifts } from "@/features/schedule/api";
+
 // ─────────────────────────────────────────────────────────────
 // Home tab — server-state access layer.
 //
