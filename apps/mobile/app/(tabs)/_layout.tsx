@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AppHeader } from "@/components/app-header";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -56,37 +57,47 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
 
   return (
-    <MaterialTopTabs
-      // Bottom position moves the tab bar below the pager content and
-      // keeps the active-tab indicator at the top edge of the bar —
-      // the same visual affordance the bottom-tab navigator had.
-      tabBarPosition="bottom"
-      // Swipe is the whole point of this navigator. `swipeEnabled` is
-      // true by default but we set it explicitly so intent is obvious.
-      // `lazy` + `lazyPreloadDistance: 1` keeps the initial render
-      // cheap while preloading the neighboring tab so swiping never
-      // shows a blank screen mid-gesture.
-      screenOptions={{
-        swipeEnabled: true,
-        lazy: true,
-        lazyPreloadDistance: 1,
-      }}
-      tabBar={(props) => (
-        <CustomTabBar
-          {...props}
-          palette={palette}
-          bottomInset={insets.bottom}
-        />
-      )}
-    >
-      {TABS.map((tab) => (
-        <MaterialTopTabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{ title: tab.title }}
-        />
-      ))}
-    </MaterialTopTabs>
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
+      {/*
+       * Persistent app header. Rendered once at the tabs layout level
+       * so the profile avatar and settings cog remain visible no
+       * matter which tab is active. The header owns the top safe-area
+       * inset; tab screens pass `includeTopInset={false}` to
+       * `ScreenWrapper` to avoid double-padding.
+       */}
+      <AppHeader />
+      <MaterialTopTabs
+        // Bottom position moves the tab bar below the pager content and
+        // keeps the active-tab indicator at the top edge of the bar —
+        // the same visual affordance the bottom-tab navigator had.
+        tabBarPosition="bottom"
+        // Swipe is the whole point of this navigator. `swipeEnabled` is
+        // true by default but we set it explicitly so intent is obvious.
+        // `lazy` + `lazyPreloadDistance: 1` keeps the initial render
+        // cheap while preloading the neighboring tab so swiping never
+        // shows a blank screen mid-gesture.
+        screenOptions={{
+          swipeEnabled: true,
+          lazy: true,
+          lazyPreloadDistance: 1,
+        }}
+        tabBar={(props) => (
+          <CustomTabBar
+            {...props}
+            palette={palette}
+            bottomInset={insets.bottom}
+          />
+        )}
+      >
+        {TABS.map((tab) => (
+          <MaterialTopTabs.Screen
+            key={tab.name}
+            name={tab.name}
+            options={{ title: tab.title }}
+          />
+        ))}
+      </MaterialTopTabs>
+    </View>
   );
 }
 

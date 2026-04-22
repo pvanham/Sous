@@ -3,7 +3,6 @@ import {
   View,
   ScrollView,
   ActivityIndicator,
-  Alert,
   RefreshControl,
 } from "react-native";
 import { useAuth, useUser } from "@clerk/clerk-expo";
@@ -35,20 +34,6 @@ import { useSignOut } from "@/features/auth/use-sign-out";
 export function HomeScreen() {
   const { user } = useUser();
   const { userId } = useAuth();
-  const signOut = useSignOut();
-
-  const handleSignOut = useCallback(() => {
-    Alert.alert("Sign out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: () => {
-          void signOut();
-        },
-      },
-    ]);
-  }, [signOut]);
 
   const currentWeekStart = useMemo(() => getWeekStart(new Date()), []);
   const weekStartIso = useMemo(
@@ -77,6 +62,10 @@ export function HomeScreen() {
     enabled: Boolean(userId),
   });
 
+  // Pull-to-refresh fires both queries in parallel. `isFetching`
+  // drives the spinner so it stays visible for the slower of the
+  // two network calls. Swallow rejections because errors are
+  // already surfaced through each query's `isError` branch.
   const initials = buildInitials(user?.firstName, user?.lastName);
 
   const handleRefresh = useCallback(() => {
@@ -110,7 +99,7 @@ export function HomeScreen() {
   }, [weekShiftsQuery.data, shiftQuery.data]);
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper includeTopInset={false}>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerClassName="pb-10"
@@ -118,6 +107,9 @@ export function HomeScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
         }
       >
+        <View className="mb-6 mt-4">
+          <StyledText variant="caption">Welcome back,</StyledText>
+          <StyledText variant="title">{user?.firstName ?? "Chef"}</StyledText>
         <GreetingHeader
           firstName={user?.firstName}
           initials={initials}
@@ -129,12 +121,10 @@ export function HomeScreen() {
           error={shiftQuery.isError}
           shift={shiftQuery.data ?? null}
         />
-
-        <View className="mt-4">
-          <WeekStatsCard
-            shifts={weekShiftsQuery.data}
-            loading={weekShiftsQuery.isLoading}
-          />
+        <WeekStatsCard
+          shifts={weekShiftsQuery.data}
+          loading={weekShiftsQuery.isLoading}
+        />
         </View>
 
         <UpcomingShifts shifts={upcomingShifts} />
