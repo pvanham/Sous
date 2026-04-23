@@ -3,7 +3,7 @@ import "../global.css";
 import "@/lib/query-focus";
 
 import { useEffect, useRef } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { Appearance, View, ActivityIndicator } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -19,7 +19,8 @@ import {
 import { tokenCache } from "@/lib/token-cache";
 import { queryClient } from "@/lib/query-client";
 import { setTokenGetter } from "@/lib/api-client";
-import { useColorScheme } from "@/hooks/use-color-scheme";
+import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
+import { useSettingsPreferences } from "@/features/settings/preferences-store";
 import { fetchMembership } from "@/features/auth/api";
 import { useAuthStore } from "@/features/auth/store";
 
@@ -173,7 +174,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  // Combine the user's persisted theme override with the device's
+  // system setting. `useEffectiveColorScheme` returns `"light"` or
+  // `"dark"`; feed it into both React Navigation's ThemeProvider and
+  // React Native's Appearance API so the latter keeps NativeWind's
+  // `prefers-color-scheme` media query in sync with the choice.
+  const themePreference = useSettingsPreferences((s) => s.theme);
+  const colorScheme = useEffectiveColorScheme();
+
+  useEffect(() => {
+    // When the user is on "system", clear any override so the OS
+    // signal is authoritative. Otherwise, pin Appearance to the
+    // explicit choice — this flips NativeWind's media query
+    // immediately without a reload.
+    if (themePreference === "system") {
+      Appearance.setColorScheme(null);
+    } else {
+      Appearance.setColorScheme(themePreference);
+    }
+  }, [themePreference]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -189,6 +208,10 @@ export default function RootLayout() {
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen
                     name="profile"
+                    options={{ presentation: "card" }}
+                  />
+                  <Stack.Screen
+                    name="settings"
                     options={{ presentation: "card" }}
                   />
                 </Stack>
