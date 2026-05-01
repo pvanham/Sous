@@ -1,8 +1,11 @@
 {
   "name": "sous-monorepo",
   "private": true,
-  "packageManager": "npm@11.7.0",
+  "packageManager": "npm@11.13.0",
   "type": "module",
+  "engines": {
+    "node": ">=24.3.0 <25"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -11,6 +14,9 @@
     "dev": "turbo dev",
     "dev:web": "turbo dev --filter=@sous/web",
     "dev:mobile": "turbo dev --filter=@sous/mobile",
+    "dev:mobile:client": "npm run dev:client --workspace=@sous/mobile",
+    "build:mobile:ios:dev": "npm run build:ios:dev --workspace=@sous/mobile",
+    "build:mobile:ios:sim": "npm run build:ios:sim --workspace=@sous/mobile",
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
@@ -18,20 +24,32 @@
     "postinstall": "node scripts/verify-react-singletons.mjs"
   },
   "dependencies": {
-    "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "expo-router": "55.0.13",
+    "postcss": "^8.5.13",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
   },
   "devDependencies": {
     "lightningcss": "1.30.1",
     "turbo": "^2.5.0"
   },
-  "//overrides": "react/react-dom/scheduler are pinned so the entire dependency tree — including transitive peer auto-installs — collapses to a single version. React Native 0.81.5 (Expo SDK 54) ships a renderer hard-coded to React 19.1.0, so any higher version crashes the mobile app. Bumping react here without also bumping @sous/mobile's expo/react-native will break the mobile app.",
+  "//overrides": "react/react-dom/scheduler are pinned so the entire dependency tree — including transitive peer auto-installs — collapses to a single version. React Native 0.83.6 (Expo SDK 55) supports React 19.2.x and ships scheduler 0.27.0, so bump these pins only alongside @sous/mobile's expo/react-native versions.",
   "overrides": {
     "csstype": "3.2.3",
     "react": "$react",
     "react-dom": "$react-dom",
-    "scheduler": "0.26.0",
-    "expo-auth-session": "~7.0.10",
+    "react-native": "0.83.6",
+    "react-native-pager-view": "8.0.0",
+    "react-native-safe-area-context": "5.6.2",
+    "react-native-screens": "4.23.0",
+    "scheduler": "0.27.0",
+    "expo-application": "~55.0.14",
+    "expo-auth-session": "~55.0.15",
+    "expo-constants": "~55.0.15",
+    "expo-crypto": "~55.0.14",
+    "expo-linking": "~55.0.14",
+    "expo-secure-store": "~55.0.13",
+    "expo-web-browser": "~55.0.14",
     "lightningcss": "1.30.1"
   }
 }
