@@ -181,6 +181,23 @@ export const OrganizationMemberService = {
   },
 
   /**
+   * Mirror a Clerk-hosted profile image URL onto every membership
+   * row for the given Clerk user. Pass `null` to clear it.
+   *
+   * Returns the number of membership documents updated.
+   */
+  async setImageUrlForClerkUser(
+    clerkUserId: string,
+    imageUrl: string | null,
+  ): Promise<number> {
+    const result = await OrganizationMember.updateMany(
+      { clerkUserId },
+      { $set: { imageUrl } },
+    );
+    return result.modifiedCount;
+  },
+
+  /**
    * Check if a user has a specific role in an organization.
    * @param clerkUserId - Clerk user ID
    * @param orgId - Organization ID

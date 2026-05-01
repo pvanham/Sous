@@ -5,7 +5,7 @@ import Link from "next/link";
 import { format, isSameDay } from "date-fns";
 import { ArrowRight, Sun } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { type ShiftDTO } from "@/types/shift";
 import { type StaffDTO } from "@/types/staff";
@@ -69,6 +69,12 @@ export function TodayScheduleWidget({ shifts, staff }: TodayScheduleWidgetProps)
               return (
                 <div key={shift.id} className="flex items-center gap-3 group">
                   <Avatar className="h-8 w-8 shrink-0 border border-border/50">
+                    {staffMember?.imageUrl ? (
+                      <AvatarImage
+                        src={staffMember.imageUrl}
+                        alt={staffMember.name}
+                      />
+                    ) : null}
                     <AvatarFallback className="bg-primary/5 text-primary text-xs font-semibold">
                       {initials}
                     </AvatarFallback>

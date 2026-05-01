@@ -11,11 +11,13 @@ import { useUser, useClerk } from "@clerk/clerk-expo";
 import { useMutation } from "@tanstack/react-query";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 import { StyledText } from "@/components/ui/text";
 import { useSignOut } from "@/features/auth/use-sign-out";
 import { useAuthStore } from "@/features/auth/store";
 import { useMyStaff } from "@/features/profile/hooks";
+import { useProfileImage } from "@/features/profile/use-profile-image";
 import { deleteMyAccount } from "../api";
 import { useSettingsPreferences } from "../preferences-store";
 
@@ -43,6 +45,7 @@ export function SettingsScreen() {
   const membership = useAuthStore((s) => s.membership);
   const staffQuery = useMyStaff();
   const theme = useSettingsPreferences((s) => s.theme);
+  const profileImage = useProfileImage();
 
   const deleteAccountMutation = useMutation({
     mutationFn: deleteMyAccount,
@@ -141,14 +144,43 @@ export function SettingsScreen() {
 
       <ScrollView contentContainerClassName="px-4 pt-6 pb-10">
         <View className="items-center mb-6">
-          <View className="w-20 h-20 rounded-full bg-primary items-center justify-center">
-            <StyledText
-              variant="title"
-              className="text-primary-foreground text-2xl"
-            >
-              {initials}
-            </StyledText>
-          </View>
+          <Pressable
+            onPress={profileImage.presentOptions}
+            disabled={profileImage.busy}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
+            className="active:opacity-80"
+          >
+            <View className="w-20 h-20 rounded-full bg-primary items-center justify-center overflow-hidden">
+              {user.hasImage && user.imageUrl ? (
+                <Image
+                  source={{ uri: user.imageUrl }}
+                  style={{ width: 80, height: 80 }}
+                  contentFit="cover"
+                  transition={150}
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                <StyledText
+                  variant="title"
+                  className="text-primary-foreground text-2xl"
+                >
+                  {initials}
+                </StyledText>
+              )}
+            </View>
+            <View className="absolute bottom-0 right-0 bg-card border border-border rounded-full w-7 h-7 items-center justify-center">
+              {profileImage.busy ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <MaterialIcons
+                  name="photo-camera"
+                  size={16}
+                  color={ICON_COLOR}
+                />
+              )}
+            </View>
+          </Pressable>
           <StyledText variant="title" className="mt-3">
             {displayName}
           </StyledText>

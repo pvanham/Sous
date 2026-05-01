@@ -41,6 +41,12 @@
             "backgroundColor": "#1c1917"
           }
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sous needs access to your photos so you can choose a profile picture."
+        }
       ]
     ],
     "experiments": {
