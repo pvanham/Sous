@@ -1,19 +1,16 @@
 import { View, Pressable } from "react-native";
 import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
 
 import { StyledText } from "@/components/ui/text";
 
-const ICON_COLOR = "#78716c";
-
 /**
  * Persistent top-of-screen header rendered inside the (tabs) layout so
- * the profile avatar and settings cog stay visible regardless of which
- * tab is active. The avatar navigates to the profile page; the cog
- * opens the Settings hub.
+ * the profile avatar stays visible regardless of which tab is active.
+ * The avatar opens the Settings hub; detailed profile edits are under
+ * "Personal info" there.
  *
  * The header owns the top safe-area inset on behalf of the tab
  * screens: inside the (tabs) stack, screens render with
@@ -30,10 +27,6 @@ export function AppHeader() {
       ).toUpperCase()}` || "?"
     : "?";
 
-  const goToProfile = () => {
-    router.push("/profile");
-  };
-
   const goToSettings = () => {
     router.push("/settings");
   };
@@ -45,41 +38,30 @@ export function AppHeader() {
     >
       <View className="flex-row items-center justify-between px-4 py-2">
         <StyledText variant="subtitle">Sous</StyledText>
-        <View className="flex-row items-center gap-2">
-          <Pressable
-            onPress={goToProfile}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Open profile"
-            className="w-10 h-10 rounded-full bg-primary items-center justify-center overflow-hidden active:opacity-80"
-          >
-            {user?.hasImage && user.imageUrl ? (
-              <Image
-                source={{ uri: user.imageUrl }}
-                style={{ width: 40, height: 40 }}
-                contentFit="cover"
-                transition={150}
-                accessibilityIgnoresInvertColors
-              />
-            ) : (
-              <StyledText
-                variant="label"
-                className="text-primary-foreground text-sm"
-              >
-                {initials}
-              </StyledText>
-            )}
-          </Pressable>
-          <Pressable
-            onPress={goToSettings}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
-            className="w-10 h-10 rounded-full bg-card border border-border items-center justify-center active:opacity-60"
-          >
-            <MaterialIcons name="settings" size={20} color={ICON_COLOR} />
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={goToSettings}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          className="w-10 h-10 rounded-full bg-primary items-center justify-center overflow-hidden active:opacity-80"
+        >
+          {user?.hasImage && user.imageUrl ? (
+            <Image
+              source={{ uri: user.imageUrl }}
+              style={{ width: 40, height: 40 }}
+              contentFit="cover"
+              transition={150}
+              accessibilityIgnoresInvertColors
+            />
+          ) : (
+            <StyledText
+              variant="label"
+              className="text-primary-foreground text-sm"
+            >
+              {initials}
+            </StyledText>
+          )}
+        </Pressable>
       </View>
     </View>
   );
