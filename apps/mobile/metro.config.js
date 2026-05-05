@@ -39,7 +39,14 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [monorepoRoot];
+// Extend (don't overwrite) the defaults — `expo/metro-config` sets up
+// its own `watchFolders` and `expo doctor` warns when those entries
+// disappear. We only need to *add* the monorepo root so workspace
+// packages (`@sous/types`, `@sous/config`) resolve.
+const defaultWatchFolders = config.watchFolders ?? [];
+if (!defaultWatchFolders.includes(monorepoRoot)) {
+  config.watchFolders = [...defaultWatchFolders, monorepoRoot];
+}
 
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),

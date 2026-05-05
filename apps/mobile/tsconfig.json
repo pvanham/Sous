@@ -1,7 +1,15 @@
 {
-  "extends": "expo/tsconfig.base",
+  "extends": "../../node_modules/expo/tsconfig.base.json",
   "compilerOptions": {
+    // Keep these explicit so editor diagnostics remain stable even if
+    // package-specifier `extends` resolution fails.
     "strict": true,
+    "jsx": "react-native",
+    "moduleResolution": "bundler",
+    "types": [
+      "react",
+      "react-native"
+    ],
     "paths": {
       "@/*": [
         "./*"

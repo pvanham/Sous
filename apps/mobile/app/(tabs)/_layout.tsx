@@ -52,7 +52,7 @@ const TABS: readonly TabDef[] = [
 ] as const;
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme() ?? "light";
+  const colorScheme = useColorScheme();
   const palette = Colors[colorScheme];
   const insets = useSafeAreaInsets();
 
