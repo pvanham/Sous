@@ -61,16 +61,14 @@ export function HomeScreen() {
     enabled: Boolean(userId),
   });
 
-  // Pull-to-refresh fires both queries in parallel. `isFetching`
-  // drives the spinner so it stays visible for the slower of the
-  // two network calls. Swallow rejections because errors are
-  // already surfaced through each query's `isError` branch.
+  // Pull-to-refresh fires all queries in parallel. `isFetching`
+  // drives the spinner so it stays visible for the slower request.
   const handleRefresh = useCallback(() => {
     void Promise.all([
       shiftQuery.refetch(),
       weekShiftsQuery.refetch(),
       announcementsQuery.refetch(),
-    ]);
+    ]).catch(() => undefined);
   }, [shiftQuery, weekShiftsQuery, announcementsQuery]);
 
   const refreshing =
@@ -185,4 +183,3 @@ function getWeekStart(date: Date): Date {
   d.setHours(0, 0, 0, 0);
   return d;
 }
-

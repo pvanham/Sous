@@ -7,10 +7,12 @@
     "icon": "./assets/images/icon.png",
     "scheme": "sous",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sous.mobile"
+      "bundleIdentifier": "com.sous.mobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.sous.mobile",
@@ -20,7 +22,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -48,10 +49,19 @@
           "photosPermission": "Sous needs access to your photos so you can choose a profile picture."
         }
       ]
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "77ba47ab-245f-4861-a728-eeec5b309fc1"
+      }
     }
   }
 }

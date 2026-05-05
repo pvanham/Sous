@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { Button } from "@/components/ui/button";
-import { SignedIn, SignedOut } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
 
 export function MarketingHeader() {
+  const { isLoaded, isSignedIn } = useAuth();
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-stone-200 dark:border-white/10 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
@@ -27,17 +29,18 @@ export function MarketingHeader() {
         <div className="flex items-center gap-4">
           <ThemeToggle />
           <div className="hidden sm:flex items-center gap-2">
-            <SignedOut>
-              <Button variant="ghost" asChild>
-                <Link href="/sign-in">Log in</Link>
-              </Button>
-              <Button asChild>
-                <Link href="/sign-up">Get Started</Link>
-              </Button>
-            </SignedOut>
-            <SignedIn>
+            {isLoaded && isSignedIn ? (
               <CustomUserButton />
-            </SignedIn>
+            ) : isLoaded ? (
+              <>
+                <Button variant="ghost" asChild>
+                  <Link href="/sign-in">Log in</Link>
+                </Button>
+                <Button asChild>
+                  <Link href="/sign-up">Get Started</Link>
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       </div>

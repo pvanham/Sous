@@ -3,8 +3,8 @@
  * Postinstall guard: fail loudly if npm hoisting ever produces
  * more than one copy of React (or its siblings) in the tree.
  *
- * React Native 0.81.5 (Expo SDK 54) ships a renderer pinned to
- * React 19.1.0; any duplicate React instance in apps/mobile's
+ * React Native 0.83.6 (Expo SDK 55) supports React 19.2.x;
+ * any duplicate React instance in apps/mobile's
  * bundle crashes the app with "Incompatible React versions".
  * Duplicates in the web bundle are less catastrophic but still
  * produce subtle hook-identity bugs.
@@ -24,9 +24,9 @@ import { resolve, join, relative, sep } from "node:path";
 const REPO_ROOT = resolve(new URL(".", import.meta.url).pathname, "..");
 
 const PINNED = {
-  react: "19.1.0",
-  "react-dom": "19.1.0",
-  scheduler: "0.26.0",
+  react: "19.2.5",
+  "react-dom": "19.2.5",
+  scheduler: "0.27.0",
 };
 
 // Hard stop on these dirs so we don't descend into vendored test

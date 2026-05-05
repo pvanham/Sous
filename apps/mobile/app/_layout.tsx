@@ -188,7 +188,7 @@ export default function RootLayout() {
     // explicit choice — this flips NativeWind's media query
     // immediately without a reload.
     if (themePreference === "system") {
-      Appearance.setColorScheme(null);
+      Appearance.setColorScheme("unspecified");
     } else {
       Appearance.setColorScheme(themePreference);
     }

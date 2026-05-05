@@ -7,8 +7,8 @@ const { withNativewind } = require("nativewind/metro");
  *
  * Why this file exists
  * ────────────────────
- * React Native 0.81.5 (Expo SDK 54) ships a renderer pinned to
- * React 19.1.0. Running it against any other React build crashes
+ * React Native 0.83.6 (Expo SDK 55) supports React 19.2.x.
+ * Running it against another React build can crash
  * with "Incompatible React versions" (see root package.json's
  * `//overrides` note for the full story).
  *
@@ -39,7 +39,14 @@ const monorepoRoot = path.resolve(projectRoot, "../..");
 
 const config = getDefaultConfig(projectRoot);
 
-config.watchFolders = [monorepoRoot];
+// Extend (don't overwrite) the defaults — `expo/metro-config` sets up
+// its own `watchFolders` and `expo doctor` warns when those entries
+// disappear. We only need to *add* the monorepo root so workspace
+// packages (`@sous/types`, `@sous/config`) resolve.
+const defaultWatchFolders = config.watchFolders ?? [];
+if (!defaultWatchFolders.includes(monorepoRoot)) {
+  config.watchFolders = [...defaultWatchFolders, monorepoRoot];
+}
 
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, "node_modules"),
