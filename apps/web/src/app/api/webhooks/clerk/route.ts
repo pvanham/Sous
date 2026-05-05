@@ -139,6 +139,38 @@ export async function POST(req: Request) {
     }
   }
 
+  if (eventType === "user.updated") {
+    // Mirror Clerk's profile picture URL onto every Staff /
+    // OrganizationMember row linked to this user. This catches edits
+    // made through Clerk's hosted account portal (where our app does
+    // not see the upload directly) and keeps the mirrored URL in
+    // sync with the actual hosted image.
+    const userId = evt.data.id;
+    const hasImage = (evt.data as { has_image?: boolean }).has_image === true;
+    const rawImageUrl =
+      (evt.data as { image_url?: string | null }).image_url ?? null;
+    const nextImageUrl = hasImage ? rawImageUrl : null;
+
+    if (userId) {
+      try {
+        await Promise.all([
+          StaffService.setImageUrlForClerkUser(userId, nextImageUrl),
+          OrganizationMemberService.setImageUrlForClerkUser(
+            userId,
+            nextImageUrl,
+          ),
+        ]);
+        console.log(
+          `Synced profile image for clerk user ${userId} (hasImage=${hasImage})`,
+        );
+      } catch (error) {
+        console.error("Failed to sync profile image on user.updated:", error);
+        // Non-fatal: returning 200 keeps Clerk from retrying forever
+        // for transient Mongo issues. Webhook can be re-fired manually.
+      }
+    }
+  }
+
   if (eventType === "user.deleted") {
     const userId = evt.data.id;
     if (!userId) {

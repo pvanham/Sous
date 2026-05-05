@@ -12,6 +12,8 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { StaffAddress, StaffDTO } from "@sous/types";
 
+import { Image } from "expo-image";
+
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useSignOut } from "@/features/auth/use-sign-out";
@@ -19,6 +21,7 @@ import { EditFieldSheet } from "../components/edit-field-sheet";
 import { AddressSheet } from "../components/address-sheet";
 import { SkillsSection } from "../components/skills-section";
 import { useMyStaff, useUpdateMyStaff } from "../hooks";
+import { useProfileImage } from "../use-profile-image";
 
 const ICON_COLOR = "#78716c";
 const CHEVRON_COLOR = "#a8a29e";
@@ -47,6 +50,7 @@ export function ProfileScreen() {
 
   const myStaffQuery = useMyStaff();
   const updateMyStaff = useUpdateMyStaff();
+  const profileImage = useProfileImage();
 
   type FieldKey = "firstName" | "lastName" | "phone" | "address";
   const [openField, setOpenField] = useState<FieldKey | null>(null);
@@ -142,15 +146,40 @@ export function ProfileScreen() {
 
       <ScrollView contentContainerClassName="px-4 pt-6 pb-10">
         <View className="items-center mb-6">
-          <View className="w-20 h-20 rounded-full bg-primary items-center justify-center">
-            <StyledText
-              variant="title"
-              className="text-primary-foreground text-2xl"
-            >
-              {((firstName[0] ?? "") + (lastName[0] ?? "")).toUpperCase() ||
-                "?"}
-            </StyledText>
-          </View>
+          <Pressable
+            onPress={profileImage.presentOptions}
+            disabled={profileImage.busy}
+            accessibilityRole="button"
+            accessibilityLabel="Change profile picture"
+            className="active:opacity-80"
+          >
+            <View className="w-20 h-20 rounded-full bg-primary items-center justify-center overflow-hidden">
+              {user.hasImage && user.imageUrl ? (
+                <Image
+                  source={{ uri: user.imageUrl }}
+                  style={{ width: 80, height: 80 }}
+                  contentFit="cover"
+                  transition={150}
+                  accessibilityIgnoresInvertColors
+                />
+              ) : (
+                <StyledText
+                  variant="title"
+                  className="text-primary-foreground text-2xl"
+                >
+                  {((firstName[0] ?? "") + (lastName[0] ?? "")).toUpperCase() ||
+                    "?"}
+                </StyledText>
+              )}
+            </View>
+            <View className="absolute bottom-0 right-0 bg-card border border-border rounded-full w-7 h-7 items-center justify-center">
+              {profileImage.busy ? (
+                <ActivityIndicator size="small" />
+              ) : (
+                <MaterialIcons name="photo-camera" size={16} color={ICON_COLOR} />
+              )}
+            </View>
+          </Pressable>
           <StyledText variant="title" className="mt-3">
             {[firstName, lastName].filter(Boolean).join(" ") || "Unnamed"}
           </StyledText>

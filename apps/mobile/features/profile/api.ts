@@ -73,6 +73,36 @@ export async function updateMyStaff(
 }
 
 /**
+ * Tell the web backend to mirror the caller's Clerk-hosted profile
+ * image URL into Mongo. Called after `user.setProfileImage` succeeds
+ * on the client; the actual file bytes go to Clerk via the SDK, not
+ * through our API.
+ *
+ * Pass `imageUrl: null` to clear (after the user removes their
+ * Clerk avatar). Pass `undefined` (default) to let the server pull
+ * the canonical URL straight from Clerk.
+ *
+ * Returns the URL that ended up in Mongo so the client can
+ * optionally cache it (the same URL is exposed by Clerk on
+ * `user.imageUrl` after `user.reload()`).
+ */
+export async function syncProfileImage(
+  imageUrl?: string | null,
+): Promise<string | null> {
+  try {
+    const body =
+      imageUrl === null ? { imageUrl: null } : undefined;
+    const response = await apiClient.post<{ imageUrl: string | null }>(
+      "/me/profile-image",
+      body,
+    );
+    return response.data.imageUrl;
+  } catch (err) {
+    throw unwrapServerError(err, "Could not sync your profile picture.");
+  }
+}
+
+/**
  * Translate an `AxiosError` from the profile endpoints into a plain
  * `Error` whose `.message` is the server-supplied string (or the
  * provided fallback). Keeps UI code free of axios specifics.

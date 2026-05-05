@@ -26,6 +26,7 @@ export function toOrganizationMemberDTO(
     locationId: doc.locationId ? String(doc.locationId) : null,
     clerkUserId: doc.clerkUserId,
     role: doc.role,
+    imageUrl: doc.imageUrl ?? null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

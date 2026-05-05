@@ -49,6 +49,14 @@ export interface StaffDTO {
   address?: StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: InvitationStatus;
+  /**
+   * Public URL of the staff member's profile picture, mirrored from
+   * Clerk so list views (rosters, schedules) can render the avatar
+   * without a per-row Clerk API call. `null` (or absent) means the
+   * staff member is using the Clerk default avatar; consumers should
+   * fall back to initials in that case.
+   */
+  imageUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -254,6 +262,14 @@ export interface OrganizationMemberDTO {
   locationId: string | null;
   clerkUserId: string;
   role: MemberRole;
+  /**
+   * Public URL of the member's profile picture (mirrored from Clerk).
+   * Lets the manager-side schedule and dashboards render owner /
+   * manager / shift-lead avatars without joining against Staff (which
+   * doesn't always have a row for these roles). `null` when the
+   * member hasn't uploaded an image and is using the Clerk default.
+   */
+  imageUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

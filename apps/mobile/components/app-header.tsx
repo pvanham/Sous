@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Image } from "expo-image";
 
 import { StyledText } from "@/components/ui/text";
 
@@ -50,14 +51,24 @@ export function AppHeader() {
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel="Open profile"
-            className="w-10 h-10 rounded-full bg-primary items-center justify-center active:opacity-80"
+            className="w-10 h-10 rounded-full bg-primary items-center justify-center overflow-hidden active:opacity-80"
           >
-            <StyledText
-              variant="label"
-              className="text-primary-foreground text-sm"
-            >
-              {initials}
-            </StyledText>
+            {user?.hasImage && user.imageUrl ? (
+              <Image
+                source={{ uri: user.imageUrl }}
+                style={{ width: 40, height: 40 }}
+                contentFit="cover"
+                transition={150}
+                accessibilityIgnoresInvertColors
+              />
+            ) : (
+              <StyledText
+                variant="label"
+                className="text-primary-foreground text-sm"
+              >
+                {initials}
+              </StyledText>
+            )}
           </Pressable>
           <Pressable
             onPress={goToSettings}

@@ -43,6 +43,12 @@
           }
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Sous needs access to your photos so you can choose a profile picture."
+        }
+      ]
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-web-browser"

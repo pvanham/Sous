@@ -29,6 +29,7 @@ export interface IStaff {
   address?: import("@sous/types").StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: import("@sous/types").InvitationStatus;
+  imageUrl?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -53,6 +54,7 @@ export function toStaffDTO(doc: IStaff & { _id: unknown }): import("@sous/types"
     address: doc.address ?? null,
     clerkUserId: doc.clerkUserId ?? null,
     invitationStatus: doc.invitationStatus ?? "not_invited",
+    imageUrl: doc.imageUrl ?? null,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

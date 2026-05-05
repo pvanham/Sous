@@ -145,6 +145,15 @@ const StaffSchema = new Schema<IStaffDocument>(
       type: String,
       default: null,
     },
+    // Public URL of the staff member's profile picture. Mirrored from
+    // Clerk (which hosts the actual file) so we can render avatars in
+    // roster / schedule lists without a per-row Clerk API round-trip.
+    // `null` indicates the staff member is using the Clerk default
+    // avatar; consumers fall back to initials.
+    imageUrl: {
+      type: String,
+      default: null,
+    },
     invitationStatus: {
       type: String,
       enum: ["not_invited", "pending", "accepted"],

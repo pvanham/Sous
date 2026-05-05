@@ -9,6 +9,12 @@ export interface IOrganizationMember {
   locationId: Types.ObjectId | null; // Reference to Location, null for org-wide access
   clerkUserId: string; // Clerk user ID
   role: MemberRole;
+  /**
+   * Public URL of the member's profile picture (mirrored from Clerk).
+   * `null` means the member hasn't uploaded one yet — UI should
+   * render initials.
+   */
+  imageUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -46,6 +52,10 @@ const OrganizationMemberSchema = new Schema<IOrganizationMemberDocument>(
       required: true,
       enum: MEMBER_ROLES,
       default: "manager",
+    },
+    imageUrl: {
+      type: String,
+      default: null,
     },
   },
   {

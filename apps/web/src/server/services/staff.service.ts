@@ -816,6 +816,32 @@ export const StaffService = {
   },
 
   /**
+   * Mirror a Clerk-hosted profile image URL onto every Staff row that
+   * is linked to the given Clerk user.
+   *
+   * Pass `null` (typical when the user clears their Clerk avatar) to
+   * unset the field — UI consumers fall back to initials. We update
+   * across all locations a staff member is associated with so a
+   * cross-location list (e.g. owner / shift-lead views) sees a
+   * consistent picture.
+   *
+   * Returns the number of staff documents that were modified. If the
+   * caller is a manager / owner without any Staff row at all, this
+   * just returns 0 — the caller should still mirror the image onto
+   * the OrganizationMember rows for their account.
+   */
+  async setImageUrlForClerkUser(
+    clerkUserId: string,
+    imageUrl: string | null,
+  ): Promise<number> {
+    const result = await Staff.updateMany(
+      { clerkUserId },
+      { $set: { imageUrl } },
+    );
+    return result.modifiedCount;
+  },
+
+  /**
    * Unlink a Clerk user from a staff record (e.g., when user is deleted).
    * Preserves the staff record for scheduling data but removes the auth link.
    * @param clerkUserId - Clerk user ID to unlink
