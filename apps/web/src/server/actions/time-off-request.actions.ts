@@ -11,6 +11,8 @@ import {
 } from "@/lib/validations/time-off-request.schema";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { StaffService } from "@/server/services/staff.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { TimeOffRequestDTO } from "@/types/time-off-request";
@@ -88,6 +90,19 @@ export async function createTimeOffRequest(
       ctx.locationId,
       parsed.data
     );
+
+    const staff = await StaffService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.staffId,
+    );
+    void NotificationEvents.timeOffSubmitted({
+      request: result,
+      staffName: staff?.name ?? "A staff member",
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+    });
+
     return { success: true, data: result };
   } catch (error) {
     console.error("createTimeOffRequest error:", error);
@@ -216,6 +231,20 @@ export async function updateTimeOffRequestStatus(
 
     if (!result) {
       return { success: false, error: "Time-off request not found" };
+    }
+
+    const requester = await StaffService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      result.staffId,
+    );
+    if (requester?.clerkUserId) {
+      void NotificationEvents.timeOffDecision({
+        request: result,
+        requesterClerkUserId: requester.clerkUserId,
+        orgId: ctx.orgId,
+        locationId: ctx.locationId,
+      });
     }
 
     return { success: true, data: result };

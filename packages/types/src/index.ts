@@ -568,6 +568,106 @@ export interface ExchangeShiftViabilityDTO {
   pickerName: string | null;
 }
 
+// ── Notifications ────────────────────────────────────────────
+
+import type {
+  NotificationCategory,
+  NotificationCategoriesPrefs,
+  QuietHoursPrefs,
+} from "./validations/notification.schema";
+
+export type {
+  NotificationCategory,
+  NotificationChannel,
+  NotificationCategoriesPrefs,
+  QuietHoursPrefs,
+  CategoryChannelPrefs,
+  UpdateNotificationPreferencesInput,
+  RegisterDeviceTokenInput,
+} from "./validations/notification.schema";
+
+export {
+  notificationCategoryValues,
+  notificationChannelValues,
+  updateNotificationPreferencesSchema,
+  registerDeviceTokenSchema,
+  quietHoursSchema,
+} from "./validations/notification.schema";
+
+/**
+ * A user's notification preferences across all channels and
+ * categories. Stored once per Clerk user (no `orgId` / `locationId`
+ * scoping — see the `NotificationPreference` doc comment in
+ * `apps/web/src/server/models/NotificationPreference.ts` for the
+ * rationale).
+ */
+export interface NotificationPreferencesDTO {
+  /** Clerk user id this row belongs to. */
+  clerkUserId: string;
+  /** Master switches; an `off` here disables every category on that channel. */
+  channels: { push: boolean; email: boolean };
+  /** Per-category, per-channel matrix. Every category key is always present. */
+  categories: NotificationCategoriesPrefs;
+  /** Optional quiet-hours window. `null` means quiet hours are disabled. */
+  quietHours: QuietHoursPrefs;
+  updatedAt: Date;
+}
+
+/**
+ * One row per registered device that wants to receive Expo Push
+ * notifications. Soft-deleted via `revokedAt` rather than hard-deleted
+ * so the dispatcher can correlate "this token is dead now" with the
+ * user it belonged to in logs.
+ */
+export interface DeviceTokenDTO {
+  id: string;
+  clerkUserId: string;
+  /** Expo push token (`ExponentPushToken[…]`). */
+  expoPushToken: string;
+  platform: "ios" | "android";
+  deviceName?: string | null;
+  /** Last time the client refreshed this token (used for prune jobs later). */
+  lastSeenAt: Date;
+  /** Set when Expo returns `DeviceNotRegistered` or the user signs out. */
+  revokedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Default preferences used when a user reads `GET
+ * /api/me/notifications/preferences` for the first time. Every
+ * category opts in on both channels; users opt out from the mobile
+ * settings screen.
+ */
+export function defaultNotificationPreferences(
+  clerkUserId: string,
+): Omit<NotificationPreferencesDTO, "updatedAt"> {
+  const categories = {} as NotificationCategoriesPrefs;
+  for (const cat of [
+    "schedule_published",
+    "schedule_unpublished",
+    "shift_assignment_changed",
+    "manager_coverage_gap",
+    "time_off_submitted",
+    "time_off_decision",
+    "exchange_new_drop",
+    "exchange_pending_approval",
+    "exchange_decision",
+    "announcements",
+    "schedule_generation_async",
+    "billing_alerts",
+  ] as const satisfies readonly NotificationCategory[]) {
+    categories[cat] = { push: true, email: true };
+  }
+  return {
+    clerkUserId,
+    channels: { push: true, email: true },
+    categories,
+    quietHours: null,
+  };
+}
+
 // ── Candidate (Schedule Generation) ──────────────────────────
 
 export interface SlotCandidates {

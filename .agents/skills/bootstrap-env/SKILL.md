@@ -149,6 +149,12 @@ written through unchanged. Common examples:
 - `WEB_CP_SOLVER_URL` → `CP_SOLVER_URL` (defaults to `http://localhost:8000`)
 - `WEB_STRIPE_SECRET_KEY`, `WEB_STRIPE_WEBHOOK_SECRET`,
   `WEB_NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` (+ price IDs) for billing
+- `WEB_RESEND_API_KEY` → `RESEND_API_KEY` (transactional email; without
+  it the dispatcher silently skips email sends)
+- `WEB_RESEND_FROM` → `RESEND_FROM` (default From, e.g.
+  `"Sous <onboarding@resend.dev>"` for dev; verified domain in prod)
+- `WEB_EXPO_ACCESS_TOKEN` → `EXPO_ACCESS_TOKEN` (raises Expo push rate
+  limits; optional — anonymous push still works)
 - `WEB_SEED_CLERK_USER_ID`, `WEB_SEED_CLERK_USER_ID2` for seed scripts
 
 The cloud host should set any combination of these that the current task

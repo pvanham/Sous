@@ -8,10 +8,51 @@ import {
   deleteShiftSchema,
 } from "@/lib/validations/shift.schema";
 import { ShiftService } from "@/server/services/shift.service";
+import { ScheduleService } from "@/server/services/schedule.service";
+import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ShiftDTO } from "@/types/shift";
+
+/**
+ * Best-effort: emit a `shiftAssignmentChanged` push/email if (a) the
+ * shift's parent schedule is currently published and (b) the staff
+ * member is linked to a Clerk user. Falls back silently in every
+ * other case so we never spam staff with unverified changes (e.g.
+ * draft schedule edits the manager is still tweaking).
+ */
+async function emitShiftAssignmentChanged(
+  orgId: string,
+  locationId: string,
+  shift: ShiftDTO,
+  reason: "assigned" | "updated" | "unassigned",
+): Promise<void> {
+  try {
+    const schedule = await ScheduleService.getById(
+      orgId,
+      locationId,
+      shift.scheduleId,
+    );
+    if (!schedule || schedule.status !== "PUBLISHED") return;
+    const staff = await StaffService.getById(orgId, locationId, shift.staffId);
+    if (!staff?.clerkUserId) return;
+    void NotificationEvents.shiftAssignmentChanged({
+      shift,
+      affectedClerkUserIds: [staff.clerkUserId],
+      orgId,
+      locationId,
+      reason,
+    });
+  } catch (err) {
+    console.error("[shift.actions] failed to emit shift change notification", {
+      shiftId: shift.id,
+      reason,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 /**
  * Create a new shift.
@@ -73,6 +114,13 @@ export async function createShift(
       station: shiftData.station,
       notes: shiftData.notes,
     });
+
+    void emitShiftAssignmentChanged(
+      ctx.orgId,
+      ctx.locationId,
+      shift,
+      "assigned",
+    );
 
     // 6. Return response
     return { success: true, data: shift };
@@ -148,6 +196,13 @@ export async function updateShift(
       return { success: false, error: "Shift not found" };
     }
 
+    void emitShiftAssignmentChanged(
+      ctx.orgId,
+      ctx.locationId,
+      shift,
+      "updated",
+    );
+
     // 6. Return response
     return { success: true, data: shift };
   } catch (error) {
@@ -185,7 +240,15 @@ export async function deleteShift(
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 4. Service call
+    // 4. Look up the shift before deleting so we can notify the affected
+    //    staff member with the correct station + window after deletion.
+    const beforeDelete = await ShiftService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      shiftId,
+    );
+
+    // 5. Service call
     const deleted = await ShiftService.delete(
       ctx.orgId,
       ctx.locationId,
@@ -196,7 +259,16 @@ export async function deleteShift(
       return { success: false, error: "Shift not found" };
     }
 
-    // 5. Return response
+    if (beforeDelete) {
+      void emitShiftAssignmentChanged(
+        ctx.orgId,
+        ctx.locationId,
+        beforeDelete,
+        "unassigned",
+      );
+    }
+
+    // 6. Return response
     return { success: true, data: { deleted: true } };
   } catch (error) {
     const message =

@@ -65,6 +65,15 @@ Forgetting the tenant filter is a security bug. Treat any code that
 queries `await Model.find({...})` without a tenant filter as broken,
 even if it "works" in dev.
 
+**Documented exceptions:** the notification system stores per-user
+data (`NotificationPreference`, `DeviceToken`) keyed by `clerkUserId`
+without `orgId` because preferences and registered devices belong to
+the **person**, not the workplace. Both models live alongside the
+tenant-scoped collections in `apps/web/src/server/models/` but their
+service files explicitly call out the exception. Do not mirror this
+pattern for any new collection without a similar justification — see
+[10-notifications.md](./10-notifications.md) for the rationale.
+
 ---
 
 ## 4. AI mutations go through the proposal funnel
@@ -250,6 +259,7 @@ verification matters.
 - `.cursor/skills/bootstrap-env/SKILL.md`
 - `docs/architecture/01-data-models.md` through
   `docs/architecture/08-mobile-architecture.md`
+- `docs/architecture/10-notifications.md` (push + email dispatcher)
 
 That ordered reading list takes about 30 minutes and removes 80% of
 the questions a new agent is likely to ask.

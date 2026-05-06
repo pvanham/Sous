@@ -37,7 +37,9 @@ Use `app/api/.../route.ts` **only** for:
 5. **The mobile app's public API** — endpoints consumed by the Expo
    app. Live today: `/api/me/membership`, `/api/shifts/next`,
    `/api/announcements`, `/api/shifts`,
-   `/api/shifts/[shiftId]/roster`. Skeleton 501 routes for the
+   `/api/shifts/[shiftId]/roster`,
+   `/api/me/notifications/preferences`,
+   `/api/me/notifications/devices`. Skeleton 501 routes for the
    remaining tabs (Exchange, Time-off) live alongside; see
    [08-mobile-architecture.md §10](./08-mobile-architecture.md) for
    the canonical mapping. The wire shapes are part of the cross-app
@@ -165,6 +167,25 @@ The Expo app currently has no automated tests. When we add them,
 prefer Detox/Maestro for full-stack flows hitting a real web backend
 over unit tests for features/*/api.ts (which are mostly HTTP glue).
 
+### 4.5 Notification-specific smoke
+
+`scripts/test-quiet-hours.ts` exercises `inQuietHours()` from
+`apps/web/src/lib/notifications/quiet-hours.ts` across 14 timezone
+boundaries (same-day, midnight-wrap, cross-timezone, degenerate).
+The function is deliberately pure so the script needs no Mongo,
+Clerk, or Resend setup.
+
+Run from `apps/web`:
+
+```bash
+npx tsx ../../scripts/test-quiet-hours.ts
+```
+
+End-to-end push and email delivery require a real device + service
+keys and so are not part of the automated suite. See
+[10-notifications.md](./10-notifications.md) for the manual smoke
+checklist.
+
 ---
 
 ## 5. Middleware & route protection
@@ -215,3 +236,13 @@ All route handlers return one of:
   (Schedule tab weekly strip + day list)
 - `apps/web/src/app/api/shifts/[shiftId]/roster/route.ts` —
   **mobile contract** (Schedule tab "who's on with me" modal)
+- `apps/web/src/app/api/me/notifications/preferences/route.ts` —
+  **mobile contract** (Settings ▸ Notifications). `GET` lazily
+  seeds defaults; `PATCH` accepts a partial update with deep merge
+  semantics so a single toggle can flip without round-tripping the
+  full matrix. See
+  [10-notifications.md](./10-notifications.md).
+- `apps/web/src/app/api/me/notifications/devices/route.ts` —
+  **mobile contract** (push registration). `POST` is upserted on
+  `(clerkUserId, expoPushToken)`; `DELETE ?token=...` is the
+  sign-out hook's soft-revoke endpoint.

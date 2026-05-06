@@ -7,6 +7,7 @@ import { analyzeInfeasibility } from "@/lib/ai/orchestrator/infeasibility-analyz
 import AsyncTask from "@/server/models/AsyncTask";
 import { AsyncTaskService } from "@/server/services/async-task.service";
 import { StaffService } from "@/server/services/staff.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import type {
   AsyncTaskConstraintRelaxationSuggestion,
   AsyncTaskDTO,
@@ -175,6 +176,14 @@ export async function GET(
       $set: { status: "timed_out", completedAt: new Date() },
     });
 
+    void NotificationEvents.scheduleGenerationDone({
+      initiatorClerkUserId: task.clerkUserId,
+      orgId,
+      locationId,
+      success: false,
+      detail: "Schedule generation timed out before completion. Please try again.",
+    });
+
     const elapsedMs = computeElapsedMs(task);
     return NextResponse.json({
       taskId: task.id,
@@ -213,6 +222,24 @@ export async function GET(
         currentTask = updated;
         elapsedMs = computeElapsedMs(currentTask);
       }
+
+      // Fire the per-user "your async job finished" notification once,
+      // at the moment we transition out of pending/running. The mobile
+      // app uses the push to deep-link the initiator back to the
+      // schedule when they're not actively watching the chat.
+      const success = solverJob.status === "completed";
+      void NotificationEvents.scheduleGenerationDone({
+        initiatorClerkUserId: userId,
+        orgId,
+        locationId,
+        success,
+        detail: success
+          ? "Your generated schedule draft is ready to review."
+          : solverJob.status === "infeasible"
+            ? "We couldn't find a feasible schedule with the current constraints."
+            : solverJob.error?.message ??
+              "Schedule generation didn't complete. Please try again.",
+      });
     } else if (
       solverJob?.status === "running" &&
       currentTask.status === "pending"

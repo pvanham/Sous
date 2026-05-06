@@ -468,6 +468,82 @@ The DTO and Zod schemas live in `@sous/types` (`ExchangeShiftDTO`,
 
 ---
 
+## Notification fan-out (per-Clerk-user)
+
+The notification dispatcher (see
+[10-notifications.md](./10-notifications.md)) owns two collections that
+deliberately break the org/location tenancy convention. Each row is
+keyed by the Clerk user id rather than by `orgId` because preferences
+and device tokens are properties of the **person**, not the workplace
+— a user with memberships in two organizations sets a single quiet-
+hours window and registers a single iPhone for both.
+
+### NotificationPreference (`NotificationPreference.ts`)
+
+Stores the master push/email switches, the per-category × per-channel
+matrix, and the optional quiet-hours window for a single user. The
+service layer (`NotificationPreferenceService.getOrCreate`) lazily
+seeds defaults on first read so callers never have to handle a
+"document doesn't exist yet" branch.
+
+```ts
+{
+  clerkUserId: string,                                 // unique
+  channels: { push: boolean; email: boolean },
+  categories: Record<NotificationCategory, {
+    push: boolean;
+    email: boolean;
+  }>,
+  quietHours: null | {
+    enabled: boolean;
+    startMinute: number;     // minutes since midnight, 0..1440
+    endMinute: number;       // minutes since midnight, 0..1440
+    timezone: string;        // IANA, e.g. "America/Los_Angeles"
+  },
+  createdAt, updatedAt: Date,
+}
+```
+
+Indexes: `{ clerkUserId: 1 }` is unique. There is no `orgId` index —
+the document is intentionally global to the user.
+
+DTO and Zod schemas live in `@sous/types`
+(`NotificationPreferencesDTO`, `NotificationCategory`,
+`updateNotificationPreferencesSchema`,
+`defaultNotificationPreferences`). The web wrapper at
+`apps/web/src/types/notification.ts` adds the Mongoose interface
+`INotificationPreference` and `toNotificationPreferenceDTO`.
+
+### DeviceToken (`DeviceToken.ts`)
+
+Stores Expo push tokens for every signed-in mobile device. Soft-
+deleted via `revokedAt` so we keep an audit trail of which device
+last carried which token; the dispatcher filters `revokedAt: null`
+before sending.
+
+```ts
+{
+  clerkUserId: string,
+  expoPushToken: string,           // Expo "ExponentPushToken[xxx]" string
+  platform: "ios" | "android",
+  deviceName?: string | null,      // best-effort label, e.g. "Parker's iPhone"
+  lastSeenAt: Date,                // refreshed on every register
+  revokedAt?: Date | null,         // null when active
+  createdAt, updatedAt: Date,
+}
+```
+
+Indexes: `{ clerkUserId: 1, expoPushToken: 1 }` is unique to keep the
+register endpoint idempotent. `{ revokedAt: 1 }` lets the dispatcher
+short-circuit dead tokens without an in-memory scan.
+
+The DTO is `DeviceTokenDTO` in `@sous/types`. Mobile registration is
+documented in [08-mobile-architecture.md](./08-mobile-architecture.md);
+the dispatcher contract lives in
+[10-notifications.md](./10-notifications.md).
+
+---
+
 ## Not yet modeled (Phase 5 / future)
 
 SMS two-way messaging (`Message`, `CoverageRequest`) is on the roadmap

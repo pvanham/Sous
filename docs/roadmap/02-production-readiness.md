@@ -64,25 +64,32 @@ production:
 
 ### 5. Mobile backend
 
-The mobile app renders mock data for home, schedule, exchange, and
-time-off (see
-[`../architecture/08-mobile-architecture.md`](../architecture/08-mobile-architecture.md)
-§ 10). Those endpoints need to ship on `apps/web` before the
-companion app is user-facing.
-
-Endpoints needed (minimum):
-
-- `GET /api/shifts/next` — next shift for the authenticated staff.
-- `GET /api/shifts?weekStart=YYYY-MM-DD` — current week shifts.
-- `GET /api/shifts/:id/roster` — co-workers on a shift.
-- `GET /api/announcements` — manager announcements.
-- `GET /api/time-off`, `POST /api/time-off` — request list + submit.
-- `GET /api/exchange/available`, `GET /api/exchange/mine`,
-  `POST /api/exchange/:id/pickup`, `POST /api/exchange/:id/drop`.
-
-All of these follow the
+Every endpoint the mobile app needs is now live on `apps/web`. See
+the canonical mapping in
+[`../architecture/08-mobile-architecture.md` § 10.1](../architecture/08-mobile-architecture.md).
+This section is left in place as a cross-link reference; new mobile
+work should extend that table and follow the
 [API and testing](../architecture/05-api-and-testing.md) conventions
 (Clerk auth, Zod validation, `getLocationContext`).
+
+### 5a. Notification delivery
+
+Push (Expo) and email (Resend) delivery shipped in May 2026. See
+[`../architecture/10-notifications.md`](../architecture/10-notifications.md)
+for the dispatcher contract, category taxonomy, and the manual
+smoke checklist. Items still on the roadmap before this is "done"
+in production:
+
+- Verify a Resend sending domain (DKIM + SPF) and switch
+  `RESEND_FROM` off the `onboarding@resend.dev` sandbox.
+- Generate an `EXPO_ACCESS_TOKEN` and add it to the `WEB_*` env
+  set on the production host so push receipt polling lifts off the
+  anonymous rate limit.
+- Run the on-device smoke matrix from §7 of the architecture doc
+  (iOS dev build, Android dev APK, quiet hours, cross-org).
+- Capture an alarm on the dispatcher's `[notify]` log lines via
+  the same observability stack as item §3 above so a Resend or
+  Expo outage surfaces without a user complaint.
 
 ### 6. Deployment hardening
 

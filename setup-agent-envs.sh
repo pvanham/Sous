@@ -53,6 +53,19 @@ REQUIRED_MOBILE_VARS=(
 )
 
 # -----------------------------------------------------------------------------
+# Optional variables (recognised but not enforced).
+#
+# Notifications: when these are unset the web dispatcher silently no-ops the
+# matching channel rather than throwing — push without EXPO_ACCESS_TOKEN
+# still works (anonymous Expo rate limit), email without RESEND_API_KEY
+# disables outbound mail entirely.
+#
+#   WEB_RESEND_API_KEY       — Resend transactional API key
+#   WEB_RESEND_FROM          — Default From address (e.g. "Sous <…>" )
+#   WEB_EXPO_ACCESS_TOKEN    — Expo push access token (raises rate limits)
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
 # Helpers
 # -----------------------------------------------------------------------------
 

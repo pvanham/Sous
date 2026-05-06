@@ -1,7 +1,25 @@
 import { getStripe } from "@/lib/stripe";
 import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
+import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import type Stripe from "stripe";
+
+/**
+ * Look up every owner-role member of an org. Used to deliver
+ * `billing_alerts` (subscription state changes) only to people with
+ * the authority to manage payment. Best-effort: returns `[]` on
+ * failure so the webhook never throws because of a notification miss.
+ */
+async function getOwnerClerkUserIds(orgId: string): Promise<string[]> {
+  try {
+    const members = await OrganizationMemberService.listByOrgId(orgId);
+    return members.filter((m) => m.role === "owner").map((m) => m.clerkUserId);
+  } catch (err) {
+    console.error("[Stripe] Failed to look up owners for billing alert:", err);
+    return [];
+  }
+}
 
 /**
  * Maps Stripe price IDs to subscription tiers.
@@ -83,6 +101,14 @@ export async function POST(req: Request) {
             : null,
         });
         console.log(`[Stripe] Org ${orgId} upgraded to ${tier}`);
+
+        const ownerClerkUserIds = await getOwnerClerkUserIds(orgId);
+        void NotificationEvents.billingAlert({
+          ownerClerkUserIds,
+          orgId,
+          title: `You're on Sous ${tier}`,
+          body: `Your subscription is active. Manage billing or change plans any time from the dashboard.`,
+        });
       }
       break;
     }
@@ -126,6 +152,14 @@ export async function POST(req: Request) {
             currentPeriodEnd: null,
           });
           console.log(`[Stripe] Org ${orgId} downgraded to free`);
+
+          const ownerClerkUserIds = await getOwnerClerkUserIds(orgId);
+          void NotificationEvents.billingAlert({
+            ownerClerkUserIds,
+            orgId,
+            title: "Your Sous subscription ended",
+            body: "Your team is back on the free plan. Resubscribe to restore paid features.",
+          });
         }
       }
       break;
@@ -142,15 +176,40 @@ export async function POST(req: Request) {
         const tier = priceId ? getTierFromPriceId(priceId) : "pro";
 
         if (subscription.status === "active") {
+          const willCancel =
+            subscription.cancel_at_period_end || subscription.cancel_at !== null;
           await OrganizationService.updateSubscription(orgId, {
             stripeSubscriptionId: subscription.id,
             subscriptionTier: tier,
-            cancelAtPeriodEnd: subscription.cancel_at_period_end || subscription.cancel_at !== null,
+            cancelAtPeriodEnd: willCancel,
             currentPeriodEnd: subscription.items.data[0]?.current_period_end
               ? new Date(subscription.items.data[0].current_period_end * 1000)
               : null,
           });
           console.log(`[Stripe] Org ${orgId} subscription updated to ${tier}`);
+
+          // Only emit a billing notification when the cancel-at-period-end
+          // flag flips on; routine renewals shouldn't spam owners.
+          if (willCancel) {
+            const ownerClerkUserIds = await getOwnerClerkUserIds(orgId);
+            void NotificationEvents.billingAlert({
+              ownerClerkUserIds,
+              orgId,
+              title: "Subscription set to cancel",
+              body: "Your Sous subscription will end at the close of the current billing period.",
+            });
+          }
+        } else if (
+          subscription.status === "past_due" ||
+          subscription.status === "unpaid"
+        ) {
+          const ownerClerkUserIds = await getOwnerClerkUserIds(orgId);
+          void NotificationEvents.billingAlert({
+            ownerClerkUserIds,
+            orgId,
+            title: "Payment issue on your Sous subscription",
+            body: "We weren't able to charge your card. Update payment details to keep your team's access.",
+          });
         }
       }
       break;
