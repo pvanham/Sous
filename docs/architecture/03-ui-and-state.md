@@ -1,162 +1,278 @@
-# UI and State Management
+# 03 — UI & State Management (Web)
 
-This document outlines how the user interface interacts with the backend in the Sous application. We strictly separate UI components into "Dumb" and "Smart" components, and use TanStack Query alongside Server Actions for data fetching and state management.
+> How `apps/web/src/app/**` is organized, how client components fetch and
+> mutate data, and how Zod schemas stay in sync across the
+> client/server boundary.
 
-## 1. Smart vs Dumb Components
+This document is scoped to **the web dashboard**. The mobile app has its
+own UI conventions — see [08-mobile-architecture.md](./08-mobile-architecture.md).
 
-| Type | Location | Characteristics |
+---
+
+## 1. Dumb vs. Smart components
+
+| Kind | Location | Characteristics |
 |------|----------|-----------------|
-| Dumb | `src/components/ui/` | Props in, UI out. No side effects. Uses shadcn/ui. |
-| Smart | `_components/*.tsx` | Connects to state, calls queries/mutations. |
+| **Dumb** (presentational) | `apps/web/src/components/ui/` | Props in, UI out. No side effects. shadcn/ui primitives live here. |
+| **Smart** (feature) | `apps/web/src/app/<route>/_components/*.tsx` | Page-local. Wires actions, queries, and state. |
+| **Shared smart** | `apps/web/src/components/shared/**` | Cross-route widgets (e.g. `LocationSwitcher`, `AIAssistantPanel`, `ThemeToggle`, `CustomUserButton`). |
+| **Chat UI** | `apps/web/src/components/ai-chat/**` | Chat shell, message bubbles, confirmation cards — used by `AIAssistantPanel`. |
+| **Marketing** | `apps/web/src/components/marketing/**` | Public-site-only. No Clerk dependencies. |
 
-### Feature Component Structure
-A standard feature directory within the dashboard looks like this:
+### Feature folder convention
+
+Pages co-locate their smart components in an underscore-prefixed
+`_components/` folder. The underscore excludes the folder from Next.js
+routing:
 
 ```
-dashboard/[feature]/_components/
-├── FeatureGrid.tsx        # Main orchestrating component (client)
-├── FeatureHeader.tsx      # Header with actions
-├── FeatureCard.tsx        # Individual item display
-├── FeatureFormDialog.tsx  # Create/Edit form
-├── FeatureFilters.tsx     # Filter controls
-└── FeatureEmptyState.tsx  # Empty state display
+apps/web/src/app/(dashboard)/dashboard/schedule/
+├── page.tsx                      Server Component — fetches initial data
+└── _components/
+    ├── ScheduleGrid.tsx          Orchestrator (client)
+    ├── ScheduleHeader.tsx
+    ├── ShiftCard.tsx
+    ├── ShiftFormDialog.tsx
+    └── …                         One file per concern
 ```
 
-## 2. Server Components vs Client Components
+**Rule:** do not hoist a component out of a `_components/` folder into
+`src/components/` unless it is used by **another route**. Hoisting
+prematurely creates false API surface.
 
-**Server Components (Default)**
-- Used for initial data loading, routing, and static rendering.
-- Defined in `page.tsx` or `layout.tsx`.
-- *Rule*: Never use hooks (`useState`, `useEffect`) here.
+---
 
-**Client Components (`"use client"`)**
-- Used for interactive elements and TanStack Query data fetching.
-- Defined in `_components/*.tsx`.
+## 2. Server Components vs. Client Components
 
-## 3. TanStack Query Patterns
+- **Server Components** are the default in Next.js 16. Use them for
+  initial rendering, data loading that can be expressed with an
+  `await action()` call, and routing. No hooks, no event handlers.
+- **Client Components** are marked with `"use client"` at the top of
+  the file. Use them for interactive state, event handlers, and
+  TanStack Query.
 
-We use TanStack Query v5 for client-side state management, caching, and data fetching via Server Actions.
+A typical page is a Server Component that passes initial data to a
+Client Component, which then uses `useQuery` to stay in sync with
+optimistic mutations:
 
-### Query Key Factory
-Always define a consistent query key structure at the top of the component or in a shared file:
+```tsx
+// page.tsx (Server Component)
+import { listShiftsByWeek } from "@/server/actions/shift.actions";
+import { ScheduleGrid } from "./_components/ScheduleGrid";
 
-```typescript
+export default async function SchedulePage({ searchParams }: …) {
+  const weekStart = resolveWeekStart(searchParams);
+  const initial = await listShiftsByWeek({ weekStart });
+  return <ScheduleGrid initial={initial.success ? initial.data : []} weekStart={weekStart} />;
+}
+```
+
+```tsx
+// _components/ScheduleGrid.tsx (Client Component)
+"use client";
+import { useQuery } from "@tanstack/react-query";
+import { listShiftsByWeek } from "@/server/actions/shift.actions";
+
+export function ScheduleGrid({ initial, weekStart }: …) {
+  const { data } = useQuery({
+    queryKey: ["shifts", "week", weekStart],
+    queryFn: async () => {
+      const r = await listShiftsByWeek({ weekStart });
+      if (!r.success) throw new Error(r.error);
+      return r.data;
+    },
+    initialData: initial,
+  });
+  return /* … */;
+}
+```
+
+---
+
+## 3. TanStack Query v5 conventions
+
+### Query keys
+
+Use **feature-rooted tuples**. The first segment is the feature name; the
+rest narrows scope. This makes cache invalidation fast and explicit.
+
+```ts
+["shifts"]                      // broad — invalidates all shift caches
+["shifts", "week", weekStart]   // narrow — a specific week
+["shifts", "staff", staffId]    // narrow — a specific staff member
+```
+
+Define query-key factories at the top of the file (or in a shared
+`*-keys.ts` when reused):
+
+```ts
 const shiftKeys = {
   all: ["shifts"] as const,
-  bySchedule: (id: string) => [...shiftKeys.all, "schedule", id] as const,
-  byStaff: (id: string) => [...shiftKeys.all, "staff", id] as const,
+  week: (weekStart: Date) => [...shiftKeys.all, "week", weekStart.toISOString()] as const,
+  staff: (staffId: string) => [...shiftKeys.all, "staff", staffId] as const,
 };
 ```
 
-### Fetching Data
-```typescript
-"use client";
+### Reading
 
-import { useQuery } from "@tanstack/react-query";
-import { getExamples } from "@/server/actions/example.actions";
+Always throw inside `queryFn` when the action returns `success: false` —
+that's how React Query's `error` state gets populated.
 
-export function ExampleList() {
-  const { data: examples, isLoading, error } = useQuery({
-    queryKey: exampleKeys.all,
-    queryFn: async () => {
-      const result = await getExamples();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
-    },
-  });
-
-  if (isLoading) return <div>Loading...</div>;
-  if (error) return <div>Error: {error.message}</div>;
-
-  return <div>{/* Render examples */}</div>;
-}
-```
-
-### Mutating Data (with Optimistic Updates)
-Use TanStack Query's `onMutate` to provide instant UI feedback before the server responds:
-
-1. Cancel outgoing refetches
-2. Snapshot previous value
-3. Optimistically update local cache
-4. Rollback `onError` using snapshot
-5. Invalidate `onSettled` to sync with server
-
-```typescript
-"use client";
-
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { createExample } from "@/server/actions/example.actions";
-import { toast } from "sonner";
-
-export function ExampleForm() {
-  const queryClient = useQueryClient();
-
-  const createMutation = useMutation({
-    mutationFn: createExample,
-    
-    // 1. Optimistic Update
-    onMutate: async (newData) => {
-      await queryClient.cancelQueries({ queryKey: exampleKeys.all });
-      const previous = queryClient.getQueryData(exampleKeys.all);
-      
-      queryClient.setQueryData(exampleKeys.all, (old: ExampleDTO[] = []) => [
-        ...old,
-        { ...newData, id: `temp-${Date.now()}` }, // Fake ID temporarily
-      ]);
-      
-      return { previous }; // Snapshot for rollback
-    },
-    
-    // 2. Rollback on Error
-    onError: (err, _, context) => {
-      queryClient.setQueryData(exampleKeys.all, context?.previous);
-      toast.error("Failed to create");
-    },
-    
-    // 3. Success Notification
-    onSuccess: (result) => {
-      if (result.success) toast.success("Created!");
-      else toast.error(result.error);
-    },
-    
-    // 4. Sync with Server
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: exampleKeys.all });
-    },
-  });
-
-  return <button onClick={() => createMutation.mutate({ name: "New" })}>Create</button>;
-}
-```
-
-## 4. Zod Validation
-
-We co-locate Zod schemas and their inferred TypeScript types in `src/lib/validations/`. These schemas are shared between the frontend (react-hook-form) and backend (Server Actions) for end-to-end validation.
-
-```typescript
-// src/lib/validations/staff.schema.ts
-import { z } from "zod";
-
-export const staffSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").max(100),
-  email: z.string().email("Invalid email address"),
+```ts
+const { data, isLoading, error } = useQuery({
+  queryKey: shiftKeys.week(weekStart),
+  queryFn: async () => {
+    const result = await listShiftsByWeek({ weekStart });
+    if (!result.success) throw new Error(result.error);
+    return result.data;
+  },
 });
-
-// Extract types
-export type StaffInput = z.infer<typeof staffSchema>;
-
-// Partial schema for updates
-export const updateStaffSchema = staffSchema.partial();
-export type StaffUpdateInput = z.infer<typeof updateStaffSchema>;
 ```
 
-### Frontend Validation Example
-```typescript
+### Mutating with optimistic updates
+
+The dashboard is optimistic by default. Follow the standard five-step
+pattern:
+
+```ts
+const createMutation = useMutation({
+  mutationFn: createShift,
+  onMutate: async (input) => {
+    await queryClient.cancelQueries({ queryKey: shiftKeys.week(weekStart) });
+    const previous = queryClient.getQueryData<ShiftDTO[]>(shiftKeys.week(weekStart));
+    queryClient.setQueryData<ShiftDTO[]>(shiftKeys.week(weekStart), (old = []) => [
+      ...old,
+      { ...input, id: `temp-${Date.now()}`, /* … */ },
+    ]);
+    return { previous };
+  },
+  onError: (_err, _input, context) => {
+    queryClient.setQueryData(shiftKeys.week(weekStart), context?.previous);
+    toast.error("Failed to create shift");
+  },
+  onSuccess: (result) => {
+    if (!result.success) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success("Shift created");
+  },
+  onSettled: () => {
+    queryClient.invalidateQueries({ queryKey: shiftKeys.week(weekStart) });
+  },
+});
+```
+
+**Rules:**
+
+- Cancel in-flight queries **before** snapshotting.
+- Always roll back on error using the `onMutate` snapshot.
+- Toasts go in `onSuccess` and `onError`, never in `onMutate` (that
+  fires before the server has done anything).
+- Invalidate in `onSettled` so both success and failure resync.
+
+---
+
+## 4. Forms
+
+Forms use **React Hook Form + Zod** via the shadcn `Form` primitive at
+`apps/web/src/components/ui/form.tsx`.
+
+```tsx
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { staffSchema, type StaffInput } from "@/lib/validations/staff.schema";
+import { createShiftSchema, type CreateShiftInput } from "@sous/types";
 
-const form = useForm<StaffInput>({ 
-  resolver: zodResolver(staffSchema) 
+const form = useForm<CreateShiftInput>({
+  resolver: zodResolver(createShiftSchema),
+  defaultValues: { /* … */ },
 });
 ```
+
+### Shared schemas
+
+The same Zod schema validates the form **and** the Server Action that
+receives the form output. Source of truth for cross-app schemas is
+`packages/types/src/validations/` (imported as `@sous/types`). Web-only
+schemas may live in `apps/web/src/lib/validations/` but must be moved
+to `@sous/types` as soon as the mobile app (or a shared tool) starts
+consuming them.
+
+---
+
+## 5. Providers tree (`src/components/shared/providers.tsx`)
+
+The root layout wraps everything in a single `<Providers>` component
+that mounts:
+
+- `QueryClientProvider` (TanStack Query v5; a stable `QueryClient`
+  instance with sensible `staleTime` / `gcTime` defaults).
+- `ThemeProvider` from `next-themes` (class-based dark mode).
+- `Toaster` from `sonner` (used by the mutation pattern above).
+
+Adding a new top-level provider means editing this file. Do **not**
+wrap individual pages or dialogs in their own `QueryClientProvider` —
+the cache is app-wide.
+
+---
+
+## 6. Styling — Tailwind v4 with the Warm Industrial palette
+
+Tailwind v4 is **CSS-first**. Tokens live in
+`apps/web/src/app/globals.css` as CSS custom properties, surfaced to
+Tailwind utilities by the shared preset at
+`packages/config/tailwind-preset.ts`.
+
+### Rules
+
+1. **Use semantic utilities** — `bg-card`, `text-foreground`,
+   `border-border`, `ring-ring`, `bg-primary`, `text-primary-foreground`.
+2. **Never hardcode hex values in markup.** If the token isn't
+   expressive enough, add one to `globals.css` and extend the preset —
+   don't bypass it.
+3. **Dark mode** is class-based (`.dark` on `<html>`), managed by
+   `next-themes`. Use the `dark:` variant only when a specific
+   override is needed in one direction; most components just read the
+   CSS variable and work in both modes.
+4. **Radius is token-driven** — `--radius: 0.25rem` (4px, sharp by
+   design). Don't override with `rounded-lg` or similar if you want
+   something else; change the token.
+5. **No shadows in the base style.** The palette relies on borders.
+   If you reach for `shadow-*`, reconsider.
+6. **Fonts** — `GeistSans` / `GeistMono` are wired in
+   `src/app/layout.tsx`. Use `font-sans` / `font-mono` utilities;
+   don't re-import.
+
+### Matching tokens on mobile
+
+`apps/mobile/global.css` mirrors the same CSS variables so NativeWind
+can bind the same semantic utility names. When you change a token,
+change it in both `globals.css` files (or push the change into the
+shared preset and have both consume it).
+
+---
+
+## 7. Framer Motion + Radix dialogs
+
+Animating Radix dialogs has sharp edges. The canonical solution is
+documented in its own file:
+[06-framer-motion-dialogs.md](./06-framer-motion-dialogs.md). Follow
+that pattern literally — every existing animated dialog in the app uses
+it.
+
+---
+
+## 8. Common gotchas
+
+- **`"use client"` at the top of the file.** A `_components/*.tsx` that
+  uses hooks but forgets the directive will fail with a confusing RSC
+  serialization error.
+- **Stringify dates in query keys.** `Date` objects are reference-compared
+  in React Query; stringify to ISO inside the key factory.
+- **Do not import server actions into Route Handlers.** Import the
+  service directly (route handlers have their own `auth()` path).
+- **Shared components go in `src/components/`**, page-local in
+  `_components/`. Don't mix.
+- **Forms that trigger navigation** should call `router.refresh()` (not
+  `router.push()`) when the page is already on the right URL — this
+  re-runs the Server Component tree and picks up invalidated data.

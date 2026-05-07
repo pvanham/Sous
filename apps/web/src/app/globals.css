@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+@plugin "tailwindcss-animate";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ============================================
+   Warm Industrial Design System
+   "The Hearth & The Machine"
+   ============================================
+   - Stone palette (warm grey undertones)
+   - Rust/Burnt Orange primary (#B45309)
+   - 4px radius for sharp, industrial precision
+   - No shadows - borders only
+   ============================================ */
+
+:root {
+  /* Light Mode - "Creamy/Almond" Theme */
+  --radius: 0.25rem; /* 4px - Industrial precision */
+
+  /* Backgrounds */
+  --background: #ebe9e4; /* Deep creamy beige/oat - NOT white */
+  --foreground: #44403c; /* Warm Charcoal (stone-700) */
+
+  /* Cards & Surfaces */
+  --card: #f5f2ed; /* Lighter beige, "Unbleached Paper" */
+  --card-foreground: #44403c; /* stone-700 */
+  --popover: #f5f2ed; /* Same as card */
+  --popover-foreground: #44403c; /* stone-700 */
+
+  /* Primary - Rust / Burnt Orange */
+  --primary: #b45309; /* amber-700 */
+  --primary-foreground: #fefce8; /* yellow-50 for contrast */
+
+  /* Secondary */
+  --secondary: #e7e5e4; /* stone-200 */
+  --secondary-foreground: #1c1917; /* stone-900 */
+
+  /* Muted */
+  --muted: #e7e5e4; /* stone-200 */
+  --muted-foreground: #78716c; /* stone-500 */
+
+  /* Accent */
+  --accent: #d6d3d1; /* stone-300 */
+  --accent-foreground: #1c1917; /* stone-900 */
+
+  /* Destructive */
+  --destructive: #dc2626; /* red-600 */
+  --destructive-foreground: #fef2f2; /* red-50 */
+
+  /* Borders & Inputs */
+  --border: #d6d3d1; /* stone-300 */
+  --input: #d6d3d1; /* stone-300 */
+  --ring: #b45309; /* Rust - matches primary */
+
+  /* Chart Colors - Earth Tones */
+  --chart-1: #b45309; /* amber-700 (Rust) */
+  --chart-2: #059669; /* emerald-600 (Sage) */
+  --chart-3: #78716c; /* stone-500 */
+  --chart-4: #d97706; /* amber-600 (Mustard) */
+  --chart-5: #0d8f94ff; /* teal-600 */
+
+  /* Sidebar */
+  --sidebar: #f5f2ed; /* Same as card */
+  --sidebar-foreground: #44403c; /* stone-700 */
+  --sidebar-primary: #b45309; /* Rust */
+  --sidebar-primary-foreground: #fefce8;
+  --sidebar-accent: #d6d3d1; /* stone-300 */
+  --sidebar-accent-foreground: #1c1917;
+  --sidebar-border: #d6d3d1; /* stone-300 */
+  --sidebar-ring: #b45309;
+}
+
+.dark {
+  /* Dark Mode - "Obsidian/Espresso" Theme */
+
+  /* Backgrounds */
+  --background: #1c1917; /* stone-900 / Warm Black */
+  --foreground: #e7e5e4; /* stone-200 / Warm Grey */
+
+  /* Cards & Surfaces */
+  --card: #292524; /* stone-800 */
+  --card-foreground: #e7e5e4; /* stone-200 */
+  --popover: #292524; /* stone-800 */
+  --popover-foreground: #e7e5e4; /* stone-200 */
+
+  /* Primary - Rust (slightly brighter for dark mode) */
+  --primary: #d97706; /* amber-600 */
+  --primary-foreground: #1c1917; /* stone-900 */
+
+  /* Secondary */
+  --secondary: #44403c; /* stone-700 */
+  --secondary-foreground: #e7e5e4; /* stone-200 */
+
+  /* Muted */
+  --muted: #44403c; /* stone-700 */
+  --muted-foreground: #a8a29e; /* stone-400 */
+
+  /* Accent */
+  --accent: #44403c; /* stone-700 */
+  --accent-foreground: #e7e5e4; /* stone-200 */
+
+  /* Destructive */
+  --destructive: #f87171; /* red-400 */
+  --destructive-foreground: #1c1917;
+
+  /* Borders & Inputs */
+  --border: #44403c; /* stone-700 */
+  --input: #44403c; /* stone-700 */
+  --ring: #d97706; /* amber-600 */
+
+  /* Chart Colors (adjusted for dark mode) */
+  --chart-1: #f59e0b; /* amber-500 */
+  --chart-2: #34d399; /* emerald-400 */
+  --chart-3: #a8a29e; /* stone-400 */
+  --chart-4: #fbbf24; /* amber-400 */
+  --chart-5: #2dd4bf; /* teal-400 */
+
+  /* Sidebar */
+  --sidebar: #292524; /* stone-800 */
+  --sidebar-foreground: #e7e5e4; /* stone-200 */
+  --sidebar-primary: #d97706; /* amber-600 */
+  --sidebar-primary-foreground: #1c1917;
+  --sidebar-accent: #44403c; /* stone-700 */
+  --sidebar-accent-foreground: #e7e5e4;
+  --sidebar-border: #44403c; /* stone-700 */
+  --sidebar-ring: #d97706;
+}
+
+@theme inline {
+  /* Radius - Industrial 4px base */
+  --radius-sm: calc(var(--radius) - 2px); /* 2px */
+  --radius-md: var(--radius); /* 4px */
+  --radius-lg: var(--radius); /* 4px (no more friendly roundness) */
+  --radius-xl: calc(var(--radius) + 2px); /* 6px */
+  --radius-2xl: calc(var(--radius) + 4px); /* 8px */
+  --radius-3xl: calc(var(--radius) + 8px); /* 12px */
+  --radius-4xl: calc(var(--radius) + 12px); /* 16px */
+
+  /* Colors mapped to CSS variables */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Font families */
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* AI Button Gradient - "Heat" theme (Amber to Rose) */
+.ai-gradient {
+  background: linear-gradient(135deg, #f59f0bd1 0%, #e11d48 100%);
+}
+
+.ai-gradient:hover {
+  background: linear-gradient(135deg, #d97706 0%, #be123c 100%);
+  box-shadow: 0 0 20px -5px rgba(245, 158, 11, 0.4);
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}

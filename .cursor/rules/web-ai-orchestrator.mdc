@@ -1,0 +1,237 @@
+---
+description: AI orchestrator, tool registry, proposal lifecycle, and Vercel AI SDK + OpenAI client coexistence in the web app.
+globs: apps/web/src/lib/ai/**/*.ts,apps/web/src/app/api/ai/**/*.ts,apps/web/src/server/services/ai/**/*.ts,apps/web/src/components/ai-chat/**/*.tsx
+---
+
+# Web — AI Orchestrator
+
+This rule covers the agentic AI surface of the web app: the chat endpoint,
+tool registry, proposal lifecycle, RBAC, async tasks, and the two
+coexisting AI SDKs.
+
+For the high-level architecture narrative, read
+`docs/architecture/07-ai-orchestrator.md`.
+
+---
+
+## Two AI SDKs, two jobs
+
+The web app uses **both** of these and the distinction matters:
+
+| SDK / package | Import path | Used for |
+|---------------|-------------|----------|
+| **Vercel AI SDK** — `ai`, `@ai-sdk/openai` | `apps/web/src/app/api/ai/chat/route.ts`, `apps/web/src/lib/ai/tools/ai-sdk-adapter.ts` | The **chat** route. `streamText`, tool-calling loop, UI message streaming. This is the agent loop users see in `AIAssistantPanel`. |
+| **OpenAI npm package** — `openai` | `apps/web/src/lib/ai/openai-client.ts`, `apps/web/src/server/services/ai/scheduling-agent.service.ts` | Non-chat, **single-turn** or **JSON-mode** calls: schedule generation, narrative summaries, infeasibility analysis. Includes retry, token accounting, and monthly usage limits. |
+
+**Rule:** if the call is part of a multi-turn user-visible chat, use the
+Vercel AI SDK. If it is a one-shot LLM call from a service, use
+`openai-client.ts`. Do not mix them in the same flow, and do not introduce
+a third wrapper.
+
+---
+
+## The propose → confirm → execute loop
+
+User-facing **mutations** via the AI assistant follow a three-phase
+agentic pattern. This is the core safety mechanism.
+
+```
+User msg ─► LLM picks tool ─► propose_*  ─► Proposal persisted ─► UI card
+                                                                     │
+                                                User clicks "Confirm"│
+                                                                     ▼
+                                       /api/ai/proposals/:id/resolve ─► execute-proposal.ts
+                                                                     │
+                                                                     ▼
+                                                           Real mutation via service layer
+```
+
+### Tool naming convention
+
+- **`get_*` / `resolve_*`** — read-only tools. Execute synchronously,
+  return data to the model, and let the model summarize.
+- **`propose_*`** — mutation tools. **Never** mutate. They:
+  1. Validate the plan (dry-run through the service layer where
+     possible).
+  2. Compute an OCC token (`currentVersion`) for the target aggregate.
+  3. Create a `StoredProposal` embedded on the `Conversation` document.
+  4. Return the proposal summary to the model (and indirectly to the UI).
+
+Search for existing `propose-*` handlers in
+`apps/web/src/lib/ai/tools/definitions/` before inventing a new one.
+
+### Proposal lifecycle
+
+- A proposal is created with `status: "pending"` and
+  `expiresAt: now + PROPOSAL_TTL_MINUTES` (see `lib/ai/constants.ts`).
+- When the user confirms, `POST /api/ai/proposals/:id/resolve` runs
+  `executeProposal()` (`lib/ai/orchestrator/execute-proposal.ts`):
+  - Re-verifies RBAC + tenant context.
+  - Re-checks OCC: refuses if `currentVersion` in the proposal no longer
+    matches the live aggregate (concurrent edits).
+  - Delegates to a **service** to perform the mutation.
+  - Marks the proposal `executed` (or `failed`, with a reason).
+- If the user declines, the proposal is marked `rejected`.
+- Stale proposals are expired lazily at the start of every new chat turn
+  via `expirePendingProposals` (fire-and-forget).
+
+**Rule:** a proposal handler must not call `services.*.create/update/delete`.
+Only the confirm endpoint may mutate, and only via the service layer.
+
+---
+
+## Tool registry (`src/lib/ai/tools/`)
+
+```
+src/lib/ai/tools/
+├── tool-registry.ts         Flat array of AIToolDefinitions
+├── tool-registry.types.ts   defineTool helper, types
+├── tool-result.types.ts     Discriminated result types
+├── tool-proposal.types.ts   Proposal shapes per tool
+├── tool-executor.ts         Shared execution wrapper (logging, errors)
+├── ai-sdk-adapter.ts        Converts AIToolDefinitions → Vercel AI SDK tools
+├── pagination.ts            Shared list-truncation logic
+├── sanitize.ts              Strip unsafe content from tool args/results
+└── definitions/
+    ├── <tool>.schema.ts     Zod parameter schema
+    ├── <tool>.handler.ts    execute() implementation
+    └── index.ts             Barrel export
+```
+
+### Adding a tool (read-only, `get_*`)
+
+1. Add `<name>.schema.ts` exporting a `z.object({...})` parameter schema.
+2. Add `<name>.handler.ts` exporting `async function execute<Name>(params, ctx)`.
+   - `ctx: ToolExecutionContext` has `orgId`, `locationId`, `clerkUserId`,
+     `role`, `conversationId`, `timezone`.
+   - Return a **discriminated result** from `tool-result.types.ts` (e.g.
+     `{ type: "success", data, uiHint }` or `{ type: "error", message }`).
+3. Barrel-export both from `definitions/index.ts`.
+4. Register in `tool-registry.ts` via `defineTool({ name, description,
+   requiredPermission, parameters, execute })`.
+5. `requiredPermission` must be an `AIPermission` from
+   `lib/ai/rbac/permissions.ts`. Pick the most restrictive that still
+   makes the tool useful.
+
+### Adding a mutation tool (`propose_*`)
+
+- Do **all** of the above, but `execute` must create a `StoredProposal`
+  and never mutate. See `propose-shift-swap.handler.ts` for the canonical
+  reference (OCC token, dry-run, proposal summary).
+- Add the matching execution branch to
+  `lib/ai/orchestrator/execute-proposal.ts` so the confirm endpoint knows
+  how to materialize the proposal into a real service call.
+
+---
+
+## RBAC (`src/lib/ai/rbac/`)
+
+- `permissions.ts` defines `AIPermission` and `ROLE_PERMISSIONS` (frozen).
+  Each `MemberRole` maps to an allow-list of permissions.
+- `filter-tools.ts` narrows the full tool registry to the subset the
+  current user may call, based on their role.
+- RBAC is enforced in **two places** — the filter (so the LLM can't even
+  see tools it can't call) **and** the proposal resolve endpoint (so a
+  stale proposal can't be executed after a role change).
+- Never remove a tool from the registry and expect RBAC to catch it
+  downstream — both layers must agree.
+
+---
+
+## Orchestrator context (`src/lib/ai/orchestrator/`)
+
+- `build-context.ts` produces an `OrchestratorContext` for every chat
+  turn: authenticated user, tenant, role, allowed tools, and verified
+  viewport context (the page the user is on).
+- `viewport` is validated with `@sous/types` `viewportContextSchema` and
+  **verified** via `verify-viewport-access.ts` — you can't claim to be
+  looking at a schedule you don't have access to.
+- `system-prompt.ts` builds the final system prompt: restaurant
+  identity, role-specific guidance, viewport context, date/time in the
+  location's timezone, and the rules of the propose/confirm protocol.
+
+---
+
+## Async tasks (long-running proposals)
+
+Some proposals — most notably **schedule generation** — take longer than
+a single Vercel AI SDK stream. These use `AsyncTask` (Mongoose model):
+
+1. The `propose_schedule_generation` handler enqueues an `AsyncTask`
+   (status `pending`, `taskType: "schedule-generation"`) and returns a
+   proposal that references `taskId`.
+2. The `scheduling-agent.service.ts` picks up the task, calls the
+   CP-SAT solver via `cp-solver.service.ts`, and writes the generated
+   shifts into the task `result`.
+3. The UI polls `/api/ai/tasks/[taskId]/status` via
+   `lib/ai/client/poll-task-status.ts`.
+4. When the task completes, the UI surfaces a `propose_accept_generated_schedule`
+   follow-up proposal. Accepting it materializes the shifts.
+5. An `async-system-message.ts` injects task progress into the next chat
+   turn so the model knows the background work finished.
+
+**Rule:** long-running LLM work should always be modeled as an
+`AsyncTask`, not as a blocking server action. Keep the chat stream under
+`maxDuration = 30` seconds.
+
+---
+
+## OCC (Optimistic Concurrency Control)
+
+`lib/ai/orchestrator/occ.ts` centralizes version checks for AI-driven
+mutations:
+
+- When a proposal is created it records the target aggregate's current
+  `updatedAt` (or a bump counter) as `expectedVersion`.
+- At execute time, the service re-reads the aggregate; if the version has
+  moved, the execution fails with a human-readable "stale proposal"
+  error and the UI surfaces a re-fetch.
+- Any new `propose_*` tool that mutates must plug into OCC — do not
+  bypass it for convenience.
+
+---
+
+## Persistence: `Conversation` + `StoredProposal`
+
+- Each chat session is a `Conversation` document
+  (`src/server/models/Conversation.ts`) scoped by `orgId` + `clerkUserId`.
+- Messages are pushed as embedded `ConversationMessage` objects on
+  `$push: { messages }` at `onFinish` of the stream.
+- Proposals are embedded as `StoredProposal` objects on the same doc
+  (nested array). They carry lifecycle fields (`status`, `expiresAt`,
+  `resolvedAt`, `executionResult`) and the OCC token.
+
+**Rule:** do not introduce a new collection for AI state without a very
+good reason. The conversation-centric model is intentional — it keeps
+history, proposals, and context in a single document for the LLM.
+
+---
+
+## Token accounting and limits (`openai-client.ts`)
+
+- Every non-chat LLM call through `openai-client.ts` extracts
+  `response.usage` and reports it to `ai-usage.service.ts`.
+- Organisations have a monthly generation limit; exceeding it throws
+  `AILimitExceededError`. Actions that call AI must catch this
+  specifically and surface a billing CTA.
+- Chat usage is **not** currently metered here — the Vercel AI SDK
+  stream returns usage via `onFinish`, and wiring it into
+  `ai-usage.service.ts` is a known follow-up. If you touch chat
+  accounting, update both places.
+
+---
+
+## Common mistakes (do not commit these)
+
+1. Mutating from a `propose_*` handler.
+2. Skipping OCC on a new mutation tool.
+3. Importing a Mongoose model inside `lib/ai/tools/definitions/*` —
+   always go through a service.
+4. Adding a new AI permission without updating
+   `ROLE_PERMISSIONS` for **every** role.
+5. Using the `openai` package inside the chat route, or the Vercel AI
+   SDK inside a one-shot service call.
+6. Inlining a long-running LLM call in an action instead of enqueuing an
+   `AsyncTask`.
+7. Trusting a client-supplied `viewportContext` without running it
+   through `verify-viewport-access`.

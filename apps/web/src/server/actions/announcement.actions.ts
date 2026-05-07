@@ -1,0 +1,248 @@
+"use server";
+
+import { auth, clerkClient } from "@clerk/nextjs/server";
+import { getLocationContext } from "@/lib/auth/get-location-context";
+import {
+  AnnouncementService,
+} from "@/server/services/announcement.service";
+import { NotificationEvents } from "@/server/services/notification-events";
+import {
+  createAnnouncementSchema,
+  updateAnnouncementSchema,
+  listAnnouncementsSchema,
+} from "@/lib/validations/announcement.schema";
+import type { ActionResponse } from "@/lib/safe-action";
+import type { AnnouncementDTO } from "@/types/announcement";
+import type { MemberRole } from "@/server/models/OrganizationMember";
+
+/**
+ * Roles allowed to author / edit / delete announcements. Read-side
+ * actions are open to every signed-in member of the location.
+ *
+ * Centralised here so the rule is auditable in one place; the
+ * `orchestrator` rule (`apps/web/src/lib/ai/rbac/permissions.ts`)
+ * mirrors it for the AI tool surface.
+ */
+const WRITE_ROLES: MemberRole[] = ["owner", "manager"];
+
+/**
+ * Resolve the caller's display name from Clerk. Falls back to the
+ * email or Clerk user id so we never persist `"undefined"` in the
+ * `authorName` field.
+ */
+async function resolveAuthorName(clerkUserId: string): Promise<string> {
+  const client = await clerkClient();
+  const user = await client.users.getUser(clerkUserId);
+
+  const fullName = [user.firstName, user.lastName]
+    .filter((part): part is string => Boolean(part && part.trim()))
+    .join(" ")
+    .trim();
+
+  if (fullName) return fullName;
+
+  const primaryEmail = user.emailAddresses.find(
+    (e) => e.id === user.primaryEmailAddressId
+  )?.emailAddress;
+
+  return primaryEmail ?? clerkUserId;
+}
+
+/**
+ * List recent announcements for the caller's location.
+ *
+ * Open to every role (staff use the mobile home tab, managers use
+ * their authoring UI). The `includeExpired` flag is only honoured
+ * for write-eligible roles so staff cannot enumerate rolled-off
+ * posts by tweaking the URL.
+ */
+export async function listAnnouncements(
+  input: unknown = {}
+): Promise<ActionResponse<AnnouncementDTO[]>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const parsed = listAnnouncementsSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error:
+          parsed.error.issues
+            .map((e) => `${e.path.join(".")}: ${e.message}`)
+            .join(", ") || "Invalid input",
+      };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    const includeExpired =
+      parsed.data.includeExpired && WRITE_ROLES.includes(ctx.role);
+
+    const data = await AnnouncementService.list(
+      ctx.orgId,
+      ctx.locationId,
+      { limit: parsed.data.limit, includeExpired }
+    );
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("listAnnouncements error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to list announcements";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Create a new announcement. Manager / owner only.
+ */
+export async function createAnnouncement(
+  input: unknown
+): Promise<ActionResponse<AnnouncementDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const parsed = createAnnouncementSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error:
+          parsed.error.issues
+            .map((e) => `${e.path.join(".")}: ${e.message}`)
+            .join(", ") || "Invalid input",
+      };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can post announcements",
+      };
+    }
+
+    const authorName = await resolveAuthorName(userId);
+
+    const data = await AnnouncementService.create({
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+      authorClerkUserId: userId,
+      authorName,
+      title: parsed.data.title,
+      body: parsed.data.body,
+      priority: parsed.data.priority,
+      expiresAt: parsed.data.expiresAt ?? null,
+    });
+
+    void NotificationEvents.announcementCreated({
+      announcement: data,
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("createAnnouncement error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to create announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Update an existing announcement. Manager / owner only.
+ */
+export async function updateAnnouncement(
+  input: unknown
+): Promise<ActionResponse<AnnouncementDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const parsed = updateAnnouncementSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error:
+          parsed.error.issues
+            .map((e) => `${e.path.join(".")}: ${e.message}`)
+            .join(", ") || "Invalid input",
+      };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can edit announcements",
+      };
+    }
+
+    const data = await AnnouncementService.update(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data
+    );
+
+    if (!data) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("updateAnnouncement error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to update announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Hard-delete an announcement. Manager / owner only.
+ *
+ * `id` is the announcement document id. We accept it as a positional
+ * string for parity with the other delete actions (e.g.
+ * `deleteTimeOffRequest`).
+ */
+export async function deleteAnnouncement(
+  id: string
+): Promise<ActionResponse<boolean>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!id || typeof id !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can delete announcements",
+      };
+    }
+
+    const deleted = await AnnouncementService.delete(
+      ctx.orgId,
+      ctx.locationId,
+      id
+    );
+
+    if (!deleted) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    return { success: true, data: true };
+  } catch (error) {
+    console.error("deleteAnnouncement error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to delete announcement";
+    return { success: false, error: message };
+  }
+}

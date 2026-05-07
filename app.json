@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "8675893a-981f-4941-98a6-92bfcdd0f44a"
+      }
+    },
+    "owner": "pvanham",
+    "slug": "sous"
+  }
+}

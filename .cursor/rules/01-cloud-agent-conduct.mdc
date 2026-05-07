@@ -1,0 +1,123 @@
+---
+description: Code-writing and formatting conduct for cloud agents on the Sous monorepo. Always applied.
+globs: *
+alwaysApply: true
+---
+
+# Cloud Agent Conduct
+
+This rule governs **how** you write code, not **what** code you write. It
+applies to every edit, every commit, every file — web, mobile, packages,
+docs, scripts.
+
+---
+
+## 1. Before you touch anything
+
+- **Bootstrap first.** A fresh cloud agent session must run the
+  `bootstrap-env` skill (see `.cursor/skills/bootstrap-env/SKILL.md`) before
+  any dev server, typecheck, or install. Do not improvise.
+- **Read before write.** Open the file you intend to edit, and at least one
+  neighbouring file (sibling component, sibling action, the service it
+  calls). Match the local style: indent width, quote style, import order,
+  JSDoc presence, barrel export usage.
+- **Respect the architecture.** If the task sounds like it touches the
+  database, Clerk, AI orchestration, or billing, the relevant rule and the
+  `docs/architecture/` file are authoritative. Follow them.
+
+## 2. No lazy code
+
+- **Never emit placeholder comments** such as `// ... existing code ...`,
+  `// implementation details`, `// TODO: rest here`. Output complete,
+  runnable code.
+- **Never delete or rewrite unrelated code** to "clean it up". Keep diffs
+  focused on the asked-for change.
+- **Don't stub out types as `any`, `unknown`, or `object` to silence
+  TypeScript.** If you truly don't know the shape, stop and read the
+  upstream definition.
+- **Don't hand-edit generated artifacts** (`apps/*/.env*`, lockfiles,
+  `next-env.d.ts`, `expo-env.d.ts`). Re-run the generator.
+
+## 3. TypeScript discipline
+
+- `strict: true` is on in every workspace. `noImplicitAny`, `strictNullChecks`,
+  and friends must pass.
+- Prefer `type` aliases and discriminated unions over `enum`s. The
+  repo already follows this (`ActionResponse<T>`, `Membership`, etc.).
+- When returning data from a service or Server Action, return a **DTO**
+  (plain object) — never a Mongoose `Document` and never `Date` instances
+  wrapped in Mongoose subdocs. See `web-server-actions.mdc`.
+- Import shared types from `@sous/types` rather than duplicating them.
+
+## 4. Formatting and aesthetics
+
+- Use the repo's Prettier/ESLint config — don't reformat whole files.
+- **No emojis** in code, comments, commit messages, or assistant output
+  unless the user explicitly asks for them.
+- Comments describe **intent, invariants, or trade-offs** — not what the
+  code literally does. Don't narrate.
+- Keep lines under ~100 chars where practical, matching surrounding code.
+- Prefer named exports. Default exports are fine for Next.js `page.tsx`,
+  `layout.tsx`, `route.ts`, and Expo Router files (these are framework
+  requirements).
+
+## 5. File creation bar
+
+- **Editing an existing file is always preferred over creating a new one.**
+  If you create a new file, justify it (new feature, new rule, new doc).
+- Do not create `README.md`, `NOTES.md`, or similar scratch docs. All
+  durable docs live in `docs/` and follow the architecture doc style.
+- Do not commit one-off scripts in `scripts/` without justification; ad-hoc
+  work goes in a sandbox shell, not the repo.
+
+## 6. Verification before handing back
+
+Every non-trivial change must pass at least one of:
+
+1. `npm run typecheck` from the repo root (all workspaces).
+2. `cd apps/<app> && npm run typecheck` for a single-app change.
+3. `npm run lint` where relevant.
+
+If you cannot run these (sandbox, missing env), **say so explicitly** in
+your hand-back and list what you did verify (imports resolve, types line
+up on inspection, etc.).
+
+## 7. Git and safety
+
+- **Do not commit unless asked.** Cursor's git rules apply.
+- Never `git add .env.local`, `.env`, or anything matching `.env*` other
+  than `.env.example`. The root `.gitignore` enforces this; don't fight it.
+- Never force-push, rebase-in-place, or rewrite history without an explicit
+  request.
+- Treat `apps/web/src/proxy.ts`, `turbo.json`, `package.json`, and
+  workspace `package.json` files as high-blast-radius: edit deliberately,
+  never as a side effect.
+
+## 8. Secrets
+
+- Never log, echo, or print secret values (OpenAI keys, Clerk secret keys,
+  Mongo URIs, Stripe keys, Twilio tokens).
+- When you need a secret at runtime, read it from `process.env.*` in the
+  web app or `process.env.EXPO_PUBLIC_*` in the mobile app. Don't inline.
+- If you discover a plausibly-real secret committed to the repo, stop and
+  flag it to the user.
+
+## 9. Communication style with the user
+
+- Be concise. The user is reading terminal output on a cloud agent host.
+- Lead with the outcome ("I updated X and wired it to Y"). Put reasoning
+  after, not before.
+- When you stop because you need input, say so in one line and list the
+  specific question(s).
+
+---
+
+## TL;DR for a fresh session
+
+1. Run `bootstrap-env` skill.
+2. Open the rule(s) attached to the file(s) you'll edit — they're glob-
+   scoped, so the IDE will surface them automatically; on a pure CLI
+   agent, open them manually from `.cursor/rules/` or `.agents/rules/`.
+3. Read the target file and one neighbour before editing.
+4. Make the minimal change; keep types honest; no placeholders.
+5. Typecheck before hand-back.

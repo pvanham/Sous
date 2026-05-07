@@ -1,0 +1,269 @@
+import "react-native-gesture-handler";
+import "../global.css";
+import "@/lib/query-focus";
+
+import { useEffect, useRef } from "react";
+import { Appearance, View, ActivityIndicator, Linking } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import { Stack, useRouter, useSegments } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import "react-native-reanimated";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
+import {
+  ClerkProvider,
+  ClerkLoaded,
+  useAuth,
+  useClerk,
+} from "@clerk/clerk-expo";
+import { tokenCache } from "@/lib/token-cache";
+import { queryClient } from "@/lib/query-client";
+import { setTokenGetter } from "@/lib/api-client";
+import {
+  attachNotificationTapHandler,
+  registerForPushNotifications,
+} from "@/lib/notifications";
+import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
+import { useSettingsPreferences } from "@/features/settings/preferences-store";
+import { fetchMembership } from "@/features/auth/api";
+import { useAuthStore } from "@/features/auth/store";
+
+const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
+
+if (!clerkPublishableKey) {
+  throw new Error(
+    "Missing EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY. Add it to your .env file."
+  );
+}
+
+/**
+ * Redirects users based on auth state and verifies they have at least
+ * one OrganizationMember row before letting them into (tabs). Users
+ * without a membership are signed out and bounced back to sign-in with
+ * an explanatory error.
+ *
+ * Any role (staff, shift_lead, manager, owner) is accepted — managers
+ * and owners may also want to view their schedule or submit time-off
+ * from the mobile app. Write-side features stay gated server-side.
+ */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { isSignedIn, isLoaded, userId, getToken } = useAuth();
+  const { signOut } = useClerk();
+  const segments = useSegments();
+  const router = useRouter();
+  const setMembership = useAuthStore((s) => s.setMembership);
+  const clearMembership = useAuthStore((s) => s.clearMembership);
+  const setPendingSignInError = useAuthStore((s) => s.setPendingSignInError);
+
+  useEffect(() => {
+    if (isLoaded) {
+      setTokenGetter(getToken);
+    }
+  }, [isLoaded, getToken]);
+
+  // Wire the notification tap handler once. The closure routes the
+  // optional `data.url` from each push payload (e.g. `sous://schedule`)
+  // through `Linking.openURL`, which Expo Router subscribes to and
+  // turns into the right `router.push(...)` call. Cold-launch taps
+  // (notification opened the app from a closed state) are handled by
+  // the same listener once the app has hydrated.
+  useEffect(() => {
+    return attachNotificationTapHandler((url) => {
+      if (!url) return;
+      Linking.openURL(url).catch((error) => {
+        console.warn(
+          "[mobile.notifications] failed to open deep link:",
+          url,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    });
+  }, []);
+
+  // Whenever Clerk's `userId` flips — null → someone, A → B, or
+  // someone → null — every cached query in the TanStack store is
+  // owned by the *previous* identity. Dropping the cache forces the
+  // next render to refetch with the new JWT so User B never sees
+  // User A's "My dropped shifts" or week schedule. Scoping the query
+  // keys by userId (done per-screen) is the second line of defence
+  // against this, but the cache drop is what guarantees it even for
+  // keys we may add later and forget to scope.
+  const previousUserIdRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!isLoaded) return;
+    const previous = previousUserIdRef.current;
+    if (previous !== undefined && previous !== userId) {
+      queryClient.clear();
+      clearMembership();
+    }
+    previousUserIdRef.current = userId ?? null;
+  }, [isLoaded, userId, clearMembership]);
+
+  const membershipQuery = useQuery({
+    queryKey: ["auth", "membership"],
+    queryFn: () => fetchMembership(getToken),
+    enabled: Boolean(isLoaded && isSignedIn),
+    retry: 1,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Push registration is identity-scoped, not navigation-scoped:
+  // we want to fire it once when a user signs in and re-fire only
+  // when the Clerk userId changes (sign-out → sign-in, account
+  // switch). Living in its own effect — separate from the redirect
+  // effect, which depends on `segments` — means tab switches don't
+  // pointlessly re-POST `/api/me/notifications/devices`.
+  //
+  // Deps are intentionally narrow: we depend on `userId` (the actual
+  // identity key) and `membershipQuery.isSuccess` (the gate that
+  // says "we have a JWT and a confirmed membership row"). We do
+  // *not* depend on `membershipQuery.data` — that object's
+  // reference changes on every background refetch (5-minute
+  // staleTime + AppState refocus), which would cause spurious
+  // re-registrations on long sessions.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId) return;
+    if (!membershipQuery.isSuccess) return;
+    void registerForPushNotifications();
+  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const inAuthGroup = segments[0] === "(auth)";
+
+    if (!isSignedIn) {
+      clearMembership();
+      if (!inAuthGroup) {
+        router.replace("/(auth)/sign-in");
+      }
+      return;
+    }
+
+    if (membershipQuery.isLoading) return;
+
+    if (membershipQuery.isSuccess && membershipQuery.data) {
+      setMembership(membershipQuery.data);
+      if (inAuthGroup) {
+        router.replace("/(tabs)");
+      }
+      return;
+    }
+
+    if (membershipQuery.isSuccess && !membershipQuery.data) {
+      clearMembership();
+      setPendingSignInError(
+        "This account isn't linked to a location yet. Please contact your manager.",
+      );
+      void signOut();
+      return;
+    }
+
+    if (membershipQuery.isError) {
+      clearMembership();
+      const detail =
+        membershipQuery.error instanceof Error
+          ? membershipQuery.error.message
+          : null;
+      console.warn("[mobile] AuthGate membership error:", detail);
+      setPendingSignInError(
+        detail
+          ? `Couldn't verify your account: ${detail}`
+          : "Couldn't verify your account. Please sign in again.",
+      );
+      void signOut();
+    }
+  }, [
+    isLoaded,
+    isSignedIn,
+    segments,
+    router,
+    membershipQuery.isLoading,
+    membershipQuery.isSuccess,
+    membershipQuery.isError,
+    membershipQuery.data,
+    membershipQuery.error,
+    setMembership,
+    clearMembership,
+    setPendingSignInError,
+    signOut,
+  ]);
+
+  const showMembershipSpinner =
+    isLoaded && isSignedIn && membershipQuery.isLoading;
+
+  return (
+    <>
+      {children}
+      {showMembershipSpinner ? (
+        <View
+          pointerEvents="auto"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(0,0,0,0.25)",
+          }}
+        >
+          <ActivityIndicator size="large" />
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+export default function RootLayout() {
+  // Combine the user's persisted theme override with the device's
+  // system setting. `useEffectiveColorScheme` returns `"light"` or
+  // `"dark"`; feed it into both React Navigation's ThemeProvider and
+  // React Native's Appearance API so the latter keeps NativeWind's
+  // `prefers-color-scheme` media query in sync with the choice.
+  const themePreference = useSettingsPreferences((s) => s.theme);
+  const colorScheme = useEffectiveColorScheme();
+
+  useEffect(() => {
+    // When the user is on "system", clear any override so the OS
+    // signal is authoritative. Otherwise, pin Appearance to the
+    // explicit choice — this flips NativeWind's media query
+    // immediately without a reload.
+    if (themePreference === "system") {
+      Appearance.setColorScheme("unspecified");
+    } else {
+      Appearance.setColorScheme(themePreference);
+    }
+  }, [themePreference]);
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <ClerkProvider tokenCache={tokenCache} publishableKey={clerkPublishableKey}>
+        <ClerkLoaded>
+          <QueryClientProvider client={queryClient}>
+            <ThemeProvider
+              value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+            >
+              <AuthGate>
+                <Stack screenOptions={{ headerShown: false }}>
+                  <Stack.Screen name="(auth)" />
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen
+                    name="profile"
+                    options={{ presentation: "card" }}
+                  />
+                  <Stack.Screen
+                    name="settings"
+                    options={{ presentation: "card" }}
+                  />
+                </Stack>
+              </AuthGate>
+              <StatusBar style="auto" />
+            </ThemeProvider>
+          </QueryClientProvider>
+        </ClerkLoaded>
+      </ClerkProvider>
+    </GestureHandlerRootView>
+  );
+}

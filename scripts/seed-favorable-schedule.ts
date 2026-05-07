@@ -1,57 +1,77 @@
 /**
- * Favorable Schedule Generation Test Data Seed Script
+ * Favorable Schedule Generation Test Data Seed Script ("The Golden Fork")
  *
- * Populates the database with a favorable dataset ("The Golden Fork")
- * designed so the schedule generator can produce a near-perfect schedule:
- * zero unfilled slots, minimal overtime risk, all staff meeting minimum
- * hours, and high preference matching.
+ * Populates the database with a deliberately easy dataset so the
+ * schedule generator can produce a near-perfect schedule: zero
+ * unfilled slots, minimal overtime risk, all staff meeting minimum
+ * hours, no manager-coverage gaps, and high preference matching.
  *
  * Compared to the stress-test Copper Ladle dataset, this dataset has:
- * - Fewer stations (4 vs 6) with balanced slot distribution
- * - Broad skill coverage (every staff member covers 3-4 stations)
- * - Generous availability (6-7 days, wide time windows)
- * - Staff preferences aligned with slot demand
- * - Achievable min/max hours (16 staff, ~53 slots, ~400h)
- * - No approved time-off requests
+ *   - Fewer stations (4 vs 6) with a balanced slot distribution
+ *   - Broad skill coverage (every staff member covers 3-4 stations)
+ *   - Generous availability (6-7 days, wide time windows)
+ *   - 3 manager-grade staff (Marco, Sofia, Liam) with full-week
+ *     availability so the solver's manager-coverage constraint never
+ *     trips
+ *   - Achievable min/max hours
+ *   - No approved time-off requests
  *
- * Data is created via the Service Layer (same code path as the UI)
- * with orgId + locationId multi-tenancy scoping per ARCHITECTURE.md.
+ * Each active staff member is mirrored as a Clerk user + an
+ * OrganizationMember row so the mobile app can sign them in. See the
+ * Copper Ladle script for the full rationale.
  *
- * Usage:
- *   npm run seed:favorable       # Seed the database
- *   npm run cleanup:favorable    # Remove seeded data
+ * Two run modes:
  *
- * Required Environment Variables:
- *   - MONGODB_URI: MongoDB connection string (from .env.local)
- *   - SEED_CLERK_USER_ID2: Clerk user ID to own the test data
+ *   npm run seed:favorable          # seed (idempotent)
+ *   npm run cleanup:favorable       # tear down org + Clerk users
+ *
+ * Required env (read from apps/web/.env.local):
+ *
+ *   - MONGODB_URI            Mongo Atlas connection string
+ *   - CLERK_SECRET_KEY       Clerk Backend SDK key
+ *   - SEED_CLERK_USER_ID2    Clerk user that owns this seeded org
+ *
+ * Optional env:
+ *
+ *   - SEED_STAFF_PASSWORD_FAVORABLE  Password for created staff
+ *                                    (default: a fixed value below).
  */
 
 import dotenv from "dotenv";
 import path from "path";
+import { fileURLToPath } from "url";
 
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const WEB_ENV_PATH = path.resolve(__dirname, "..", "apps", "web", ".env.local");
+dotenv.config({ path: WEB_ENV_PATH });
 
-import { dbConnect } from "../src/lib/db";
-import { OrganizationService } from "../src/server/services/organization.service";
-import { LocationService } from "../src/server/services/location.service";
-import { OrganizationMemberService } from "../src/server/services/organization-member.service";
-import { KitchenConfigService } from "../src/server/services/kitchen-config.service";
-import { StaffService } from "../src/server/services/staff.service";
-import { StaffAvailabilityService } from "../src/server/services/staff-availability.service";
-import { ScheduleService } from "../src/server/services/schedule.service";
-import { ShiftService } from "../src/server/services/shift.service";
-import { LaborRequirementService } from "../src/server/services/labor-requirement.service";
-import { AIUsageService } from "../src/server/services/ai-usage.service";
-import { TimeOffRequestService } from "../src/server/services/time-off-request.service";
-import type { KitchenConfigInput } from "../src/lib/validations/kitchen-config.schema";
+import { dbConnect } from "../apps/web/src/lib/db";
+import { OrganizationService } from "../apps/web/src/server/services/organization.service";
+import { LocationService } from "../apps/web/src/server/services/location.service";
+import { OrganizationMemberService } from "../apps/web/src/server/services/organization-member.service";
+import { KitchenConfigService } from "../apps/web/src/server/services/kitchen-config.service";
+import { StaffService } from "../apps/web/src/server/services/staff.service";
+import { StaffAvailabilityService } from "../apps/web/src/server/services/staff-availability.service";
+import { ScheduleService } from "../apps/web/src/server/services/schedule.service";
+import { ShiftService } from "../apps/web/src/server/services/shift.service";
+import { LaborRequirementService } from "../apps/web/src/server/services/labor-requirement.service";
+import { AIUsageService } from "../apps/web/src/server/services/ai-usage.service";
+import { TimeOffRequestService } from "../apps/web/src/server/services/time-off-request.service";
+import type { KitchenConfigInput } from "../apps/web/src/lib/validations/kitchen-config.schema";
 import { startOfWeek, addWeeks } from "date-fns";
 import mongoose from "mongoose";
+import { createClerkClient } from "@clerk/backend";
+import type { ClerkClient, User as ClerkUser } from "@clerk/backend";
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
 const ORG_NAME = "The Golden Fork - Favorable Test";
+const STAFF_EMAIL_DOMAIN = "goldenfork.test";
+const STAFF_PASSWORD =
+  process.env.SEED_STAFF_PASSWORD_FAVORABLE ?? "GoldenFork!2026Seed";
 
 function getTargetTestWeek(): Date {
   const now = new Date();
@@ -66,13 +86,24 @@ function getTargetTestWeek(): Date {
 const TEST_WEEK_START = getTargetTestWeek();
 
 // ============================================================================
-// Kitchen Configuration (4 stations -- simpler graph than Copper Ladle's 6)
+// Kitchen Configuration (4 stations -- simpler graph)
 // ============================================================================
+//
+// `managerRoles` controls which staff count as managers for the
+// solver's coverage constraint (see solver/main.py `is_manager`). Three
+// staff carry the "Head Chef" role and have 7-day, full-window
+// availability so that constraint is always satisfiable.
 
 const KITCHEN_CONFIG: KitchenConfigInput = {
   name: "The Golden Fork",
   stations: ["Grill", "Saute", "Prep", "Expo"],
-  roles: ["Head Chef", "Line Cook", "Prep Cook"],
+  roles: [
+    "Manager", // Solver-recognised manager role (kept first; see solver/main.py).
+    "Head Chef",
+    "Line Cook",
+    "Prep Cook",
+  ],
+  managerRoles: ["Manager", "Head Chef"],
   operatingHours: {
     monday:    { isOpen: true,  open: "08:00", close: "22:00" },
     tuesday:   { isOpen: true,  open: "08:00", close: "22:00" },
@@ -92,18 +123,13 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
 // ============================================================================
 // Staff Definitions (16 active, 0 inactive)
 //
-// Design rationale:
-// - Every staff member covers 3-4 stations with high proficiency at preferred
-// - Preferred stations align with station slot demand
-// - minHoursPerWeek 15-25h is easily reachable with 3-4 shifts of 7-8h
-// - maxHoursPerWeek 35-40h gives the solver plenty of room
-// - All hourly rates > 0 (no readiness warnings)
+// Manager roster (3, all "Head Chef"):
+//   - Marco Rossi   (Mon-Sun avail 07-23, max 45h)
+//   - Sofia Reyes   (Mon-Sun avail 07-23, max 45h)
+//   - Liam O'Connor (Mon-Sun avail 07-23, max 45h)
 //
-// Balance analysis (16 active staff):
-//   ~53 person-shifts / week  (~400 person-hours)
-//   Staff min-hours total: ~304h  →  well under slot hours
-//   Staff max-hours total: ~600h  →  no need to overload anyone
-//   Average per employee: ~3.3 shifts/week, ~25 hours/week
+// Combined manager max-hours: 135h. Total operating coverage:
+// 5*14 + 13 + 10 = 93h. Easily satisfiable.
 // ============================================================================
 
 interface StaffDef {
@@ -121,12 +147,12 @@ interface StaffDef {
 }
 
 const STAFF_DEFINITIONS: StaffDef[] = [
-  // ── Grill Specialists (4) ──────────────────────────────────────
+  // ── Managers (3) ──────────────────────────────────────────────
   {
     name: "Marco Rossi",
-    email: "marco.rossi@goldenfork.test",
+    email: `marco.rossi@${STAFF_EMAIL_DOMAIN}`,
     phone: "5552000001",
-    roles: ["Head Chef"],
+    roles: ["Manager", "Head Chef"],
     skills: [
       { station: "Grill", proficiency: 5 },
       { station: "Saute", proficiency: 4 },
@@ -134,16 +160,54 @@ const STAFF_DEFINITIONS: StaffDef[] = [
       { station: "Expo", proficiency: 4 },
     ],
     isActive: true,
-    maxHoursPerWeek: 40,
+    maxHoursPerWeek: 45,
     minHoursPerWeek: 25,
     preferredStations: ["Grill"],
     certifications: ["ServSafe Manager"],
     hourlyRate: 32,
   },
   {
-    name: "Elena Volkov",
-    email: "elena.volkov@goldenfork.test",
+    name: "Sofia Reyes",
+    email: `sofia.reyes@${STAFF_EMAIL_DOMAIN}`,
     phone: "5552000002",
+    roles: ["Manager", "Head Chef"],
+    skills: [
+      { station: "Saute", proficiency: 5 },
+      { station: "Grill", proficiency: 4 },
+      { station: "Prep", proficiency: 3 },
+      { station: "Expo", proficiency: 3 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 45,
+    minHoursPerWeek: 25,
+    preferredStations: ["Saute"],
+    certifications: ["ServSafe Manager"],
+    hourlyRate: 30,
+  },
+  {
+    name: "Liam O'Connor",
+    email: `liam.oconnor@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000003",
+    roles: ["Manager", "Head Chef"],
+    skills: [
+      { station: "Saute", proficiency: 5 },
+      { station: "Grill", proficiency: 3 },
+      { station: "Prep", proficiency: 3 },
+      { station: "Expo", proficiency: 3 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 45,
+    minHoursPerWeek: 25,
+    preferredStations: ["Saute", "Expo"],
+    certifications: ["ServSafe Manager"],
+    hourlyRate: 28,
+  },
+
+  // ── Line Cooks (5) ────────────────────────────────────────────
+  {
+    name: "Elena Volkov",
+    email: `elena.volkov@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000004",
     roles: ["Line Cook"],
     skills: [
       { station: "Grill", proficiency: 5 },
@@ -159,8 +223,8 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "James Carter",
-    email: "james.carter@goldenfork.test",
-    phone: "5552000003",
+    email: `james.carter@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000005",
     roles: ["Line Cook"],
     skills: [
       { station: "Grill", proficiency: 4 },
@@ -176,8 +240,8 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Yuki Tanaka",
-    email: "yuki.tanaka@goldenfork.test",
-    phone: "5552000004",
+    email: `yuki.tanaka@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000006",
     roles: ["Line Cook"],
     skills: [
       { station: "Grill", proficiency: 4 },
@@ -191,46 +255,9 @@ const STAFF_DEFINITIONS: StaffDef[] = [
     certifications: [],
     hourlyRate: 21,
   },
-
-  // ── Saute Specialists (3) ──────────────────────────────────────
-  {
-    name: "Sofia Reyes",
-    email: "sofia.reyes@goldenfork.test",
-    phone: "5552000005",
-    roles: ["Head Chef"],
-    skills: [
-      { station: "Saute", proficiency: 5 },
-      { station: "Grill", proficiency: 4 },
-      { station: "Prep", proficiency: 3 },
-      { station: "Expo", proficiency: 3 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 40,
-    minHoursPerWeek: 25,
-    preferredStations: ["Saute"],
-    certifications: ["ServSafe Manager"],
-    hourlyRate: 30,
-  },
-  {
-    name: "Liam O'Connor",
-    email: "liam.oconnor@goldenfork.test",
-    phone: "5552000006",
-    roles: ["Line Cook"],
-    skills: [
-      { station: "Saute", proficiency: 5 },
-      { station: "Grill", proficiency: 3 },
-      { station: "Prep", proficiency: 3 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 38,
-    minHoursPerWeek: 20,
-    preferredStations: ["Saute"],
-    certifications: [],
-    hourlyRate: 23,
-  },
   {
     name: "Aisha Patel",
-    email: "aisha.patel@goldenfork.test",
+    email: `aisha.patel@${STAFF_EMAIL_DOMAIN}`,
     phone: "5552000007",
     roles: ["Line Cook"],
     skills: [
@@ -245,82 +272,10 @@ const STAFF_DEFINITIONS: StaffDef[] = [
     certifications: [],
     hourlyRate: 20,
   },
-
-  // ── Prep Specialists (4) ───────────────────────────────────────
-  {
-    name: "Carlos Diaz",
-    email: "carlos.diaz@goldenfork.test",
-    phone: "5552000008",
-    roles: ["Prep Cook"],
-    skills: [
-      { station: "Prep", proficiency: 5 },
-      { station: "Saute", proficiency: 3 },
-      { station: "Expo", proficiency: 3 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 38,
-    minHoursPerWeek: 20,
-    preferredStations: ["Prep"],
-    certifications: [],
-    hourlyRate: 19,
-  },
-  {
-    name: "Hannah Berg",
-    email: "hannah.berg@goldenfork.test",
-    phone: "5552000009",
-    roles: ["Prep Cook"],
-    skills: [
-      { station: "Prep", proficiency: 5 },
-      { station: "Saute", proficiency: 2 },
-      { station: "Expo", proficiency: 3 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 38,
-    minHoursPerWeek: 20,
-    preferredStations: ["Prep"],
-    certifications: [],
-    hourlyRate: 18,
-  },
-  {
-    name: "Omar Farouk",
-    email: "omar.farouk@goldenfork.test",
-    phone: "5552000010",
-    roles: ["Prep Cook"],
-    skills: [
-      { station: "Prep", proficiency: 4 },
-      { station: "Grill", proficiency: 2 },
-      { station: "Expo", proficiency: 3 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 35,
-    minHoursPerWeek: 15,
-    preferredStations: ["Prep"],
-    certifications: [],
-    hourlyRate: 17,
-  },
-  {
-    name: "Mia Chen",
-    email: "mia.chen@goldenfork.test",
-    phone: "5552000011",
-    roles: ["Prep Cook"],
-    skills: [
-      { station: "Prep", proficiency: 4 },
-      { station: "Saute", proficiency: 3 },
-      { station: "Grill", proficiency: 2 },
-    ],
-    isActive: true,
-    maxHoursPerWeek: 35,
-    minHoursPerWeek: 15,
-    preferredStations: ["Prep"],
-    certifications: [],
-    hourlyRate: 17,
-  },
-
-  // ── Expo Specialists (3) ───────────────────────────────────────
   {
     name: "Nadia Kowalski",
-    email: "nadia.kowalski@goldenfork.test",
-    phone: "5552000012",
+    email: `nadia.kowalski@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000008",
     roles: ["Line Cook"],
     skills: [
       { station: "Expo", proficiency: 5 },
@@ -334,10 +289,12 @@ const STAFF_DEFINITIONS: StaffDef[] = [
     certifications: [],
     hourlyRate: 21,
   },
+
+  // ── Expo Specialists (2) ─────────────────────────────────────
   {
     name: "Derek Washington",
-    email: "derek.washington@goldenfork.test",
-    phone: "5552000013",
+    email: `derek.washington@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000009",
     roles: ["Line Cook"],
     skills: [
       { station: "Expo", proficiency: 4 },
@@ -353,8 +310,8 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Ava Mitchell",
-    email: "ava.mitchell@goldenfork.test",
-    phone: "5552000014",
+    email: `ava.mitchell@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000010",
     roles: ["Line Cook"],
     skills: [
       { station: "Expo", proficiency: 4 },
@@ -369,10 +326,80 @@ const STAFF_DEFINITIONS: StaffDef[] = [
     hourlyRate: 19,
   },
 
-  // ── Flex Staff (2) ─────────────────────────────────────────────
+  // ── Prep Specialists (4) ─────────────────────────────────────
+  {
+    name: "Carlos Diaz",
+    email: `carlos.diaz@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000011",
+    roles: ["Prep Cook"],
+    skills: [
+      { station: "Prep", proficiency: 5 },
+      { station: "Saute", proficiency: 3 },
+      { station: "Expo", proficiency: 3 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 38,
+    minHoursPerWeek: 20,
+    preferredStations: ["Prep"],
+    certifications: [],
+    hourlyRate: 19,
+  },
+  {
+    name: "Hannah Berg",
+    email: `hannah.berg@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000012",
+    roles: ["Prep Cook"],
+    skills: [
+      { station: "Prep", proficiency: 5 },
+      { station: "Saute", proficiency: 2 },
+      { station: "Expo", proficiency: 3 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 38,
+    minHoursPerWeek: 20,
+    preferredStations: ["Prep"],
+    certifications: [],
+    hourlyRate: 18,
+  },
+  {
+    name: "Omar Farouk",
+    email: `omar.farouk@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000013",
+    roles: ["Prep Cook"],
+    skills: [
+      { station: "Prep", proficiency: 4 },
+      { station: "Grill", proficiency: 2 },
+      { station: "Expo", proficiency: 3 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 35,
+    minHoursPerWeek: 15,
+    preferredStations: ["Prep"],
+    certifications: [],
+    hourlyRate: 17,
+  },
+  {
+    name: "Mia Chen",
+    email: `mia.chen@${STAFF_EMAIL_DOMAIN}`,
+    phone: "5552000014",
+    roles: ["Prep Cook"],
+    skills: [
+      { station: "Prep", proficiency: 4 },
+      { station: "Saute", proficiency: 3 },
+      { station: "Grill", proficiency: 2 },
+    ],
+    isActive: true,
+    maxHoursPerWeek: 35,
+    minHoursPerWeek: 15,
+    preferredStations: ["Prep"],
+    certifications: [],
+    hourlyRate: 17,
+  },
+
+  // ── Flex Staff (2) ────────────────────────────────────────────
   {
     name: "Leo Nguyen",
-    email: "leo.nguyen@goldenfork.test",
+    email: `leo.nguyen@${STAFF_EMAIL_DOMAIN}`,
     phone: "5552000015",
     roles: ["Line Cook", "Prep Cook"],
     skills: [
@@ -390,7 +417,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
   },
   {
     name: "Ruby Kim",
-    email: "ruby.kim@goldenfork.test",
+    email: `ruby.kim@${STAFF_EMAIL_DOMAIN}`,
     phone: "5552000016",
     roles: ["Line Cook", "Prep Cook"],
     skills: [
@@ -409,11 +436,7 @@ const STAFF_DEFINITIONS: StaffDef[] = [
 ];
 
 // ============================================================================
-// Availability Definitions (dayOfWeek: 0=Sun, 1=Mon, ..., 6=Sat)
-//
-// All 16 staff have generous availability: 6-7 days/week with wide windows.
-// "Preferred" days are spread across the week to match slot demand and give
-// the solver strong time-preference signals it can satisfy.
+// Availability (dayOfWeek: 0=Sun, 1=Mon, ..., 6=Sat)
 // ============================================================================
 
 interface AvailEntry {
@@ -427,7 +450,7 @@ function avail(
   dayOfWeek: number,
   preference: "preferred" | "available" | "unavailable",
   from: string | null = null,
-  to: string | null = null
+  to: string | null = null,
 ): AvailEntry {
   return { dayOfWeek, availableFrom: from, availableTo: to, preference };
 }
@@ -436,54 +459,44 @@ function fullWeek(
   pref: "preferred" | "available",
   from: string,
   to: string,
-  preferredDays: number[] = []
+  preferredDays: number[] = [],
 ): AvailEntry[] {
   return [0, 1, 2, 3, 4, 5, 6].map((d) =>
-    avail(d, preferredDays.includes(d) ? "preferred" : pref, from, to)
+    avail(d, preferredDays.includes(d) ? "preferred" : pref, from, to),
   );
 }
 
 const AVAILABILITY_BY_STAFF: Record<string, AvailEntry[]> = {
-  // Grill specialists -- available all 7 days, preferred on weekdays
+  // Managers -- 7-day, full window. Necessary for the solver's
+  // global manager-coverage constraint to remain satisfiable.
   "Marco Rossi":   fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
+  "Sofia Reyes":   fullWeek("available", "07:00", "23:00", [2, 4, 5, 6, 0]),
+  "Liam O'Connor": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6, 0]),
+
+  // Line cooks
   "Elena Volkov":  fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
   "James Carter":  fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
   "Yuki Tanaka":   fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
-
-  // Saute specialists -- available all 7 days
-  "Sofia Reyes":   fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Liam O'Connor": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
   "Aisha Patel":   fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
+  "Nadia Kowalski": fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
 
-  // Prep specialists -- available all 7 days, preferred on high-prep days
+  // Expo specialists
+  "Derek Washington": fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
+  "Ava Mitchell":  fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
+
+  // Prep specialists
   "Carlos Diaz":   fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
   "Hannah Berg":   fullWeek("available", "07:00", "23:00", [1, 2, 4, 5]),
   "Omar Farouk":   fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
   "Mia Chen":      fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
 
-  // Expo specialists -- available all 7 days
-  "Nadia Kowalski":    fullWeek("available", "07:00", "23:00", [1, 2, 3, 4, 5]),
-  "Derek Washington":  fullWeek("available", "07:00", "23:00", [1, 3, 5, 6]),
-  "Ava Mitchell":      fullWeek("available", "07:00", "23:00", [2, 4, 6, 0]),
-
-  // Flex staff -- available all 7 days, preferred on busiest days
-  "Leo Nguyen":  fullWeek("available", "07:00", "23:00", [1, 2, 3, 5, 6]),
-  "Ruby Kim":    fullWeek("available", "07:00", "23:00", [2, 3, 4, 5, 0]),
+  // Flex
+  "Leo Nguyen":    fullWeek("available", "07:00", "23:00", [1, 2, 3, 5, 6]),
+  "Ruby Kim":      fullWeek("available", "07:00", "23:00", [2, 3, 4, 5, 0]),
 };
 
 // ============================================================================
 // Shift Slot Definitions (Labor Requirements)
-//
-// 4 stations, ~53 slots, ~400 person-hours.
-// All preferredStaff=1 except Friday/Saturday dinner peaks.
-// Shifts are 6-8h to keep hours manageable.
-// dayOfWeek: 0=Sun, 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat
-//
-// Balance analysis (16 active staff):
-//   53 person-shifts / week  (~400 person-hours)
-//   Staff min-hours total: ~304h  →  well under slot hours
-//   Staff max-hours total: ~604h  →  no one needs to be overloaded
-//   Average per employee: ~3.3 shifts/week, ~25 hours/week
 // ============================================================================
 
 interface ShiftSlotDef {
@@ -502,67 +515,52 @@ function buildShiftSlots(): ShiftSlotDef[] {
   const monThu = [1, 2, 3, 4];
   const monFri = [1, 2, 3, 4, 5];
 
-  // ── GRILL ──────────────────────────────────────────────────────
-  // Mon-Thu: AM + PM
+  // GRILL
   for (const d of monThu) {
     slots.push({ dayOfWeek: d, station: "Grill", startTime: "08:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
     slots.push({ dayOfWeek: d, station: "Grill", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  // Fri: AM + PM
   slots.push({ dayOfWeek: 5, station: "Grill", startTime: "08:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 5, station: "Grill", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sat: AM + PM
   slots.push({ dayOfWeek: 6, station: "Grill", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 6, station: "Grill", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sun: single shift
   slots.push({ dayOfWeek: 0, station: "Grill", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── SAUTE ──────────────────────────────────────────────────────
-  // Mon-Thu: AM + PM
+  // SAUTE
   for (const d of monThu) {
     slots.push({ dayOfWeek: d, station: "Saute", startTime: "09:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
     slots.push({ dayOfWeek: d, station: "Saute", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  // Fri: AM + PM
   slots.push({ dayOfWeek: 5, station: "Saute", startTime: "09:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 5, station: "Saute", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sat: AM + PM
   slots.push({ dayOfWeek: 6, station: "Saute", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 6, station: "Saute", startTime: "15:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sun: single shift
   slots.push({ dayOfWeek: 0, station: "Saute", startTime: "10:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── PREP ───────────────────────────────────────────────────────
-  // Mon-Fri: early + mid
+  // PREP
   for (const d of monFri) {
     slots.push({ dayOfWeek: d, station: "Prep", startTime: "08:00", endTime: "14:00", minStaff: 1, preferredStaff: 1, priority: "high" });
     slots.push({ dayOfWeek: d, station: "Prep", startTime: "10:00", endTime: "17:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
   }
-  // Sat: single shift
   slots.push({ dayOfWeek: 6, station: "Prep", startTime: "09:00", endTime: "15:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
-  // Sun: single shift
   slots.push({ dayOfWeek: 0, station: "Prep", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
-  // ── EXPO ───────────────────────────────────────────────────────
-  // Mon-Thu: lunch + dinner
+  // EXPO
   for (const d of monThu) {
     slots.push({ dayOfWeek: d, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
     slots.push({ dayOfWeek: d, station: "Expo", startTime: "16:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   }
-  // Fri: lunch + dinner
   slots.push({ dayOfWeek: 5, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 5, station: "Expo", startTime: "16:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sat: lunch + dinner
   slots.push({ dayOfWeek: 6, station: "Expo", startTime: "10:00", endTime: "16:00", minStaff: 1, preferredStaff: 1, priority: "high" });
   slots.push({ dayOfWeek: 6, station: "Expo", startTime: "16:00", endTime: "22:00", minStaff: 1, preferredStaff: 1, priority: "critical" });
-  // Sun: single shift
   slots.push({ dayOfWeek: 0, station: "Expo", startTime: "11:00", endTime: "18:00", minStaff: 1, preferredStaff: 1, priority: "normal" });
 
   return slots;
 }
 
 // ============================================================================
-// Helpers
+// Logging helpers
 // ============================================================================
 
 function log(message: string): void {
@@ -577,12 +575,95 @@ function logSuccess(message: string): void {
   console.log(`  ✓ ${message}`);
 }
 
+function logWarn(message: string): void {
+  console.warn(`  ! ${message}`);
+}
+
 function logError(message: string): void {
   console.error(`  ✗ ERROR: ${message}`);
 }
 
 // ============================================================================
-// Legacy Index Cleanup
+// Clerk integration
+// ============================================================================
+
+let _clerkClient: ClerkClient | null = null;
+
+function getClerkClient(): ClerkClient | null {
+  if (_clerkClient) return _clerkClient;
+  const secretKey = process.env.CLERK_SECRET_KEY;
+  if (!secretKey) {
+    return null;
+  }
+  _clerkClient = createClerkClient({ secretKey });
+  return _clerkClient;
+}
+
+async function findClerkUserByEmail(
+  client: ClerkClient,
+  email: string,
+): Promise<ClerkUser | null> {
+  const result = await client.users.getUserList({
+    emailAddress: [email],
+    limit: 1,
+  });
+  return result.data[0] ?? null;
+}
+
+async function ensureClerkUserForStaff(
+  client: ClerkClient,
+  staff: StaffDef,
+): Promise<string | null> {
+  try {
+    const existing = await findClerkUserByEmail(client, staff.email);
+    if (existing) {
+      return existing.id;
+    }
+  } catch (err) {
+    logWarn(
+      `Clerk lookup failed for ${staff.email}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+
+  const [firstName, ...rest] = staff.name.split(" ");
+  const lastName = rest.join(" ") || firstName;
+
+  try {
+    const created = await client.users.createUser({
+      emailAddress: [staff.email],
+      password: STAFF_PASSWORD,
+      firstName,
+      lastName,
+      skipPasswordChecks: true,
+      skipPasswordRequirement: false,
+    });
+    return created.id;
+  } catch (err) {
+    logWarn(
+      `Failed to create Clerk user for ${staff.email}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+async function deleteAllSeededClerkUsers(client: ClerkClient): Promise<void> {
+  for (const def of STAFF_DEFINITIONS) {
+    try {
+      const user = await findClerkUserByEmail(client, def.email);
+      if (!user) continue;
+      await client.users.deleteUser(user.id);
+      log(`  Deleted Clerk user ${def.email} (${user.id})`);
+    } catch (err) {
+      logWarn(
+        `Failed to delete Clerk user ${def.email}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+}
+
+// ============================================================================
+// Legacy index cleanup
 // ============================================================================
 
 async function dropLegacyIndexes(): Promise<void> {
@@ -607,13 +688,13 @@ async function dropLegacyIndexes(): Promise<void> {
         logSuccess(`Dropped legacy index "${indexName}" from ${collection}`);
       }
     } catch {
-      // Ignore -- index may not exist
+      // Index may not exist; ignore.
     }
   }
 }
 
 // ============================================================================
-// Seed Function
+// Seed
 // ============================================================================
 
 async function seed(clerkUserId: string): Promise<void> {
@@ -624,10 +705,7 @@ async function seed(clerkUserId: string): Promise<void> {
   await cleanupAllOrgsForUser(clerkUserId);
 
   logStep("Creating Organization and Location");
-
-  const org = await OrganizationService.create(clerkUserId, {
-    name: ORG_NAME,
-  });
+  const org = await OrganizationService.create(clerkUserId, { name: ORG_NAME });
   const orgId = org.id;
   log(`Created organization: "${org.name}" (ID: ${orgId})`);
 
@@ -650,25 +728,73 @@ async function seed(clerkUserId: string): Promise<void> {
   logStep("Creating Kitchen Config");
   const config = await KitchenConfigService.upsert(orgId, locationId, KITCHEN_CONFIG);
   logSuccess(
-    `"${config.name}" -- ${config.stations.length} stations, ${config.roles.length} roles, AI limit: ${config.aiSettings.monthlyGenerationLimit}`
+    `"${config.name}" -- ${config.stations.length} stations, ${config.roles.length} roles, managers: [${config.managerRoles.join(", ")}]`,
   );
 
-  // ── Staff ───────────────────────────────────────────────────
+  // ── Staff (with Clerk users + memberships) ─────────────────
   logStep(`Creating Staff (${STAFF_DEFINITIONS.length} members)`);
+  const clerk = getClerkClient();
+  if (!clerk) {
+    logWarn(
+      "CLERK_SECRET_KEY not set -- staff Clerk users WILL NOT be created. " +
+        "The mobile app will not be able to sign these staff in.",
+    );
+  }
+
   const staffIds = new Map<string, string>();
   let activeCount = 0;
+  let clerkLinkedCount = 0;
+  let managerMembershipCount = 0;
+  let staffMembershipCount = 0;
+
+  const managerRoles = new Set(KITCHEN_CONFIG.managerRoles ?? []);
 
   for (const def of STAFF_DEFINITIONS) {
     const { isActive: _isActive, ...createData } = def;
     const staff = await StaffService.create(orgId, locationId, createData);
     activeCount++;
+
+    let clerkId: string | null = null;
+    if (clerk) {
+      clerkId = await ensureClerkUserForStaff(clerk, def);
+      if (clerkId) {
+        clerkLinkedCount++;
+        await StaffService.linkClerkUser(orgId, locationId, staff.id, clerkId);
+
+        const isManager = def.roles.some((r) => managerRoles.has(r));
+        const memberRole = isManager ? "manager" : "staff";
+        try {
+          await OrganizationMemberService.create({
+            orgId,
+            locationId,
+            clerkUserId: clerkId,
+            role: memberRole,
+          });
+          if (isManager) {
+            managerMembershipCount++;
+          } else {
+            staffMembershipCount++;
+          }
+        } catch (err) {
+          logWarn(
+            `Membership for ${def.email} skipped: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+    }
+
     const skillStr = staff.skills.map((s) => `${s.station}(${s.proficiency})`).join(", ");
+    const flagStr = clerkId ? " [clerk-linked]" : "";
     log(
-      `  ${staff.name} -- ${def.roles.join(", ")} | ${skillStr} | $${def.hourlyRate}/hr`
+      `  ${staff.name} -- ${def.roles.join(", ")} | ${skillStr} | $${def.hourlyRate}/hr${flagStr}`,
     );
     staffIds.set(staff.name, staff.id);
   }
-  logSuccess(`Created ${activeCount} active = ${staffIds.size} total`);
+
+  logSuccess(
+    `Created ${activeCount} active = ${staffIds.size} total ` +
+      `(${clerkLinkedCount} linked to Clerk, ${managerMembershipCount} manager + ${staffMembershipCount} staff memberships)`,
+  );
 
   // ── Availability ────────────────────────────────────────────
   logStep("Creating Staff Availability");
@@ -687,9 +813,11 @@ async function seed(clerkUserId: string): Promise<void> {
     const unavailDays = entries.filter((e) => e.preference === "unavailable").length;
     log(`  ${staffName}: ${availDays} available, ${unavailDays} unavailable`);
   }
-  logSuccess(`Created ${totalAvailEntries} availability entries for ${Object.keys(AVAILABILITY_BY_STAFF).length} staff`);
+  logSuccess(
+    `Created ${totalAvailEntries} availability entries for ${Object.keys(AVAILABILITY_BY_STAFF).length} staff`,
+  );
 
-  // ── Shift Slots (Labor Requirements) ────────────────────────
+  // ── Shift Slots ─────────────────────────────────────────────
   logStep("Creating Shift Slots");
   const shiftSlots = buildShiftSlots();
 
@@ -706,16 +834,18 @@ async function seed(clerkUserId: string): Promise<void> {
   }
   logSuccess(`Created ${shiftSlots.length} shift slots`);
 
-  // ── No Time-Off Requests (favorable dataset) ───────────────
+  // ── No Time-Off Requests ───────────────────────────────────
   logStep("Time-Off Requests");
   log("None (favorable dataset -- no time-off constraints)");
 
   // ── Schedule ────────────────────────────────────────────────
   logStep("Creating DRAFT Schedule for Test Week");
   const schedule = await ScheduleService.getOrCreateForWeek(
-    orgId, locationId, TEST_WEEK_START
+    orgId, locationId, TEST_WEEK_START,
   );
-  logSuccess(`Created DRAFT schedule for week of ${TEST_WEEK_START.toDateString()} (ID: ${schedule.id})`);
+  logSuccess(
+    `Created DRAFT schedule for week of ${TEST_WEEK_START.toDateString()} (ID: ${schedule.id})`,
+  );
 
   // ── Summary ─────────────────────────────────────────────────
   console.log("\n" + "═".repeat(60));
@@ -724,23 +854,22 @@ async function seed(clerkUserId: string): Promise<void> {
   console.log(`\n  Organization:      ${ORG_NAME} (${orgId})`);
   console.log(`  Location:          Main Kitchen (${locationId})`);
   console.log(`  Kitchen Config:    ${config.stations.join(", ")}`);
+  console.log(`  Manager Roles:     ${config.managerRoles.join(", ")}`);
   console.log(`  Staff:             ${activeCount} active`);
+  console.log(`  Clerk-linked:      ${clerkLinkedCount}`);
+  console.log(`  Memberships:       ${managerMembershipCount} manager + ${staffMembershipCount} staff`);
   console.log(`  Availability:      ${totalAvailEntries} entries (all 7 days)`);
   console.log(`  Shift Slots:       ${shiftSlots.length} entries`);
   console.log(`  Time-Off Requests: 0`);
   console.log(`  Schedule:          ${schedule.id} (DRAFT, week of ${TEST_WEEK_START.toDateString()})`);
-  console.log(`\n  Test Week: ${TEST_WEEK_START.toDateString()}`);
-  console.log(`  Clerk User ID: ${clerkUserId}`);
-  console.log(`\n  Next steps:`);
-  console.log(`  1. Start dev server: npm run dev`);
-  console.log(`  2. Log in with the Clerk account for ${clerkUserId}`);
-  console.log(`  3. Navigate to Schedule page`);
-  console.log(`  4. Select the week of ${TEST_WEEK_START.toDateString()}`);
-  console.log(`  5. Click "Generate Schedule" to test AI generation`);
+  console.log(`\n  Owner Clerk User ID: ${clerkUserId}`);
+  if (clerkLinkedCount > 0) {
+    console.log(`  Staff sign-in password: ${STAFF_PASSWORD}`);
+  }
 }
 
 // ============================================================================
-// Cleanup Helpers
+// Cleanup helpers
 // ============================================================================
 
 async function deleteOrgAndData(orgId: string, orgName: string): Promise<void> {
@@ -785,6 +914,12 @@ async function deleteOrgAndData(orgId: string, orgName: string): Promise<void> {
 }
 
 async function cleanupAllOrgsForUser(clerkUserId: string): Promise<void> {
+  const clerk = getClerkClient();
+  if (clerk) {
+    log("Deleting any previously seeded staff Clerk users (idempotent)");
+    await deleteAllSeededClerkUsers(clerk);
+  }
+
   const allOrgs = await OrganizationService.listByOwnerId(clerkUserId);
 
   if (allOrgs.length === 0) {
@@ -803,7 +938,7 @@ async function cleanupAllOrgsForUser(clerkUserId: string): Promise<void> {
 }
 
 // ============================================================================
-// Cleanup Function (CLI: --cleanup flag)
+// Cleanup entry point
 // ============================================================================
 
 async function cleanup(clerkUserId: string): Promise<void> {
@@ -820,25 +955,26 @@ async function main(): Promise<void> {
   const isCleanup = process.argv.includes("--cleanup");
 
   console.log("═".repeat(60));
-  if (isCleanup) {
-    console.log("  FAVORABLE SCHEDULE TEST DATA -- CLEANUP");
-  } else {
-    console.log("  FAVORABLE SCHEDULE TEST DATA -- SEED");
-  }
+  console.log(
+    isCleanup
+      ? "  GOLDEN FORK SEED -- CLEANUP"
+      : "  GOLDEN FORK SEED -- SEED",
+  );
   console.log("═".repeat(60));
 
   const clerkUserId = process.env.SEED_CLERK_USER_ID2;
   if (!clerkUserId) {
     console.error("\n✗ SEED_CLERK_USER_ID2 environment variable is not set.");
-    console.error("  Add it to .env.local:");
+    console.error("  Add it to apps/web/.env.local:");
     console.error("  SEED_CLERK_USER_ID2=user_2xxx...");
     process.exit(1);
   }
 
-  console.log(`\nClerk User ID: ${clerkUserId}`);
-  console.log(`MongoDB URI: ${process.env.MONGODB_URI ? "[SET]" : "[NOT SET]"}`);
+  console.log(`\nClerk User ID:  ${clerkUserId}`);
+  console.log(`MongoDB URI:    ${process.env.MONGODB_URI ? "[SET]" : "[NOT SET]"}`);
+  console.log(`Clerk SDK key:  ${process.env.CLERK_SECRET_KEY ? "[SET]" : "[NOT SET]"}`);
   if (!isCleanup) {
-    console.log(`Test Week: ${TEST_WEEK_START.toDateString()}`);
+    console.log(`Test Week:      ${TEST_WEEK_START.toDateString()}`);
   }
 
   if (!process.env.MONGODB_URI) {
@@ -858,7 +994,7 @@ async function main(): Promise<void> {
   } catch (error) {
     console.error(
       "\n✗ Fatal error:",
-      error instanceof Error ? error.message : String(error)
+      error instanceof Error ? error.message : String(error),
     );
     if (error instanceof Error && error.stack) {
       console.error(error.stack);
