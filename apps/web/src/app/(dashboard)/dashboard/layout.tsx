@@ -1,16 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Home, Calendar, Users, ClipboardList, CalendarOff, ArrowLeftRight, Settings } from "lucide-react";
+import { Home, Calendar, Users, ClipboardList, CalendarOff, ArrowLeftRight } from "lucide-react";
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
-import { ThemeToggle } from "@/components/shared/ThemeToggle";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { listLocations } from "@/server/actions/location.actions";
-import type { MemberRole } from "@/server/models/OrganizationMember";
 
-const baseNavItems = [
+const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
   { href: "/dashboard/schedule", label: "Schedule", icon: Calendar },
   { href: "/dashboard/staff", label: "Staff", icon: Users },
@@ -18,12 +16,6 @@ const baseNavItems = [
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
   { href: "/dashboard/exchange", label: "Exchange", icon: ArrowLeftRight },
 ];
-
-/** Settings is visible to owners and managers, hidden from shift_leads and staff */
-function getNavItems(role: MemberRole) {
-  if (role === "shift_lead" || role === "staff") return baseNavItems;
-  return [...baseNavItems, { href: "/dashboard/settings", label: "Settings", icon: Settings }];
-}
 
 export default async function DashboardLayout({
   children,
@@ -39,7 +31,6 @@ export default async function DashboardLayout({
 
   const result = await listLocations();
   const locations = result.success ? result.data : [];
-  const navItems = getNavItems(ctx.role);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -76,7 +67,6 @@ export default async function DashboardLayout({
               role={ctx.role}
             />
             <AIAssistantPanel locationId={ctx.locationId} />
-            <ThemeToggle />
             <CustomUserButton />
           </div>
         </div>
