@@ -11,6 +11,7 @@ import type {
   ExchangeShiftViabilityDTO,
 } from "@sous/types";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import {
   getWeekStart,
   getWeekEnd,
@@ -228,7 +229,13 @@ export const ExchangeShiftService = {
       approvedAt: null,
     });
 
-    return toExchangeShiftDTO(doc.toObject());
+    const dto = toExchangeShiftDTO(doc.toObject());
+    void NotificationEvents.exchangeNewDrop({
+      exchange: dto,
+      orgId,
+      locationId,
+    });
+    return dto;
   },
 
   /**
@@ -343,7 +350,37 @@ export const ExchangeShiftService = {
       );
     }
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    if (requireApproval) {
+      void NotificationEvents.exchangePendingApproval({
+        exchange: dto,
+        orgId,
+        locationId,
+      });
+    } else {
+      // Auto-cover branch: notify both counterparties that the swap is done.
+      void (async () => {
+        const ids =
+          await ExchangeShiftService._resolveCounterpartyClerkIds(
+            dto,
+            orgId,
+            locationId,
+          );
+        const recipients = [
+          ids.dropperClerkUserId,
+          ids.pickerClerkUserId,
+        ].filter((v): v is string => Boolean(v));
+        if (recipients.length === 0) return;
+        await NotificationEvents.exchangeDecision({
+          exchange: dto,
+          decision: "covered",
+          notifyClerkUserIds: recipients,
+          orgId,
+          locationId,
+        });
+      })();
+    }
+    return dto;
   },
 
   /**
@@ -407,7 +444,26 @@ export const ExchangeShiftService = {
       { $set: { staffId: updated.pickedUpByStaffId } }
     );
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    void (async () => {
+      const ids = await ExchangeShiftService._resolveCounterpartyClerkIds(
+        dto,
+        orgId,
+        locationId,
+      );
+      const recipients = [ids.dropperClerkUserId, ids.pickerClerkUserId].filter(
+        (v): v is string => Boolean(v),
+      );
+      if (recipients.length === 0) return;
+      await NotificationEvents.exchangeDecision({
+        exchange: dto,
+        decision: "approved",
+        notifyClerkUserIds: recipients,
+        orgId,
+        locationId,
+      });
+    })();
+    return dto;
   },
 
   /**
@@ -463,7 +519,26 @@ export const ExchangeShiftService = {
       );
     }
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    void (async () => {
+      const ids = await ExchangeShiftService._resolveCounterpartyClerkIds(
+        dto,
+        orgId,
+        locationId,
+      );
+      const recipients = [ids.dropperClerkUserId, ids.pickerClerkUserId].filter(
+        (v): v is string => Boolean(v),
+      );
+      if (recipients.length === 0) return;
+      await NotificationEvents.exchangeDecision({
+        exchange: dto,
+        decision: "denied",
+        notifyClerkUserIds: recipients,
+        orgId,
+        locationId,
+      });
+    })();
+    return dto;
   },
 
   /**
@@ -756,7 +831,33 @@ export const ExchangeShiftService = {
       );
     }
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    // Notify the picker (if any) that the drop they were eyeing /
+    // pending on has been cancelled. The dropper initiated this so we
+    // skip them.
+    if (existing.pickedUpByStaffId) {
+      void (async () => {
+        const dtoForResolution: ExchangeShiftDTO = {
+          ...dto,
+          pickedUpByStaffId: String(existing.pickedUpByStaffId),
+        };
+        const ids =
+          await ExchangeShiftService._resolveCounterpartyClerkIds(
+            dtoForResolution,
+            orgId,
+            locationId,
+          );
+        if (!ids.pickerClerkUserId) return;
+        await NotificationEvents.exchangeDecision({
+          exchange: dto,
+          decision: "cancelled",
+          notifyClerkUserIds: [ids.pickerClerkUserId],
+          orgId,
+          locationId,
+        });
+      })();
+    }
+    return dto;
   },
 
   /**
@@ -808,7 +909,34 @@ export const ExchangeShiftService = {
       );
     }
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    // Manager cancelled — notify both counterparties (the dropper
+    // didn't choose to cancel, and any picker is also affected).
+    void (async () => {
+      const dtoForResolution: ExchangeShiftDTO = {
+        ...dto,
+        pickedUpByStaffId: existing.pickedUpByStaffId
+          ? String(existing.pickedUpByStaffId)
+          : dto.pickedUpByStaffId,
+      };
+      const ids = await ExchangeShiftService._resolveCounterpartyClerkIds(
+        dtoForResolution,
+        orgId,
+        locationId,
+      );
+      const recipients = [ids.dropperClerkUserId, ids.pickerClerkUserId].filter(
+        (v): v is string => Boolean(v),
+      );
+      if (recipients.length === 0) return;
+      await NotificationEvents.exchangeDecision({
+        exchange: dto,
+        decision: "cancelled",
+        notifyClerkUserIds: recipients,
+        orgId,
+        locationId,
+      });
+    })();
+    return dto;
   },
 
   /**
@@ -873,7 +1001,25 @@ export const ExchangeShiftService = {
       );
     }
 
-    return toExchangeShiftDTO(updated);
+    const dto = toExchangeShiftDTO(updated);
+    // Picker withdrew — notify the dropper that their pending pickup
+    // is gone. The picker initiated, so we skip them.
+    void (async () => {
+      const ids = await ExchangeShiftService._resolveCounterpartyClerkIds(
+        dto,
+        orgId,
+        locationId,
+      );
+      if (!ids.dropperClerkUserId) return;
+      await NotificationEvents.exchangeDecision({
+        exchange: dto,
+        decision: "withdrawn",
+        notifyClerkUserIds: [ids.dropperClerkUserId],
+        orgId,
+        locationId,
+      });
+    })();
+    return dto;
   },
 
   /**
@@ -888,6 +1034,46 @@ export const ExchangeShiftService = {
       locationId: new Types.ObjectId(locationId),
     });
     return result.deletedCount;
+  },
+
+  /**
+   * Internal helper used by lifecycle methods above to fan a
+   * notification out to picker / dropper. Resolves staff ids to Clerk
+   * user ids via a single round-trip; never throws.
+   */
+  async _resolveCounterpartyClerkIds(
+    exchange: ExchangeShiftDTO,
+    orgId: string,
+    locationId: string,
+  ): Promise<{ dropperClerkUserId: string | null; pickerClerkUserId: string | null }> {
+    const staffIds: Types.ObjectId[] = [
+      new Types.ObjectId(exchange.staffId),
+    ];
+    if (exchange.pickedUpByStaffId) {
+      staffIds.push(new Types.ObjectId(exchange.pickedUpByStaffId));
+    }
+    const docs = await Staff.find({
+      _id: { $in: staffIds },
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .select("clerkUserId")
+      .lean();
+
+    let dropperClerkUserId: string | null = null;
+    let pickerClerkUserId: string | null = null;
+    for (const d of docs) {
+      const idStr = String(d._id);
+      if (idStr === exchange.staffId) {
+        dropperClerkUserId = d.clerkUserId ?? null;
+      } else if (
+        exchange.pickedUpByStaffId &&
+        idStr === exchange.pickedUpByStaffId
+      ) {
+        pickerClerkUserId = d.clerkUserId ?? null;
+      }
+    }
+    return { dropperClerkUserId, pickerClerkUserId };
   },
 
   /**

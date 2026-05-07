@@ -5,6 +5,7 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import {
   AnnouncementService,
 } from "@/server/services/announcement.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import {
   createAnnouncementSchema,
   updateAnnouncementSchema,
@@ -134,6 +135,12 @@ export async function createAnnouncement(
       body: parsed.data.body,
       priority: parsed.data.priority,
       expiresAt: parsed.data.expiresAt ?? null,
+    });
+
+    void NotificationEvents.announcementCreated({
+      announcement: data,
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
     });
 
     return { success: true, data };

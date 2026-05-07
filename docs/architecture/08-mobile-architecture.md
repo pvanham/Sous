@@ -149,7 +149,14 @@ Runs inside `_layout.tsx`. Its responsibilities:
   (`setTokenGetter(getToken)`).
 - Fire `fetchMembership(getToken)` via TanStack Query once the user
   is signed in. Cache 5 min, retry 1.
-- On success, push the membership into `useAuthStore`.
+- On success, push the membership into `useAuthStore` and fire-and-
+  forget `registerForPushNotifications()` (one prompt per launch,
+  never before the API client has a Clerk JWT). See
+  [10-notifications.md](./10-notifications.md) for the full mobile
+  push flow.
+- Wire `attachNotificationTapHandler` once at mount. The handler
+  reads `data.url` from each push payload and hands it to
+  `Linking.openURL`, which Expo Router resolves to a `router.push`.
 - On 404 (no membership), call `signOut()` with an error that the
   sign-in screen surfaces via `consumePendingSignInError()`.
 - On network or Clerk errors, also sign out with a readable message.
@@ -158,6 +165,12 @@ Runs inside `_layout.tsx`. Its responsibilities:
 If you need new cross-cutting setup (logging, Sentry, feature flags),
 add a new provider inside `_layout.tsx` rather than a per-tab wrapper.
 Don't move the providers elsewhere.
+
+`useSignOut` (`features/auth/use-sign-out.ts`) calls
+`unregisterDeviceForCurrentUser()` *before* `Clerk.signOut()`.
+Order matters: the soft-revoke endpoint requires the still-valid
+Clerk session — once we drop the JWT, we can't tell the dispatcher to
+stop pushing to that device.
 
 ---
 
@@ -363,6 +376,10 @@ documents auth, request/response shape, and the implementation plan.
 | `pickUpShift(exchangeId)`                 | POST | `/api/exchange/[exchangeId]/pickup/route.ts`                     | live   |
 | `dropShift(shiftId, { reason })`          | POST | `/api/shifts/[shiftId]/drop/route.ts`                            | live   |
 | `fetchMembership()`                       | GET  | `/api/me/membership/route.ts`                                    | live   |
+| `fetchNotificationPreferences()`          | GET  | `/api/me/notifications/preferences/route.ts`                     | live   |
+| `patchNotificationPreferences(patch)`     | PATCH| `/api/me/notifications/preferences/route.ts`                     | live   |
+| `registerDeviceToken(input)`              | POST | `/api/me/notifications/devices/route.ts`                         | live   |
+| `revokeDeviceToken(token)`                | DELETE | `/api/me/notifications/devices/route.ts`                       | live   |
 
 The Home tab is fully wired (SHI-7). `/api/shifts/next` resolves the
 caller's `staffId` server-side via `StaffService.getByClerkUserId`

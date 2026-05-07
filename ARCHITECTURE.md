@@ -64,6 +64,7 @@ docs/
 | 07 | [AI Orchestrator](docs/architecture/07-ai-orchestrator.md) | Chat, tool registry, RBAC, proposals, OCC, async tasks |
 | 08 | [Mobile Architecture](docs/architecture/08-mobile-architecture.md) | Expo app structure, auth, TanStack Query, NativeWind |
 | 09 | [Cloud Agent Guidelines](docs/architecture/09-cloud-agent-guidelines.md) | Non-negotiable rules for autonomous agents |
+| 10 | [Notifications](docs/architecture/10-notifications.md) | Push (Expo) + email (Resend) dispatcher, categories, mobile registration |
 
 ## Quick orientation
 
@@ -80,6 +81,8 @@ docs/
   [04-schedule-generation.md](docs/architecture/04-schedule-generation.md).
 - **Building a mobile screen?**
   [08-mobile-architecture.md](docs/architecture/08-mobile-architecture.md).
+- **Adding a push or email notification?**
+  [10-notifications.md](docs/architecture/10-notifications.md).
 - **You are a cloud agent.** Read
   [09-cloud-agent-guidelines.md](docs/architecture/09-cloud-agent-guidelines.md)
   first, then the document closest to your task.

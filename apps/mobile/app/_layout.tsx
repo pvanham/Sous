@@ -3,7 +3,7 @@ import "../global.css";
 import "@/lib/query-focus";
 
 import { useEffect, useRef } from "react";
-import { Appearance, View, ActivityIndicator } from "react-native";
+import { Appearance, View, ActivityIndicator, Linking } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
@@ -19,6 +19,10 @@ import {
 import { tokenCache } from "@/lib/token-cache";
 import { queryClient } from "@/lib/query-client";
 import { setTokenGetter } from "@/lib/api-client";
+import {
+  attachNotificationTapHandler,
+  registerForPushNotifications,
+} from "@/lib/notifications";
 import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
 import { useSettingsPreferences } from "@/features/settings/preferences-store";
 import { fetchMembership } from "@/features/auth/api";
@@ -57,6 +61,25 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [isLoaded, getToken]);
 
+  // Wire the notification tap handler once. The closure routes the
+  // optional `data.url` from each push payload (e.g. `sous://schedule`)
+  // through `Linking.openURL`, which Expo Router subscribes to and
+  // turns into the right `router.push(...)` call. Cold-launch taps
+  // (notification opened the app from a closed state) are handled by
+  // the same listener once the app has hydrated.
+  useEffect(() => {
+    return attachNotificationTapHandler((url) => {
+      if (!url) return;
+      Linking.openURL(url).catch((error) => {
+        console.warn(
+          "[mobile.notifications] failed to open deep link:",
+          url,
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    });
+  }, []);
+
   // Whenever Clerk's `userId` flips — null → someone, A → B, or
   // someone → null — every cached query in the TanStack store is
   // owned by the *previous* identity. Dropping the cache forces the
@@ -83,6 +106,26 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     retry: 1,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Push registration is identity-scoped, not navigation-scoped:
+  // we want to fire it once when a user signs in and re-fire only
+  // when the Clerk userId changes (sign-out → sign-in, account
+  // switch). Living in its own effect — separate from the redirect
+  // effect, which depends on `segments` — means tab switches don't
+  // pointlessly re-POST `/api/me/notifications/devices`.
+  //
+  // Deps are intentionally narrow: we depend on `userId` (the actual
+  // identity key) and `membershipQuery.isSuccess` (the gate that
+  // says "we have a JWT and a confirmed membership row"). We do
+  // *not* depend on `membershipQuery.data` — that object's
+  // reference changes on every background refetch (5-minute
+  // staleTime + AppState refocus), which would cause spurious
+  // re-registrations on long sessions.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId) return;
+    if (!membershipQuery.isSuccess) return;
+    void registerForPushNotifications();
+  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess]);
 
   useEffect(() => {
     if (!isLoaded) return;

@@ -118,6 +118,21 @@ async function executeShiftSwap(
   }
 
   try {
+    // Capture the previous assignee BEFORE the OCC reassign so we can
+    // notify both sides of the swap. The OCC filter narrows to the
+    // intended row; we only need its current `staffId` for the lookup.
+    let previousStaffId: string | null = null;
+    try {
+      const before = await ShiftService.getById(
+        orgId,
+        locationId,
+        occFilter.filter._id as string,
+      );
+      previousStaffId = before?.staffId ?? null;
+    } catch {
+      // Best-effort; an OCC miss below will still report `stale_data`.
+    }
+
     const updated = await ShiftService.reassignWithOCC(
       occFilter.filter,
       targetStaffId,
@@ -136,6 +151,39 @@ async function executeShiftSwap(
 
     const currentName = payload.currentStaffName ?? "the previous assignee";
     const targetName = payload.targetStaffName ?? "the new assignee";
+
+    // Fire-and-forget notify the new and (if known) prior assignee.
+    void (async () => {
+      const { StaffService } = await import(
+        "@/server/services/staff.service"
+      );
+      const { NotificationEvents } = await import(
+        "@/server/services/notification-events"
+      );
+      const ids: string[] = [];
+      const newStaff = await StaffService.getById(
+        orgId,
+        locationId,
+        targetStaffId,
+      );
+      if (newStaff?.clerkUserId) ids.push(newStaff.clerkUserId);
+      if (previousStaffId && previousStaffId !== targetStaffId) {
+        const prevStaff = await StaffService.getById(
+          orgId,
+          locationId,
+          previousStaffId,
+        );
+        if (prevStaff?.clerkUserId) ids.push(prevStaff.clerkUserId);
+      }
+      if (ids.length === 0) return;
+      await NotificationEvents.shiftAssignmentChanged({
+        shift: updated,
+        affectedClerkUserIds: ids,
+        orgId,
+        locationId,
+        reason: "assigned",
+      });
+    })();
 
     return {
       success: true,

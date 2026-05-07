@@ -6,6 +6,7 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import { StaffService } from "@/server/services/staff.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import { submitTimeOffRequestSchema } from "@/lib/validations/time-off-request.schema";
 
 // ─────────────────────────────────────────────────────────────
@@ -190,6 +191,13 @@ export async function POST(req: Request): Promise<Response> {
         reason: parsed.data.reason,
       },
     );
+
+    void NotificationEvents.timeOffSubmitted({
+      request: created,
+      staffName: staff.name,
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+    });
 
     return NextResponse.json(created);
   } catch (error) {

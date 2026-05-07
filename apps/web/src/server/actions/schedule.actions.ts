@@ -14,6 +14,7 @@ import {
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
@@ -144,7 +145,15 @@ export async function updateScheduleStatus(
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 4. Service call
+    // 4. Read the existing status so we know whether this is a real
+    // PUBLISHED→DRAFT transition (worth notifying about) or just a
+    // no-op write.
+    const previous = await ScheduleService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      scheduleId,
+    );
+
     const schedule = await ScheduleService.updateStatus(
       ctx.orgId,
       ctx.locationId,
@@ -154,6 +163,18 @@ export async function updateScheduleStatus(
 
     if (!schedule) {
       return { success: false, error: "Schedule not found" };
+    }
+
+    if (
+      previous &&
+      previous.status === "PUBLISHED" &&
+      schedule.status === "DRAFT"
+    ) {
+      void NotificationEvents.scheduleUnpublished({
+        schedule,
+        orgId: ctx.orgId,
+        locationId: ctx.locationId,
+      });
     }
 
     // 5. Return response
@@ -417,7 +438,31 @@ export async function publishSchedule(
       return { success: false, error: "Failed to update schedule status" };
     }
 
-    // 8. Return response with warnings
+    // 8. Fire-and-forget notifications. The dispatcher never throws,
+    // so wrap each emission in `void` and let the action return.
+    void NotificationEvents.schedulePublished({
+      schedule: updatedSchedule,
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+    });
+    if (managerWarnings.length > 0) {
+      const summary = managerWarnings
+        .map(
+          (w) =>
+            `${w.day}: ${w.gaps
+              .map((g) => `${g.start}–${g.end}`)
+              .join(", ")}`,
+        )
+        .join("; ");
+      void NotificationEvents.managerCoverageGap({
+        schedule: updatedSchedule,
+        summary,
+        orgId: ctx.orgId,
+        locationId: ctx.locationId,
+      });
+    }
+
+    // 9. Return response with warnings
     return {
       success: true,
       data: {
