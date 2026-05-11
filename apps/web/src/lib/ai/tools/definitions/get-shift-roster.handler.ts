@@ -9,6 +9,8 @@ import { sanitizeUserText } from "../sanitize";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { dayOfWeekToIndex, type DayOfWeek } from "@sous/types";
 import { Types } from "mongoose";
 
 function createFormatters(tz: string) {
@@ -28,16 +30,33 @@ function createFormatters(tz: string) {
   };
 }
 
-/** Convert a Date to Monday-based day index (0=Mon..6=Sun) in the given timezone */
-function toMondayBasedDay(date: Date, tz: string): number {
+/**
+ * Convert a Date to a week-start-relative day index where 0 is the
+ * location's configured `weekStartsOn`. This is the convention every
+ * `dayOfWeek` tool parameter uses, so the model and the SQL-side filter
+ * agree on the meaning of "0".
+ */
+function toWeekStartRelativeDay(
+  date: Date,
+  tz: string,
+  weekStartsOn: DayOfWeek,
+): number {
   const localDay = new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     timeZone: tz,
   }).format(date);
-  const map: Record<string, number> = {
-    Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
+  const calendarMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
   };
-  return map[localDay] ?? 0;
+  const calendarIndex = calendarMap[localDay] ?? 0;
+  const startIndex = dayOfWeekToIndex(weekStartsOn);
+  return (calendarIndex - startIndex + 7) % 7;
 }
 
 export async function executeGetShiftRoster(
@@ -74,9 +93,10 @@ export async function executeGetShiftRoster(
     return null;
   }
 
-  const [shifts, staff] = await Promise.all([
+  const [shifts, staff, weekStartsOn] = await Promise.all([
     ShiftService.getBySchedule(schedule.id),
     StaffService.list(context.orgId, context.locationId),
+    KitchenConfigService.getWeekStartsOn(context.orgId, context.locationId),
   ]);
 
   const tz = context.timezone || "UTC";
@@ -92,7 +112,9 @@ export async function executeGetShiftRoster(
 
   if (params.dayOfWeek !== undefined) {
     filtered = filtered.filter(
-      (s) => toMondayBasedDay(new Date(s.start), tz) === params.dayOfWeek
+      (s) =>
+        toWeekStartRelativeDay(new Date(s.start), tz, weekStartsOn) ===
+        params.dayOfWeek,
     );
   }
 

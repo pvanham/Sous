@@ -1,8 +1,9 @@
 import { format } from "date-fns";
 import { currentUser } from "@clerk/nextjs/server";
 import { getWeekStart } from "@/lib/utils/date";
-import { getOrCreateScheduleForWeek } from "@/server/actions/schedule.actions";
-import { listShiftsBySchedule } from "@/server/actions/shift.actions";
+import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
+import { getScheduleByWeek } from "@/server/actions/schedule.actions";
+import { listShiftsForLocationWeek } from "@/server/actions/shift.actions";
 import { listStaff } from "@/server/actions/staff.actions";
 import type { ShiftDTO } from "@/types/shift";
 import type { ScheduleDTO } from "@/types/schedule";
@@ -13,25 +14,34 @@ import { WeeklyScheduleOverview } from "./_components/WeeklyScheduleOverview";
 import { QuickActionsWidget } from "./_components/QuickActionsWidget";
 
 export default async function DashboardPage() {
-  const weekStart = getWeekStart(new Date());
+  // Resolve the location's configured week start before computing the
+  // weekStart anchor — the schedule service rejects a misaligned date,
+  // and the rest of the page (overview chart, metric labels) needs to
+  // render against the same anchor for consistency.
+  const configResult = await getKitchenConfig();
+  const weekStartsOn =
+    configResult.success && configResult.data
+      ? configResult.data.weekStartsOn
+      : "monday";
+  const weekStart = getWeekStart(new Date(), weekStartsOn);
 
-  // Fetch data concurrently
-  const [scheduleResult, staffResult, user] = await Promise.all([
-    getOrCreateScheduleForWeek({ weekStartDate: weekStart }),
+  // Read-only fetches. The dashboard is a pure read — visiting it
+  // should never side-effect-create a Schedule doc, so we use
+  // `getScheduleByWeek` (returns null when nothing exists yet) and
+  // pull shifts by date range so legacy schedules' shifts still feed
+  // the widgets after a `weekStartsOn` flip.
+  const [scheduleResult, shiftsResult, staffResult, user] = await Promise.all([
+    getScheduleByWeek({ weekStartDate: weekStart }),
+    listShiftsForLocationWeek({ weekStartDate: weekStart }),
     listStaff(),
     currentUser(),
   ]);
 
-  const schedule: ScheduleDTO | null = scheduleResult.success ? scheduleResult.data : null;
+  const schedule: ScheduleDTO | null = scheduleResult.success
+    ? scheduleResult.data
+    : null;
   const staff = staffResult.success ? staffResult.data : [];
-
-  let shifts: ShiftDTO[] = [];
-  if (schedule) {
-    const shiftsResult = await listShiftsBySchedule({ scheduleId: schedule.id });
-    if (shiftsResult.success) {
-      shifts = shiftsResult.data;
-    }
-  }
+  const shifts: ShiftDTO[] = shiftsResult.success ? shiftsResult.data : [];
 
   const firstName = user?.firstName ?? "there";
 
@@ -77,7 +87,11 @@ export default async function DashboardPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left: weekly overview (spans 2 cols) */}
         <div className="lg:col-span-2 h-[360px]">
-          <WeeklyScheduleOverview shifts={shifts} weekStart={weekStart} />
+          <WeeklyScheduleOverview
+            shifts={shifts}
+            weekStart={weekStart}
+            weekStartsOn={weekStartsOn}
+          />
         </div>
         {/* Right: today's shifts — scrollable within same height */}
         <div className="lg:col-span-1 h-[360px]">

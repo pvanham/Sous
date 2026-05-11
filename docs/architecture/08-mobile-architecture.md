@@ -370,6 +370,7 @@ documents auth, request/response shape, and the implementation plan.
 | `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | live   |
 | `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
 | `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | live   |
+| `fetchTimeOffForWeek(weekStart)`          | GET  | `/api/time-off/route.ts?weekStart=...`                            | live   |
 | `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | live   |
 | `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | live   |
 | `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | live   |
@@ -392,29 +393,56 @@ mobile API surface.
 The Schedule tab is fully wired (SHI-10). `/api/shifts` accepts a
 `weekStart` (`YYYY-MM-DD`) query parameter, resolves the caller's
 `staffId` server-side, and delegates to
-`ShiftService.getByStaffAndWeek` to return shifts whose `start` falls
-inside `[weekStart, weekStart + 7d)`. Manager / owner callers with no
-Staff row at the active location get an empty array (mirroring the
-graceful-empty pattern from `/api/shifts/next`) so the schedule
-screen renders its empty state instead of erroring.
+`ShiftService.getByStaffAndWeek` with `publishedOnly: true` to return
+shifts whose `start` falls inside `[weekStart, weekStart + 7d)` AND
+whose parent `Schedule.status` is `"PUBLISHED"`. DRAFT shifts never
+reach a staff phone. The window boundary is computed via
+`weekStartInLocationTz(weekStart, Location.timezone)` so the same
+calendar date resolves to the correct UTC instant regardless of
+where the production server runs. The mobile app computes `weekStart`
+against the location's configured first day of the week (see
+`apps/mobile/lib/date.ts`, sourced from `Membership.weekStartsOn` on
+the auth store). Manager / owner callers with no Staff row at the
+active location get an empty array (mirroring the graceful-empty
+pattern from `/api/shifts/next`) so the schedule screen renders its
+empty state instead of erroring.
 
-`/api/shifts/[shiftId]/roster` resolves the target shift, calls
-`ShiftService.getRoster(scheduleId, start, end)` to find every shift
-in the same `Schedule` whose time window overlaps the target's
-`[start, end)`, then materialises the staff IDs via
-`StaffService.getByIds`. RBAC is enforced server-side: `staff` and
-`shift_lead` callers must appear on the roster (403 otherwise);
-`manager` and `owner` may view any roster within the active tenant.
-The roster includes the caller themselves so the UI can mark "(you)"
-without an extra round-trip.
+`GET /api/me/membership` returns `{ role, orgId, locationId,
+weekStartsOn }`. The auth store caches `weekStartsOn` for ~5 minutes
+and screens read it via `useWeekStartsOn()` so Home, Schedule, and
+Exchange all anchor their week boundaries to the same value.
+
+`/api/shifts/[shiftId]/roster` resolves the target shift, then calls
+`ShiftService.getRosterByOverlap(start, end, { publishedOnly: true })`
+to find every shift at the same location whose time window overlaps
+the target's `[start, end)`, regardless of which `Schedule` doc owns
+it. The previous `scheduleId`-scoped variant hid co-workers whose
+shifts had migrated to a new Schedule doc after a `weekStartsOn`
+flip. RBAC is enforced server-side: `staff` and `shift_lead` callers
+must appear on the roster (403 otherwise); `manager` and `owner` may
+view any roster within the active tenant. The roster includes the
+caller themselves so the UI can mark "(you)" without an extra
+round-trip. Staff IDs are materialised via `StaffService.getByIds`.
 
 The Time-off tab is fully wired (SHI-9). `/api/time-off` is a thin
 adapter over `TimeOffRequestService`. `GET` resolves the caller's
-`staffId` server-side (`StaffService.getByClerkUserId`) and delegates
-to `TimeOffRequestService.getByStaffId`; manager / owner callers with
-no Staff row at the active location get an empty array, matching the
-graceful-empty pattern used by `/api/shifts`. `POST` validates the
-body against `submitTimeOffRequestSchema` (a mobile-only variant of
+`staffId` server-side (`StaffService.getByClerkUserId`) and has two
+modes:
+
+- No `weekStart` query param → `TimeOffRequestService.getByStaffId`
+  (full history; used by the Time-off tab).
+- `weekStart=YYYY-MM-DD` →
+  `TimeOffRequestService.getByDateRangeAndStatuses` restricted to the
+  caller's approved + pending requests overlapping `[weekStart,
+  weekStart + 7d)`. The window is computed via
+  `weekStartInLocationTz` so it lines up exactly with the
+  `/api/shifts` window. Backs the schedule tab's "off day" overlay
+  (`fetchTimeOffForWeek` in `apps/mobile/features/time-off/api.ts`).
+
+Manager / owner callers with no Staff row at the active location get
+an empty array in both modes, matching the graceful-empty pattern
+used by `/api/shifts`. `POST` validates the body against
+`submitTimeOffRequestSchema` (a mobile-only variant of
 `createTimeOffRequestSchema` that omits `staffId` and requires
 `type`), enforces the per-location `KitchenConfig.minTimeOffAdvanceDays`
 rule (mirroring the manager Server Action), and delegates to

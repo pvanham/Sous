@@ -58,6 +58,11 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): impo
           softConstraintPriority: doc.scheduleGenerationSettings.softConstraintPriority ?? DEFAULT_SCHEDULE_GENERATION_SETTINGS.softConstraintPriority,
         }
       : { ...DEFAULT_SCHEDULE_GENERATION_SETTINGS },
+    // Default to "monday" for legacy docs that predate the field. The
+    // backfill script in `scripts/backfill-week-starts-on.ts` makes this
+    // unnecessary in production once it has run, but the coalesce keeps
+    // the application safe before / during that migration.
+    weekStartsOn: doc.weekStartsOn ?? "monday",
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };

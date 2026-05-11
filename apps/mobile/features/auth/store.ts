@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { DayOfWeek } from "@sous/types";
 
 export type MemberRole = "owner" | "manager" | "shift_lead" | "staff";
 
@@ -6,6 +7,13 @@ export interface Membership {
   role: MemberRole;
   orgId: string;
   locationId: string | null;
+  /**
+   * Calendar day each new weekly schedule starts on at this location
+   * (default `"monday"`). Drives the home / schedule / exchange week
+   * boundaries. The web app is the source of truth — see
+   * `apps/web/src/app/api/me/membership/route.ts`.
+   */
+  weekStartsOn: DayOfWeek;
 }
 
 interface AuthStore {
@@ -34,3 +42,13 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     return message;
   },
 }));
+
+/**
+ * Selector hook for screens that just need the location's configured
+ * first day of the week. Defaults to `"monday"` until the membership
+ * query has loaded so the very first render of every screen lines up
+ * with the historical default.
+ */
+export function useWeekStartsOn(): DayOfWeek {
+  return useAuthStore((s) => s.membership?.weekStartsOn ?? "monday");
+}

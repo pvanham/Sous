@@ -63,6 +63,7 @@ const TEST_KITCHEN_CONFIG: KitchenConfigInput = {
     monthlyGenerationLimit: 50,
     subscriptionTier: "free",
   },
+  weekStartsOn: "monday",
 };
 
 // ============================================================================

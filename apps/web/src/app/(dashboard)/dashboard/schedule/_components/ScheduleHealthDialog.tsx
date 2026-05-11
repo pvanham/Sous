@@ -234,7 +234,7 @@ export function ScheduleHealthDialog({
   const metrics = useMemo(() => {
     if (!config || allStaff.length === 0) return null;
 
-    const weekDays = getWeekDays(weekStart);
+    const weekDays = getWeekDays(weekStart, config.weekStartsOn);
 
     // 1. Labor Fulfillment by station
     const stationFulfillment: StationFulfillment[] = [];

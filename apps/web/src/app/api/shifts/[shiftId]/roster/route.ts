@@ -30,11 +30,18 @@ import type { MemberRole } from "@/server/models/OrganizationMember";
 //   - `shiftId` (required, must be a Mongo ObjectId).
 //
 // Roster definition
-//   "On the same shift" is operationalised as: same `scheduleId`, with
-//   a time window that overlaps the target shift's `[start, end)`.
-//   That catches close+open transitions (one person closes, another
-//   opens) as well as concurrent station coverage. See
-//   `ShiftService.getRoster` for the full rule.
+//   "On the same shift" is operationalised as: any shift at the same
+//   location whose time window overlaps the target shift's
+//   `[start, end)`. We intentionally do NOT scope by `scheduleId`
+//   because, after a `weekStartsOn` flip, two co-workers on the same
+//   Saturday shift can belong to different Schedule docs. Date-range
+//   overlap is the only stable definition of "on at the same time".
+//   See `ShiftService.getRosterByOverlap` for the full rule.
+//
+// Visibility
+//   - DRAFT shifts are filtered out (`publishedOnly: true`) so a
+//     manager's unpublished week doesn't reveal co-worker assignments
+//     through the roster modal.
 //
 // Response
 //   - 200 → `StaffDTO[]` of every staff member on the shift, ordered
@@ -79,8 +86,9 @@ export async function GET(
     const locationCtx = await getLocationContext(userId);
 
     // Resolve the target shift first so we can: (a) verify it exists in
-    // the caller's tenant, (b) pull `scheduleId` + `start/end` for the
-    // roster query, and (c) check RBAC against the actual roster.
+    // the caller's tenant, (b) pull `start/end` for the roster query
+    // (we deliberately don't use `target.scheduleId` — see the route
+    // doc above), and (c) check RBAC against the actual roster.
     const target = await ShiftService.getById(
       locationCtx.orgId,
       locationCtx.locationId,
@@ -94,12 +102,12 @@ export async function GET(
       );
     }
 
-    const rosterShifts = await ShiftService.getRoster(
+    const rosterShifts = await ShiftService.getRosterByOverlap(
       locationCtx.orgId,
       locationCtx.locationId,
-      target.scheduleId,
       target.start,
       target.end,
+      { publishedOnly: true },
     );
 
     // RBAC: a non-privileged caller (staff / shift_lead) must be on the

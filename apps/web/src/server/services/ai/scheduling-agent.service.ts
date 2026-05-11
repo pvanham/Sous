@@ -543,8 +543,9 @@ function assignmentToSyntheticShift(
 function initWeekHoursFromShifts(
   shifts: ShiftDTO[],
   weekStart: Date,
+  weekStartsOn: import("@sous/types").DayOfWeek,
 ): Map<string, number> {
-  const weekEnd = getWeekEnd(weekStart);
+  const weekEnd = getWeekEnd(weekStart, weekStartsOn);
   const hoursMap = new Map<string, number>();
 
   for (const shift of shifts) {
@@ -600,10 +601,11 @@ async function prefetchWeekCandidateData(
   weekHoursAccumulator: Map<string, number>;
   weekSolverInput: WeekSolverInput;
 }> {
-  const weekDays = getWeekDays(context.weekStart);
+  const weekDays = getWeekDays(context.weekStart, context.config.weekStartsOn);
   const weekHoursAccumulator = initWeekHoursFromShifts(
     context.existingShifts,
     context.weekStart,
+    context.config.weekStartsOn,
   );
 
   const prefetchStart = Date.now();

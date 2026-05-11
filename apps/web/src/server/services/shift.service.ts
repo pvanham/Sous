@@ -1,6 +1,63 @@
 import Shift from "@/server/models/Shift";
+import Schedule from "@/server/models/Schedule";
 import { ShiftDTO, CreateShiftInput, UpdateShiftInput, toShiftDTO } from "@/types/shift";
 import { Types } from "mongoose";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Resolve the set of Schedule ids whose `weekStartDate` could plausibly
+ * own a shift inside `[weekStart, weekEnd)`, optionally filtered by
+ * status. The +/- 7d padding covers the edge case where a shift on a
+ * flipped `weekStartsOn` boundary belongs to a Schedule doc whose own
+ * `weekStartDate` falls outside the display window. Returned ids are
+ * fed into the shift query as `{ scheduleId: { $in: [...] } }` so
+ * Mongo can intersect with the existing `(orgId, locationId, start)`
+ * index.
+ */
+async function resolvePublishedScheduleIds(
+  orgId: string,
+  locationId: string,
+  weekStart: Date,
+  weekEnd: Date,
+): Promise<Types.ObjectId[]> {
+  const docs = await Schedule.find(
+    {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "PUBLISHED",
+      weekStartDate: {
+        $gte: new Date(weekStart.getTime() - WEEK_MS),
+        $lt: new Date(weekEnd.getTime() + WEEK_MS),
+      },
+    },
+    { _id: 1 },
+  ).lean();
+  return docs.map((d) => d._id as Types.ObjectId);
+}
+
+/**
+ * "From now into the future" variant for the next-shift lookup, where
+ * we don't know how far ahead the staff member's next shift sits. The
+ * 7d lower padding catches a parent Schedule whose `weekStartDate` is
+ * earlier in the current week.
+ */
+async function resolvePublishedScheduleIdsFrom(
+  orgId: string,
+  locationId: string,
+  from: Date,
+): Promise<Types.ObjectId[]> {
+  const docs = await Schedule.find(
+    {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: "PUBLISHED",
+      weekStartDate: { $gte: new Date(from.getTime() - WEEK_MS) },
+    },
+    { _id: 1 },
+  ).lean();
+  return docs.map((d) => d._id as Types.ObjectId);
+}
 
 /**
  * ShiftService - Service layer for Shift operations.
@@ -188,6 +245,14 @@ export const ShiftService = {
 
   /**
    * Get all shifts for a schedule.
+   *
+   * Write-path internal. Read paths must use
+   * `getByLocationAndDateRange` (manager grid / dashboard) or
+   * `getByStaffAndWeek` (staff calendar) — those source by date range
+   * so legacy shifts on a pre-flip `weekStartsOn` Schedule still appear
+   * in the new display window. Adding a new read consumer requires
+   * the optical-window pattern from `docs/architecture/01-data-models.md`.
+   *
    * @param scheduleId - Schedule document ID
    * @returns Array of ShiftDTOs
    */
@@ -238,11 +303,17 @@ export const ShiftService = {
    * included so the staff member doesn't lose track of it on the day
    * they actually work it.
    *
+   * When `opts.publishedOnly` is true, the result is restricted to
+   * shifts whose parent Schedule has `status === "PUBLISHED"` so a
+   * DRAFT shift never leaks to a staff phone.
+   *
    * @param orgId        Organization ID (tenancy filter).
    * @param locationId   Location ID (tenancy filter).
    * @param staffId      Staff member whose shifts to return.
    * @param weekStart    Inclusive lower bound (UTC instant).
    * @param weekEnd      Exclusive upper bound (UTC instant).
+   * @param opts         Optional flags. `publishedOnly` gates on
+   *                     `Schedule.status === "PUBLISHED"`.
    * @returns Array of ShiftDTOs sorted by `start` ascending.
    */
   async getByStaffAndWeek(
@@ -250,12 +321,61 @@ export const ShiftService = {
     locationId: string,
     staffId: string,
     weekStart: Date,
-    weekEnd: Date
+    weekEnd: Date,
+    opts: { publishedOnly?: boolean } = {},
+  ): Promise<ShiftDTO[]> {
+    const query: Record<string, unknown> = {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: new Types.ObjectId(staffId),
+      start: { $gte: weekStart, $lt: weekEnd },
+    };
+
+    if (opts.publishedOnly) {
+      const publishedIds = await resolvePublishedScheduleIds(
+        orgId,
+        locationId,
+        weekStart,
+        weekEnd,
+      );
+      if (publishedIds.length === 0) return [];
+      query.scheduleId = { $in: publishedIds };
+    }
+
+    const docs = await Shift.find(query)
+      .sort({ start: 1 })
+      .lean();
+
+    return docs.map(toShiftDTO);
+  },
+
+  /**
+   * Get every shift at a location whose `start` falls in the half-open
+   * `[weekStart, weekEnd)` window, regardless of which Schedule document
+   * owns it. Backs the schedule grid and dashboard widget, both of
+   * which must surface shifts from legacy Schedule docs after a
+   * `weekStartsOn` flip: a Wed-anchored display week can contain shifts
+   * that still live on a Mon-anchored Schedule from before the change.
+   *
+   * Filtering is on `start` only — a shift that begins inside the window
+   * but ends after it is intentionally included (matches the convention
+   * of `getByStaffAndWeek`).
+   *
+   * @param orgId      Organization ID (tenancy filter).
+   * @param locationId Location ID (tenancy filter).
+   * @param weekStart  Inclusive lower bound.
+   * @param weekEnd    Exclusive upper bound.
+   * @returns Array of ShiftDTOs sorted by `start` ascending.
+   */
+  async getByLocationAndDateRange(
+    orgId: string,
+    locationId: string,
+    weekStart: Date,
+    weekEnd: Date,
   ): Promise<ShiftDTO[]> {
     const docs = await Shift.find({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
-      staffId: new Types.ObjectId(staffId),
       start: { $gte: weekStart, $lt: weekEnd },
     })
       .sort({ start: 1 })
@@ -265,7 +385,7 @@ export const ShiftService = {
   },
 
   /**
-   * Return every shift on a given schedule whose time window overlaps
+   * Return every shift at a location whose time window overlaps
    * `[start, end)`. Backs the mobile "who's on with me" roster modal.
    *
    * Two shifts overlap when `existing.start < window.end` and
@@ -274,26 +394,42 @@ export const ShiftService = {
    *   - shifts that start during the target window
    *   - shifts that span the entire window
    *
-   * Scoped by `scheduleId` so we don't pull cross-week roster bleed
-   * (e.g. a shift on the same Monday morning belonging to last week's
-   * schedule). The route handler is responsible for resolving the
-   * target shift first and passing its `scheduleId`, `start`, `end`
-   * values here.
+   * Intentionally NOT scoped by `scheduleId`: after a `weekStartsOn`
+   * flip, co-workers on the same Saturday shift can be attached to
+   * different Schedule docs, so a roster constrained to one schedule
+   * id would hide a real teammate. Date-range overlap is the only
+   * stable definition of "on at the same time".
+   *
+   * When `opts.publishedOnly` is true, the result is gated on the
+   * parent Schedule's status so a manager's DRAFT shifts don't reveal
+   * future co-worker assignments to a staff phone.
    */
-  async getRoster(
+  async getRosterByOverlap(
     orgId: string,
     locationId: string,
-    scheduleId: string,
     start: Date,
-    end: Date
+    end: Date,
+    opts: { publishedOnly?: boolean } = {},
   ): Promise<ShiftDTO[]> {
-    const docs = await Shift.find({
+    const query: Record<string, unknown> = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
-      scheduleId: new Types.ObjectId(scheduleId),
       start: { $lt: end },
       end: { $gt: start },
-    })
+    };
+
+    if (opts.publishedOnly) {
+      const publishedIds = await resolvePublishedScheduleIds(
+        orgId,
+        locationId,
+        start,
+        end,
+      );
+      if (publishedIds.length === 0) return [];
+      query.scheduleId = { $in: publishedIds };
+    }
+
+    const docs = await Shift.find(query)
       .sort({ start: 1 })
       .lean();
 
@@ -311,20 +447,40 @@ export const ShiftService = {
    * member who somehow exists in two tenants only ever sees the row
    * for the tenant whose context the caller resolved.
    *
+   * When `opts.publishedOnly` is true, DRAFT shifts are excluded —
+   * the home card on staff phones must never preview unpublished
+   * assignments. The published-id pre-fetch uses a generous +/-7d
+   * window around "now" so it catches the parent of the next shift
+   * even when it's anchored on a pre-flip `weekStartsOn` Schedule.
+   *
    * @returns The next ShiftDTO sorted by `start` ascending, or `null`
    *          if the staff member has no upcoming shifts.
    */
   async getNextForStaff(
     orgId: string,
     locationId: string,
-    staffId: string
+    staffId: string,
+    opts: { publishedOnly?: boolean } = {},
   ): Promise<ShiftDTO | null> {
-    const doc = await Shift.findOne({
+    const now = new Date();
+    const query: Record<string, unknown> = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
       staffId: new Types.ObjectId(staffId),
-      start: { $gte: new Date() },
-    })
+      start: { $gte: now },
+    };
+
+    if (opts.publishedOnly) {
+      const publishedIds = await resolvePublishedScheduleIdsFrom(
+        orgId,
+        locationId,
+        now,
+      );
+      if (publishedIds.length === 0) return null;
+      query.scheduleId = { $in: publishedIds };
+    }
+
+    const doc = await Shift.findOne(query)
       .sort({ start: 1 })
       .lean();
 
@@ -468,52 +624,73 @@ export const ShiftService = {
   },
 
   /**
-   * Copy shifts from one schedule to another with adjusted dates.
-   * Handles overlap detection - skips shifts that would conflict with existing ones.
-   * @param orgId - Organization ID (ownership check)
-   * @param locationId - Location ID (ownership check)
-   * @param sourceScheduleId - Schedule ID to copy from
-   * @param targetScheduleId - Schedule ID to copy to
-   * @param dayOffset - Number of days to add to shift dates (e.g., 7 for next week)
-   * @returns Object with count of created and skipped shifts
+   * Copy shifts from a source week into a target Schedule, sourcing by
+   * **date range** (not by `scheduleId`) so the copy survives a
+   * per-location `weekStartsOn` flip.
+   *
+   * Why date-range: after an owner changes `weekStartsOn` from Monday to
+   * Wednesday, the previous Wed-Tue window contains shifts that still
+   * live on a legacy Mon-anchored Schedule doc. Sourcing by source
+   * Schedule id (the old contract) would return that doc's shifts
+   * either zero (if a fresh Wed doc was auto-created at the source
+   * week) or the wrong week (if the Mon doc was used). Sourcing by
+   * `[sourceWeekStart, sourceWeekStart + 7d)` always returns the
+   * shifts the user actually sees on that week, regardless of which
+   * Schedule doc owns them.
+   *
+   * Overlap behaviour is unchanged — a per-staff overlap check skips
+   * the copy when the target day already has a shift for that staff.
+   *
+   * @param orgId             Organization ID (tenancy filter).
+   * @param locationId        Location ID (tenancy filter).
+   * @param sourceWeekStart   Inclusive lower bound of the source window.
+   * @param targetScheduleId  Schedule doc to attach newly-created shifts to.
+   * @param targetWeekStart   Inclusive lower bound of the destination
+   *                          window. Offset is `targetWeekStart - sourceWeekStart`.
+   * @returns Object with `created` and `skipped` counts.
    */
-  async copyShiftsToNewWeek(
+  async copyShiftsAcrossWeeks(
     orgId: string,
     locationId: string,
-    sourceScheduleId: string,
+    sourceWeekStart: Date,
     targetScheduleId: string,
-    dayOffset: number
+    targetWeekStart: Date,
   ): Promise<{ created: number; skipped: number }> {
-    // Get all shifts from source schedule
-    const sourceShifts = await this.getBySchedule(sourceScheduleId);
+    const sourceWeekEnd = new Date(sourceWeekStart.getTime() + WEEK_MS);
+    const sourceShifts = await this.getByLocationAndDateRange(
+      orgId,
+      locationId,
+      sourceWeekStart,
+      sourceWeekEnd,
+    );
+
+    const dayOffsetMs =
+      targetWeekStart.getTime() - sourceWeekStart.getTime();
 
     let created = 0;
     let skipped = 0;
 
     for (const sourceShift of sourceShifts) {
-      // Calculate new dates by adding the day offset
-      const newStart = new Date(sourceShift.start);
-      newStart.setDate(newStart.getDate() + dayOffset);
+      const newStart = new Date(
+        new Date(sourceShift.start).getTime() + dayOffsetMs,
+      );
+      const newEnd = new Date(
+        new Date(sourceShift.end).getTime() + dayOffsetMs,
+      );
 
-      const newEnd = new Date(sourceShift.end);
-      newEnd.setDate(newEnd.getDate() + dayOffset);
-
-      // Check if this shift would overlap with existing shifts in target schedule
       const hasOverlap = await this.checkOverlap(
         orgId,
         locationId,
         sourceShift.staffId,
         newStart,
-        newEnd
+        newEnd,
       );
 
       if (hasOverlap) {
-        // Skip this shift due to conflict
         skipped++;
         continue;
       }
 
-      // Create the new shift in the target schedule
       await Shift.create({
         orgId: new Types.ObjectId(orgId),
         locationId: new Types.ObjectId(locationId),

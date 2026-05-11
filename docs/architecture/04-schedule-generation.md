@@ -67,7 +67,7 @@ POST /solve/week
   ├─ staffAvailability (supply)
   ├─ staff (skills, hourlyRate, min/max hours, preferences)
   ├─ candidatesByDay (pre-filtered)
-  └─ weekStartDate
+  └─ weekStartDate            // matches the location's KitchenConfig.weekStartsOn
 
 ← response
   ├─ solverStatus: "OPTIMAL" | "FEASIBLE" | "INFEASIBLE" | …
@@ -78,6 +78,11 @@ POST /solve/week
   ├─ assignments: [{ dayOfWeek, shifts: [{ staffId, station, start, end }] }]
   └─ suggestedRelaxations (on infeasible)
 ```
+
+`weekStartDate` is sent as the location's configured first day of the
+week (default Monday). The solver's `day_index` is 0..6 sequential from
+that date, so the orchestrator's `getWeekDays(weekStart, weekStartsOn)`
+helper is what enforces the rotation in the payload.
 
 The solver lives in `solver/main.py` and runs in Docker via the
 `solver/Dockerfile`. It is a **stateless** service — all context is in

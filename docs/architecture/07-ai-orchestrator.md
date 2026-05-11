@@ -79,7 +79,11 @@ export async function POST(req: Request) {
   expirePendingProposals(ctx.auth.orgId, userId, id).catch(log);
 
   const tools = toAISDKTools(ctx.allowedTools, toolExecutionContext);
-  const systemPrompt = buildSystemPrompt(ctx, location.timezone);
+  const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+    ctx.auth.orgId,
+    ctx.auth.locationId,
+  );
+  const systemPrompt = buildSystemPrompt(ctx, location.timezone, weekStartsOn);
 
   await Conversation.findOneAndUpdate(                    // 4. upsert doc
     { _id: id, clerkUserId: userId },

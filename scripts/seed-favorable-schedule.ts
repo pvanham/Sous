@@ -59,6 +59,7 @@ import { LaborRequirementService } from "../apps/web/src/server/services/labor-r
 import { AIUsageService } from "../apps/web/src/server/services/ai-usage.service";
 import { TimeOffRequestService } from "../apps/web/src/server/services/time-off-request.service";
 import type { KitchenConfigInput } from "../apps/web/src/lib/validations/kitchen-config.schema";
+import { dayOfWeekToIndex } from "@sous/types";
 import { startOfWeek, addWeeks } from "date-fns";
 import mongoose from "mongoose";
 import { createClerkClient } from "@clerk/backend";
@@ -72,18 +73,6 @@ const ORG_NAME = "The Golden Fork - Favorable Test";
 const STAFF_EMAIL_DOMAIN = "goldenfork.test";
 const STAFF_PASSWORD =
   process.env.SEED_STAFF_PASSWORD_FAVORABLE ?? "GoldenFork!2026Seed";
-
-function getTargetTestWeek(): Date {
-  const now = new Date();
-  let monday = startOfWeek(now, { weekStartsOn: 1 });
-  if (now >= monday) {
-    monday = addWeeks(monday, 1);
-  }
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
-
-const TEST_WEEK_START = getTargetTestWeek();
 
 // ============================================================================
 // Kitchen Configuration (4 stations -- simpler graph)
@@ -118,7 +107,24 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
     monthlyGenerationLimit: 100,
     subscriptionTier: "pro",
   },
+  weekStartsOn: "monday",
 };
+
+function getTargetTestWeek(): Date {
+  const now = new Date();
+  // Anchor on the seeded kitchen config's `weekStartsOn` so the script
+  // matches whatever default the constant declares — flipping the seed
+  // to a different week start automatically lines the test week up.
+  const anchor = dayOfWeekToIndex(KITCHEN_CONFIG.weekStartsOn);
+  let weekStart = startOfWeek(now, { weekStartsOn: anchor });
+  if (now >= weekStart) {
+    weekStart = addWeeks(weekStart, 1);
+  }
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+const TEST_WEEK_START = getTargetTestWeek();
 
 // ============================================================================
 // Staff Definitions (16 active, 0 inactive)

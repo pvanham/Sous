@@ -5,15 +5,19 @@ import { Fragment } from "react";
 import { formatDayLabel } from "@/lib/utils/date";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
+import type { TimeOffRequestDTO } from "@/types/time-off-request";
 
 import { StaffRow } from "./StaffRow";
 import { ShiftCard } from "./ShiftCard";
 import { GridCell } from "./GridCell";
+import { TimeOffPill } from "./TimeOffPill";
+import { findTimeOffOverlay } from "./time-off-overlay";
 
 interface StaffGridViewProps {
   shifts: ShiftDTO[];
   staff: StaffDTO[];
   weekDays: Date[];
+  timeOff?: TimeOffRequestDTO[];
   onCreateShift: (staffId: string, date: Date) => void;
   onEditShift: (shift: ShiftDTO) => void;
 }
@@ -51,6 +55,7 @@ export function StaffGridView({
   shifts,
   staff,
   weekDays,
+  timeOff,
   onCreateShift,
   onEditShift,
 }: StaffGridViewProps) {
@@ -92,19 +97,45 @@ export function StaffGridView({
             <StaffRow staff={staffMember} />
             {weekDays.map((day) => {
               const shift = getShiftForStaffAndDay(shifts, staffMember.id, day);
-              return shift ? (
-                <ShiftCard
-                  key={shift.id}
-                  shift={shift}
-                  onClick={() => onEditShift(shift)}
-                />
-              ) : (
-                <GridCell
+              const overlay = findTimeOffOverlay(
+                timeOff,
+                staffMember.id,
+                day,
+              );
+              if (shift) {
+                return (
+                  <div
+                    key={shift.id}
+                    className="relative"
+                  >
+                    <ShiftCard
+                      shift={shift}
+                      onClick={() => onEditShift(shift)}
+                    />
+                    {overlay && (
+                      <div className="pointer-events-none absolute right-1 top-1 z-10">
+                        <TimeOffPill request={overlay} />
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+              return (
+                <div
                   key={`cell-${staffMember.id}-${day.toISOString()}`}
-                  staffId={staffMember.id}
-                  date={day}
-                  onClick={() => onCreateShift(staffMember.id, day)}
-                />
+                  className="relative"
+                >
+                  <GridCell
+                    staffId={staffMember.id}
+                    date={day}
+                    onClick={() => onCreateShift(staffMember.id, day)}
+                  />
+                  {overlay && (
+                    <div className="pointer-events-none absolute inset-x-1 bottom-1 flex justify-center">
+                      <TimeOffPill request={overlay} />
+                    </div>
+                  )}
+                </div>
               );
             })}
           </Fragment>

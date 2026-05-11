@@ -28,6 +28,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 import {
   kitchenConfigSchema,
@@ -45,13 +51,24 @@ import type {
   ConfigChangeImpact,
   SaveKitchenConfigOptions,
 } from "@/types/kitchen-config";
+import type { MemberRole } from "@/server/models/OrganizationMember";
 import { ConfigChangeWarningDialog } from "./ConfigChangeWarningDialog";
 
 interface KitchenConfigFormProps {
   initialConfig: KitchenConfigDTO | null;
+  /**
+   * Caller's role at this location. Owners can edit every field;
+   * managers see the owner-only "Week start" select disabled with a
+   * tooltip. The action layer enforces this independently.
+   */
+  currentRole: MemberRole;
 }
 
-export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
+export function KitchenConfigForm({
+  initialConfig,
+  currentRole,
+}: KitchenConfigFormProps) {
+  const isOwner = currentRole === "owner";
   // State for warning dialog
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
   const [pendingData, setPendingData] = useState<KitchenConfigInput | null>(null);
@@ -81,6 +98,7 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
           monthlyGenerationLimit: 50,
           subscriptionTier: "free",
         },
+        weekStartsOn: initialConfig.weekStartsOn ?? "monday",
       }
     : defaultKitchenConfigValues;
 
@@ -176,13 +194,20 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
       return;
     }
 
-    // If no removals, save directly
-    if (totalRemovals === 0) {
+    // The week-start change (when present) needs the same warn-then-confirm
+    // flow as station/role removals — the owner has to acknowledge that
+    // existing schedules keep their current weekStartDate.
+    const weekStartChanged =
+      initialConfig != null &&
+      initialConfig.weekStartsOn !== data.weekStartsOn;
+
+    // Fast path: nothing requires a confirmation, so save directly.
+    if (totalRemovals === 0 && !weekStartChanged) {
       saveMutation.mutate({ data });
       return;
     }
 
-    // Preview impact of the removal
+    // Preview impact of the change (covers removals and week-start flip).
     try {
       const impact = await previewMutation.mutateAsync(data);
 
@@ -195,8 +220,9 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
       const hasRoleImpact =
         impact.removedRoles.length > 0 &&
         impact.roleImpact.affectedStaffCount > 0;
+      const hasWeekStartImpact = Boolean(impact.weekStartChange);
 
-      if (!hasStationImpact && !hasRoleImpact) {
+      if (!hasStationImpact && !hasRoleImpact && !hasWeekStartImpact) {
         // No impact, save directly
         saveMutation.mutate({ data });
         return;
@@ -457,6 +483,72 @@ export function KitchenConfigForm({ initialConfig }: KitchenConfigFormProps) {
                 </FormItem>
               )}
             />
+        </div>
+
+        {/* Week Start (owner-only) */}
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Week Start</h3>
+            <p className="text-sm text-muted-foreground">
+              The day each new weekly schedule will start. Existing schedules
+              keep their current week boundaries.
+            </p>
+          </div>
+          <FormField
+            control={form.control}
+            name="weekStartsOn"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>First day of the week</FormLabel>
+                {isOwner ? (
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a starting day" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {DAYS_OF_WEEK.map((day) => (
+                        <SelectItem key={day} value={day}>
+                          {capitalizeDay(day)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <TooltipProvider delayDuration={150}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        {/* The disabled trigger is wrapped in a span so
+                            the tooltip still receives hover events. */}
+                        <span className="inline-block w-full">
+                          <Select value={field.value} disabled>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a starting day" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent />
+                          </Select>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Only owners can change this.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+                <FormDescription>
+                  Applies to schedule generation, dashboards, time-off, and
+                  shift exchange across the web and mobile apps.
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Operating Hours */}

@@ -2,6 +2,8 @@ import { View } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { ShiftDTO } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
+import { useWeekStartsOn } from "@/features/auth/store";
+import { getWeekStart } from "@/lib/date";
 
 interface WeekStatsCardProps {
   shifts: ShiftDTO[] | undefined;
@@ -13,12 +15,13 @@ interface WeekStatsCardProps {
  * to answer "how busy am I this week?" without opening the schedule
  * tab: shift count, total hours, and the most common station.
  *
- * Only counts shifts whose `start` falls inside the current calendar
- * week (Sunday → Saturday in the device's local timezone) so the card
- * stays aligned with the Schedule tab's weekly view.
+ * Only counts shifts whose `start` falls inside the location's
+ * configured weekly window (anchored on `KitchenConfig.weekStartsOn`,
+ * default Monday) so the card stays aligned with the Schedule tab.
  */
 export function WeekStatsCard({ shifts, loading }: WeekStatsCardProps) {
-  const stats = computeStats(shifts);
+  const weekStartsOn = useWeekStartsOn();
+  const stats = computeStats(shifts, weekStartsOn);
 
   return (
     <View className="bg-card border border-border rounded-md p-4">
@@ -82,9 +85,12 @@ interface WeekStats {
   topStation: string | null;
 }
 
-function computeStats(shifts: ShiftDTO[] | undefined): WeekStats {
+function computeStats(
+  shifts: ShiftDTO[] | undefined,
+  weekStartsOn: import("@sous/types").DayOfWeek,
+): WeekStats {
   const list = shifts ?? [];
-  const weekStart = getWeekStart(new Date());
+  const weekStart = getWeekStart(new Date(), weekStartsOn);
   const weekEnd = addDays(weekStart, 7);
 
   const inWeek = list.filter((shift) => {
@@ -118,13 +124,6 @@ function computeStats(shifts: ShiftDTO[] | undefined): WeekStats {
 function formatHours(hours: number): string {
   const rounded = Math.round(hours * 10) / 10;
   return Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
-}
-
-function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay());
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function addDays(date: Date, delta: number): Date {

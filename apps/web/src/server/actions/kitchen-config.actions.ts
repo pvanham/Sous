@@ -1,5 +1,6 @@
 "use server";
 
+import { Types } from "mongoose";
 import { auth } from "@clerk/nextjs/server";
 import {
   kitchenConfigSchema,
@@ -11,6 +12,8 @@ import { LaborRequirementService } from "@/server/services/labor-requirement.ser
 import { StaffService } from "@/server/services/staff.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { dbConnect } from "@/lib/db";
+import Schedule from "@/server/models/Schedule";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
   KitchenConfigDTO,
@@ -216,6 +219,27 @@ export async function previewKitchenConfigChanges(
       (r) => r.trim() !== ""
     );
 
+    // 9. Detect a week-start change and count future schedules that will
+    //    keep their existing weekStartDate. We only do the count when the
+    //    value is actually flipping — otherwise it's pure noise in the
+    //    warning dialog.
+    let weekStartChange: ConfigChangeImpact["weekStartChange"];
+    if (newConfig.weekStartsOn !== currentConfig.weekStartsOn) {
+      await dbConnect();
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const affectedFutureSchedules = await Schedule.countDocuments({
+        orgId: new Types.ObjectId(ctx.orgId),
+        locationId: new Types.ObjectId(ctx.locationId),
+        weekStartDate: { $gte: today },
+      });
+      weekStartChange = {
+        from: currentConfig.weekStartsOn,
+        to: newConfig.weekStartsOn,
+        affectedFutureSchedules,
+      };
+    }
+
     return {
       success: true,
       data: {
@@ -225,6 +249,7 @@ export async function previewKitchenConfigChanges(
         roleImpact,
         requiresRoleReplacement,
         availableReplacementRoles,
+        ...(weekStartChange ? { weekStartChange } : {}),
       },
     };
   } catch (error) {
@@ -272,6 +297,21 @@ export async function saveKitchenConfig(
       ctx.orgId,
       ctx.locationId
     );
+
+    // 4a. Owner-only gate on the week-start setting. Only an owner may
+    //     change `weekStartsOn`; managers see the field disabled in the
+    //     form, but we still defend the action layer because a malicious
+    //     payload could bypass the UI.
+    if (
+      currentConfig &&
+      validatedData.weekStartsOn !== currentConfig.weekStartsOn &&
+      ctx.role !== "owner"
+    ) {
+      return {
+        success: false,
+        error: "Only owners can change the week start day.",
+      };
+    }
 
     if (currentConfig) {
       // 5. Calculate removed stations and roles

@@ -17,13 +17,17 @@ import { assignLanes } from "@/lib/utils/shift-overlap";
 import { getStationClasses } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
+import type { TimeOffRequestDTO } from "@/types/time-off-request";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
+import { TimeOffPill } from "./TimeOffPill";
+import { findTimeOffOverlay } from "./time-off-overlay";
 
 interface DayStationViewProps {
   shifts: ShiftDTO[];
   staff: StaffDTO[];
   selectedDay: Date;
   config: KitchenConfigDTO | null;
+  timeOff?: TimeOffRequestDTO[];
   onCreateShift: (date: Date, startTime: string, station: string) => void;
   onEditShift: (shift: ShiftDTO) => void;
 }
@@ -260,6 +264,7 @@ export function DayStationView({
   staff,
   selectedDay,
   config,
+  timeOff,
   onCreateShift,
   onEditShift,
 }: DayStationViewProps) {
@@ -376,12 +381,46 @@ export function DayStationView({
             Time
           </div>
           {stations.map((station) => {
+            // Staff with overlapping time off on the selected day who
+            // are NOT assigned this station today — surfacing them in
+            // any column they're already on would be noise.
+            const assignedStaffIds = new Set(
+              (shiftsByStation.get(station) ?? []).map((s) => s.staffId),
+            );
+            const offStaff = Array.isArray(staff)
+              ? staff
+                  .filter((s) => s.isActive && !assignedStaffIds.has(s.id))
+                  .map((s) => ({
+                    staff: s,
+                    overlay: findTimeOffOverlay(timeOff, s.id, selectedDay),
+                  }))
+                  .filter(
+                    (entry): entry is { staff: StaffDTO; overlay: TimeOffRequestDTO } =>
+                      entry.overlay !== undefined,
+                  )
+              : [];
             return (
               <div
                 key={station}
-                className="font-sans font-semibold uppercase tracking-widest text-[10px] text-center p-2 flex items-center justify-center gap-2 text-stone-500 dark:text-stone-400"
+                className="p-2 text-center text-stone-500 dark:text-stone-400"
               >
-                <span>{station}</span>
+                <div className="font-sans font-semibold uppercase tracking-widest text-[10px] flex items-center justify-center gap-2">
+                  <span>{station}</span>
+                </div>
+                {offStaff.length > 0 && (
+                  <div className="mt-1 flex flex-wrap items-center justify-center gap-1">
+                    {offStaff.map(({ staff: s, overlay }) => (
+                      <TimeOffPill
+                        key={`${s.id}-${overlay.id}`}
+                        request={{
+                          ...overlay,
+                          reason: `${s.name}: ${overlay.reason ?? ""}`.trim(),
+                        }}
+                        className="normal-case"
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}

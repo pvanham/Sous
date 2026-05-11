@@ -4,6 +4,7 @@ import { getWeekStart, parseDateString } from "@/lib/utils/date";
 import AsyncTask from "@/server/models/AsyncTask";
 import { buildSolverPayload } from "@/server/services/cp-solver.service";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import type { AsyncTaskDTO } from "@/types/async-task";
 import { toAsyncTaskDTO } from "@/types/async-task";
 
@@ -63,10 +64,15 @@ export const AsyncTaskService = {
   ): Promise<DispatchResult> {
     await dbConnect();
 
+    const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+      input.orgId,
+      input.locationId,
+    );
     const weekStart = getWeekStart(
       /^\d{4}-\d{2}-\d{2}$/.test(input.weekStartDate)
         ? parseDateString(input.weekStartDate)
         : new Date(input.weekStartDate),
+      weekStartsOn,
     );
     let context;
     try {

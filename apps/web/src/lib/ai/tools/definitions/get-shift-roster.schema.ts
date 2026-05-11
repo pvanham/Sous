@@ -6,7 +6,15 @@ export const getShiftRosterParamsSchema = z
   .object({
     scheduleId: z.string().min(1).optional(),
     staffId: z.string().optional(),
-    dayOfWeek: z.number().int().min(0).max(6).optional(),
+    dayOfWeek: z
+      .number()
+      .int()
+      .min(0)
+      .max(6)
+      .optional()
+      .describe(
+        "Day of the week as an offset from the location's configured first day (0 = first day, 6 = last day; with the default Monday week start, 0 = Monday and 6 = Sunday).",
+      ),
   })
   .merge(paginationParamsSchema);
 

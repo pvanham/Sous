@@ -2,8 +2,10 @@ import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { LocationService } from "@/server/services/location.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
+import { weekStartInLocationTz } from "@/lib/utils/timezone";
 
 // ─────────────────────────────────────────────────────────────
 // GET /api/shifts?weekStart=YYYY-MM-DD  —  Mobile (Schedule tab)
@@ -23,16 +25,22 @@ import { StaffService } from "@/server/services/staff.service";
 //
 // Query params
 //   - `weekStart` (required): ISO date string (`YYYY-MM-DD`).
-//     Interpreted as midnight UTC at the supplied date. The window is
-//     half-open: `[weekStart, weekStart + 7d)` so paginating forward
-//     never double-counts the boundary day.
+//     Interpreted as midnight in the location's IANA timezone (via
+//     `weekStartInLocationTz`), not UTC — otherwise a 23:00 PDT shift
+//     would fall into the wrong calendar week. The window is half-open:
+//     `[weekStart, weekStart + 7d)` so paginating forward never double-
+//     counts the boundary day.
 //
-//     The mobile client today computes `weekStart` as the most recent
-//     Sunday in the device's local timezone. We accept whatever
-//     calendar day it sends and slice 7 days from there — there's no
-//     server-side enforcement of Sunday vs. Monday because the mobile
-//     UI only renders one week at a time and we want the contract to
-//     match what the user physically sees on their phone.
+//     The mobile client computes the anchor day to match
+//     `KitchenConfig.weekStartsOn`. We accept whatever calendar day it
+//     sends and slice 7 days from there — there's no server-side
+//     enforcement of which weekday because the mobile UI renders one
+//     week at a time and the contract must match what the user
+//     physically sees on their phone.
+//
+// Visibility
+//   - DRAFT shifts are filtered out (`publishedOnly: true`) so a
+//     manager's in-progress week can never leak to a staff phone.
 //
 // Response
 //   - 200 → `ShiftDTO[]` (empty array when the caller has no shifts
@@ -79,7 +87,11 @@ export async function GET(req: NextRequest): Promise<Response> {
       );
     }
 
-    const weekStart = new Date(`${parsed.data}T00:00:00.000Z`);
+    const ctx = await getLocationContext(userId);
+
+    const location = await LocationService.getById(ctx.locationId);
+    const tz = location?.timezone ?? "UTC";
+    const weekStart = weekStartInLocationTz(parsed.data, tz);
     if (Number.isNaN(weekStart.getTime())) {
       return NextResponse.json(
         { error: "weekStart must be a valid calendar date." },
@@ -87,8 +99,6 @@ export async function GET(req: NextRequest): Promise<Response> {
       );
     }
     const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
-
-    const ctx = await getLocationContext(userId);
 
     const staff = await StaffService.getByClerkUserId(
       ctx.orgId,
@@ -110,6 +120,7 @@ export async function GET(req: NextRequest): Promise<Response> {
       staff.id,
       weekStart,
       weekEnd,
+      { publishedOnly: true },
     );
 
     return NextResponse.json(shifts);

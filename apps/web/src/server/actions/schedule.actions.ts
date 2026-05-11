@@ -281,9 +281,16 @@ export async function deleteSchedule(
 }
 
 /**
- * Copy shifts from one week to another.
- * Handles overlap detection - skips shifts that would conflict with existing ones.
- * @param input - Object containing sourceScheduleId and targetWeekStart
+ * Copy shifts from one week to another, sourced by **date range** so the
+ * copy survives a per-location `weekStartsOn` flip. The previous Wed-Tue
+ * window may contain shifts that still live on a legacy Mon-anchored
+ * Schedule doc; the service-layer date-range lookup picks those up
+ * regardless of which Schedule owns them.
+ *
+ * Overlap detection (per-staff) skips shifts that would conflict with
+ * existing target-week shifts; semantics unchanged.
+ *
+ * @param input - Object containing sourceWeekStart and targetWeekStart
  * @returns ActionResponse with count of created and skipped shifts
  */
 export async function copyWeekShifts(
@@ -296,7 +303,7 @@ export async function copyWeekShifts(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. Zod validation
+    // 2. Zod validation — both fields are midnight-aligned Dates.
     const parseResult = copyWeekSchema.safeParse(input);
     if (!parseResult.success) {
       const errorMessage = parseResult.error.issues
@@ -304,54 +311,42 @@ export async function copyWeekShifts(
         .join(", ");
       return { success: false, error: errorMessage };
     }
-    const { sourceScheduleId, targetWeekStart } = parseResult.data;
+    const { sourceWeekStart, targetWeekStart } = parseResult.data;
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 4. Get source schedule to validate ownership and get source week start
-    const sourceSchedule = await ScheduleService.getById(
-      ctx.orgId,
-      ctx.locationId,
-      sourceScheduleId,
-    );
-    if (!sourceSchedule) {
-      return { success: false, error: "Source schedule not found" };
-    }
-
-    // 5. Check if target week is the same as source week
-    const sourceWeekStart = new Date(sourceSchedule.weekStartDate);
-    sourceWeekStart.setHours(0, 0, 0, 0);
+    // 4. Reject a same-week copy outright.
+    const sourceWeekNormalized = new Date(sourceWeekStart);
+    sourceWeekNormalized.setHours(0, 0, 0, 0);
     const targetWeekNormalized = new Date(targetWeekStart);
     targetWeekNormalized.setHours(0, 0, 0, 0);
-
-    if (sourceWeekStart.getTime() === targetWeekNormalized.getTime()) {
+    if (sourceWeekNormalized.getTime() === targetWeekNormalized.getTime()) {
       return { success: false, error: "Cannot copy to the same week" };
     }
 
-    // 6. Calculate day offset between weeks
-    const dayOffset = Math.round(
-      (targetWeekNormalized.getTime() - sourceWeekStart.getTime()) /
-        (1000 * 60 * 60 * 24),
-    );
-
-    // 7. Get or create target schedule
+    // 5. Ensure the target Schedule exists. This is the only place that
+    //    actually creates a Schedule doc — the read paths use the no-op
+    //    `getByWeek` so visiting weeks alone never pollutes the
+    //    collection. The alignment check inside `getOrCreateForWeek`
+    //    will reject a misaligned `targetWeekStart` with a readable
+    //    error, no extra guard needed here.
     const targetSchedule = await ScheduleService.getOrCreateForWeek(
       ctx.orgId,
       ctx.locationId,
-      targetWeekStart,
+      targetWeekNormalized,
     );
 
-    // 8. Copy shifts using service
-    const result = await ShiftService.copyShiftsToNewWeek(
+    // 6. Delegate the date-range copy to the service.
+    const result = await ShiftService.copyShiftsAcrossWeeks(
       ctx.orgId,
       ctx.locationId,
-      sourceScheduleId,
+      sourceWeekNormalized,
       targetSchedule.id,
-      dayOffset,
+      targetWeekNormalized,
     );
 
-    // 9. Return response
+    // 7. Return response
     return {
       success: true,
       data: {

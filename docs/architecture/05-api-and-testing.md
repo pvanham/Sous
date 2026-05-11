@@ -124,6 +124,30 @@ benefits from browser caching semantics.
 
 ---
 
+## 3.5 Optical-window queries
+
+Any read that says "shifts inside this week" must source by date range
+against `Shift.start`, never by `scheduleId`. Same rule for weekly
+time-off lookups (`TimeOffRequestService.getByDateRangeAndStatuses`)
+and shift rosters (`ShiftService.getRosterByOverlap`). The
+`weekStartsOn` setting is per-location and can flip at any time, so
+two shifts on the same calendar day may legitimately belong to
+different Schedule docs; only date-range sourcing keeps them visible
+together.
+
+Boundary conventions for these reads:
+
+- `weekStart` arrives as a `YYYY-MM-DD` calendar date.
+- The API resolves it to a UTC instant via
+  `weekStartInLocationTz(weekStart, Location.timezone)` so the same
+  query returns the same wall-clock week on a UTC production server
+  and on a developer laptop in any TZ.
+- The window is always half-open: `[weekStart, weekStart + 7d)`.
+- Staff endpoints additionally filter by
+  `Schedule.status === "PUBLISHED"`. Manager endpoints don't.
+
+---
+
 ## 4. Testing strategy
 
 ### 4.1 Integration test scripts (`scripts/test-*.ts`)

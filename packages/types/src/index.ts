@@ -307,6 +307,16 @@ export interface LaborRequirementDTO {
 
 // ── Kitchen Config ───────────────────────────────────────────
 
+// Re-export the day-of-week primitive plus the numeric-conversion helpers
+// so consumers can `import { DayOfWeek, dayOfWeekToIndex } from "@sous/types"`
+// without reaching into the validations subpath.
+export type { DayOfWeek } from "./validations/kitchen-config.schema";
+export {
+  DAYS_OF_WEEK,
+  dayOfWeekToIndex,
+  indexToDayOfWeek,
+} from "./validations/kitchen-config.schema";
+
 export interface AISettingsDTO {
   monthlyGenerationLimit: number;
   subscriptionTier: "free" | "pro" | "enterprise";
@@ -351,6 +361,13 @@ export interface KitchenConfigDTO {
   minTimeOffAdvanceDays: number;
   aiSettings: AISettingsDTO;
   scheduleGenerationSettings: ScheduleGenerationSettingsDTO;
+  /**
+   * Calendar day each new weekly schedule starts on. Persisted as a
+   * lowercase day name (`"monday"` … `"sunday"`); helpers in
+   * `@sous/types/validations/kitchen-config.schema` convert to/from the
+   * date-fns numeric (`0=Sun..6=Sat`) representation.
+   */
+  weekStartsOn: import("./validations/kitchen-config.schema").DayOfWeek;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -385,6 +402,17 @@ export interface ConfigChangeImpact {
   };
   requiresRoleReplacement: boolean;
   availableReplacementRoles: string[];
+  /**
+   * Present only when the submitted form changes `weekStartsOn`. The
+   * dialog uses this to warn the owner that any future-dated schedules
+   * already on disk keep their existing `weekStartDate` (the new value
+   * applies to schedules created after the save).
+   */
+  weekStartChange?: {
+    from: import("./validations/kitchen-config.schema").DayOfWeek;
+    to: import("./validations/kitchen-config.schema").DayOfWeek;
+    affectedFutureSchedules: number;
+  };
 }
 
 export interface SaveKitchenConfigOptions {

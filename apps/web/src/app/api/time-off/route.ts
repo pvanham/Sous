@@ -1,13 +1,27 @@
 import { auth } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { addDays, startOfDay } from "date-fns";
+import { z } from "zod";
 
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { LocationService } from "@/server/services/location.service";
 import { StaffService } from "@/server/services/staff.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { submitTimeOffRequestSchema } from "@/lib/validations/time-off-request.schema";
+import { weekStartInLocationTz } from "@/lib/utils/timezone";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Same calendar-date contract as `/api/shifts?weekStart=...`. We
+ * deliberately don't accept a full timestamp so the URL stays stable
+ * and cacheable across timezones.
+ */
+const weekStartSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "weekStart must be a YYYY-MM-DD date");
 
 // ─────────────────────────────────────────────────────────────
 // /api/time-off  —  Mobile (Time-off tab)
@@ -54,15 +68,20 @@ import { submitTimeOffRequestSchema } from "@/lib/validations/time-off-request.s
 /**
  * GET /api/time-off
  *
- * Returns every time-off request submitted by the calling staff
- * member, sorted by `startDate` descending (most recent first), so the
- * mobile time-off tab can render history + per-status counts in one
- * round trip.
+ * Two modes:
+ *   - No `weekStart` → all-time history for the calling staff (backs
+ *     the time-off tab; sorted by `startDate` desc).
+ *   - `weekStart=YYYY-MM-DD` → the caller's approved + pending
+ *     requests overlapping the half-open `[weekStart, weekStart + 7d)`
+ *     window. Interpreted as midnight in the location's IANA timezone
+ *     (via `weekStartInLocationTz`) so the same week-anchor the schedule
+ *     tab uses lines up across surfaces. Backs the approved/pending
+ *     time-off overlay on the mobile schedule tab.
  *
  * Manager / owner callers without a `Staff` row receive `[]` rather
  * than an error so the UI renders its empty state.
  */
-export async function GET(): Promise<Response> {
+export async function GET(req: NextRequest): Promise<Response> {
   try {
     const { userId } = await auth();
     if (!userId) {
@@ -82,6 +101,48 @@ export async function GET(): Promise<Response> {
 
     if (!staff) {
       return NextResponse.json([]);
+    }
+
+    const rawWeekStart = req.nextUrl.searchParams.get("weekStart");
+
+    if (rawWeekStart !== null) {
+      const parsed = weekStartSchema.safeParse(rawWeekStart);
+      if (!parsed.success) {
+        return NextResponse.json(
+          {
+            error:
+              parsed.error.issues[0]?.message ??
+              "weekStart must be a YYYY-MM-DD date.",
+          },
+          { status: 400 },
+        );
+      }
+
+      const location = await LocationService.getById(ctx.locationId);
+      const tz = location?.timezone ?? "UTC";
+      const weekStart = weekStartInLocationTz(parsed.data, tz);
+      if (Number.isNaN(weekStart.getTime())) {
+        return NextResponse.json(
+          { error: "weekStart must be a valid calendar date." },
+          { status: 400 },
+        );
+      }
+      const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
+
+      const allInWindow =
+        await TimeOffRequestService.getByDateRangeAndStatuses(
+          ctx.orgId,
+          ctx.locationId,
+          weekStart,
+          weekEnd,
+          ["approved", "pending"],
+        );
+
+      // Restrict to the caller's own requests — the overlay shouldn't
+      // expose other staff members' time off through the mobile API.
+      const mine = allInWindow.filter((r) => r.staffId === staff.id);
+
+      return NextResponse.json(mine);
     }
 
     const requests = await TimeOffRequestService.getByStaffId(

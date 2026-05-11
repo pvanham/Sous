@@ -23,6 +23,7 @@ import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 import { getPrevWeekStart } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
+import type { DayOfWeek } from "@sous/types";
 
 import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 import { ClearWeekDialog } from "./ClearWeekDialog";
@@ -41,12 +42,15 @@ const shiftKeys = {
   all: ["shifts"] as const,
   bySchedule: (scheduleId: string) =>
     [...shiftKeys.all, "schedule", scheduleId] as const,
+  byWeek: (weekStartIso: string) =>
+    [...shiftKeys.all, "week", weekStartIso] as const,
 };
 
 interface ScheduleActionsProps {
   schedule: ScheduleDTO;
   shifts: ShiftDTO[];
   weekStart: Date;
+  weekStartsOn: DayOfWeek;
   onStatusChange: () => void;
 }
 
@@ -58,6 +62,7 @@ export function ScheduleActions({
   schedule,
   shifts,
   weekStart,
+  weekStartsOn,
   onStatusChange,
 }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
@@ -70,6 +75,10 @@ export function ScheduleActions({
   );
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
   const [isCheckingCoverage, setIsCheckingCoverage] = useState(false);
+  // Copy-week runs as a plain async handler (no useMutation) because it
+  // chains a couple of toasts + cache invalidations; this local boolean
+  // gates the copy menu button so double-clicks can't fire two copies.
+  const [isCopying, setIsCopying] = useState(false);
 
   // Publish mutation (called directly or after user confirms warnings)
   const publishMutation = useMutation({
@@ -151,70 +160,20 @@ export function ScheduleActions({
     },
   });
 
-  // Copy from previous week mutation
-  const copyWeekMutation = useMutation({
-    mutationFn: async () => {
-      const prevWeekStart = getPrevWeekStart(weekStart);
-      const result = await copyWeekShifts({
-        sourceScheduleId: schedule.id,
-        targetWeekStart: weekStart,
-      });
-
-      // This copies FROM the previous week TO the current week
-      // We need to get the previous week's schedule first
-      // Let's adjust the logic: we want to copy from prev week to current week
-      return result;
-    },
-    onSuccess: (result) => {
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-
-      const { shiftsCreated, shiftsSkipped } = result.data;
-      if (shiftsCreated === 0 && shiftsSkipped === 0) {
-        toast.info("No shifts found in previous week to copy");
-      } else if (shiftsSkipped > 0) {
-        toast.success(
-          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
-        );
-      } else {
-        toast.success(`Copied ${shiftsCreated} shifts`);
-      }
-
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
-      });
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  // Copy from previous week - need to get the previous week's schedule first
+  // Copy from previous week.
+  //
+  // The action now sources shifts by date range and creates the target
+  // Schedule on demand, so we no longer need a separate round-trip to
+  // resolve the source schedule's ObjectId — that prefetch was the
+  // exact step that landed on an empty Wed-anchored doc after a
+  // `weekStartsOn` flip and silently copied zero shifts.
   const handleCopyFromPreviousWeek = async () => {
     setCopyMenuOpen(false);
+    setIsCopying(true);
 
-    // Get the previous week's schedule ID by making a request
-    const prevWeekStart = getPrevWeekStart(weekStart);
-
-    // We need to call copyWeekShifts with the PREVIOUS week's schedule as source
-    // and CURRENT week as target
     try {
-      // First, we need the previous week's schedule
-      const { getOrCreateScheduleForWeek } =
-        await import("@/server/actions/schedule.actions");
-      const prevScheduleResult = await getOrCreateScheduleForWeek({
-        weekStartDate: prevWeekStart,
-      });
-
-      if (!prevScheduleResult.success) {
-        toast.error("Could not find previous week's schedule");
-        return;
-      }
-
       const result = await copyWeekShifts({
-        sourceScheduleId: prevScheduleResult.data.id,
+        sourceWeekStart: getPrevWeekStart(weekStart, weekStartsOn),
         targetWeekStart: weekStart,
       });
 
@@ -234,11 +193,18 @@ export function ScheduleActions({
         toast.success(`Copied ${shiftsCreated} shifts`);
       }
 
+      // Invalidate both the byWeek shift cache and the schedule meta so
+      // the grid picks up the freshly-created (or existing) target doc.
       queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
+        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.week(weekStart.toISOString()),
       });
     } catch {
       toast.error("Failed to copy from previous week");
+    } finally {
+      setIsCopying(false);
     }
   };
 
@@ -254,8 +220,13 @@ export function ScheduleActions({
     onSuccess: (data) => {
       toast.success(`Cleared ${data.shiftsDeleted} shifts`);
       setClearDialogOpen(false);
+      // Invalidate both the legacy `bySchedule` key (in case anything
+      // still subscribes) and the new `byWeek` key the grid now uses.
       queryClient.invalidateQueries({
         queryKey: shiftKeys.bySchedule(schedule.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
       });
       onStatusChange();
     },
@@ -269,12 +240,14 @@ export function ScheduleActions({
     queryClient.invalidateQueries({
       queryKey: shiftKeys.bySchedule(schedule.id),
     });
+    queryClient.invalidateQueries({
+      queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+    });
     onStatusChange();
   };
 
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
-  const isCopying = copyWeekMutation.isPending;
   const isClearing = clearMutation.isPending;
 
   return (

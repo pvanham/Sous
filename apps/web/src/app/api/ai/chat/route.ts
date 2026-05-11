@@ -14,6 +14,7 @@ import { buildSystemPrompt } from "@/lib/ai/orchestrator/system-prompt";
 import { toAISDKTools } from "@/lib/ai/tools/ai-sdk-adapter";
 import { dbConnect } from "@/lib/db";
 import { LocationService } from "@/server/services/location.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import Conversation from "@/server/models/Conversation";
 import { expirePendingProposals } from "@/lib/ai/orchestrator/expire-proposals";
 import type { ToolExecutionContext } from "@/lib/ai/tools/tool-registry.types";
@@ -98,10 +99,16 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5. Resolve the location timezone for temporal context in the system prompt
-  const location = await LocationService.getById(
-    orchestratorContext.auth.locationId
-  );
+  // 5. Resolve the location timezone and configured week-start for the
+  //    temporal/scheduling sections of the system prompt. Both lookups
+  //    are tiny single-document reads, so we do them in parallel.
+  const [location, weekStartsOn] = await Promise.all([
+    LocationService.getById(orchestratorContext.auth.locationId),
+    KitchenConfigService.getWeekStartsOn(
+      orchestratorContext.auth.orgId,
+      orchestratorContext.auth.locationId,
+    ),
+  ]);
   const locationTimezone = location?.timezone ?? "UTC";
 
   // 6. Expire stale proposals from previous sessions (fire-and-forget)
@@ -126,7 +133,11 @@ export async function POST(req: Request) {
     toolExecutionContext
   );
 
-  const systemPrompt = buildSystemPrompt(orchestratorContext, locationTimezone);
+  const systemPrompt = buildSystemPrompt(
+    orchestratorContext,
+    locationTimezone,
+    weekStartsOn,
+  );
 
   // 8. Ensure the conversation document exists before streaming so that
   //    proposal persistence (which runs mid-stream) has a document to update.

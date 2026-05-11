@@ -3,6 +3,11 @@ import type { Membership } from "./store";
 
 type TokenGetter = () => Promise<string | null>;
 
+/** Server response shape — `weekStartsOn` may be absent on older builds. */
+type MembershipResponse = Omit<Membership, "weekStartsOn"> & {
+  weekStartsOn?: Membership["weekStartsOn"];
+};
+
 /**
  * Fetches the signed-in user's OrganizationMember record.
  *
@@ -24,10 +29,18 @@ export async function fetchMembership(
   }
 
   try {
-    const response = await apiClient.get<Membership>("/me/membership", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    return response.data;
+    const response = await apiClient.get<MembershipResponse>(
+      "/me/membership",
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    );
+    // Defensive default: the field was added later, so a stale server
+    // build could still respond without it.
+    return {
+      ...response.data,
+      weekStartsOn: response.data.weekStartsOn ?? "monday",
+    };
   } catch (error) {
     const err = error as {
       response?: { status?: number; data?: unknown };

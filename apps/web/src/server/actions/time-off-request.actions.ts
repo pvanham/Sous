@@ -2,6 +2,7 @@
 
 import { auth } from "@clerk/nextjs/server";
 import { addDays, startOfDay } from "date-fns";
+import { z } from "zod";
 import {
   createTimeOffRequestSchema,
   updateTimeOffStatusSchema,
@@ -9,13 +10,32 @@ import {
   timeOffByDateRangeSchema,
   approvedTimeOffQuerySchema,
 } from "@/lib/validations/time-off-request.schema";
+import { scheduleWeekSchema } from "@sous/types/validations/schedule.schema";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
 import { NotificationEvents } from "@/server/services/notification-events";
+import { assertWeekStartAligned } from "@/server/services/schedule.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
-import type { TimeOffRequestDTO } from "@/types/time-off-request";
+import type {
+  TimeOffRequestDTO,
+  TimeOffRequestStatus,
+} from "@/types/time-off-request";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+const timeOffRequestStatusSchema: z.ZodType<TimeOffRequestStatus> = z.enum([
+  "pending",
+  "approved",
+  "denied",
+]);
+
+const listTimeOffForLocationWeekSchema = scheduleWeekSchema.extend({
+  statuses: z
+    .array(timeOffRequestStatusSchema)
+    .min(1, "At least one status is required"),
+});
 
 /**
  * List all time-off requests for the current location.
@@ -299,6 +319,68 @@ export async function getApprovedTimeOffForStaff(
         error instanceof Error
           ? error.message
           : "Failed to get approved time-off",
+    };
+  }
+}
+
+/**
+ * List time-off requests overlapping the given week-anchor window for
+ * the caller's location, restricted to the provided statuses.
+ *
+ * Backs the approved + pending time-off overlay on the manager schedule
+ * grid: the grid renders one pill per (staff, day) cell that has an
+ * overlapping request so a manager can spot conflicts before assigning
+ * a shift. `weekStartDate` is interpreted as midnight in the location's
+ * timezone (matches `listShiftsForLocationWeek`) so the two queries
+ * always line up on the same 7-day window.
+ *
+ * @param input - `{ weekStartDate: Date, statuses: TimeOffRequestStatus[] }`
+ */
+export async function listTimeOffForLocationWeek(
+  input: unknown,
+): Promise<ActionResponse<TimeOffRequestDTO[]>> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const parsed = listTimeOffForLocationWeekSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
+  }
+
+  try {
+    const ctx = await getLocationContext(userId);
+
+    await assertWeekStartAligned(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.weekStartDate,
+    );
+
+    const weekStart = parsed.data.weekStartDate;
+    const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
+
+    const result =
+      await TimeOffRequestService.getByDateRangeAndStatuses(
+        ctx.orgId,
+        ctx.locationId,
+        weekStart,
+        weekEnd,
+        parsed.data.statuses,
+      );
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("listTimeOffForLocationWeek error:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to list time-off for the week",
     };
   }
 }

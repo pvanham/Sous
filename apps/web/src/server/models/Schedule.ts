@@ -26,8 +26,15 @@ const ScheduleSchema = new Schema<IScheduleDocument>(
       type: Date,
       required: true,
       validate: {
-        validator: (v: Date) => v.getDay() === 1, // Must be Monday
-        message: "Week start date must be a Monday",
+        // The midnight + day-of-week alignment lives in
+        // `ScheduleService.assertWeekStartAligned`, which interprets the
+        // boundary in the location's IANA timezone — something a sync
+        // Mongoose validator can't do (it has no access to LocationService
+        // and can't await). This schema-level check only confirms the
+        // value is a real Date so a NaN coercion can't sneak through.
+        validator: (v: Date) =>
+          v instanceof Date && !Number.isNaN(v.getTime()),
+        message: "Week start date must be a valid Date",
       },
     },
     status: {

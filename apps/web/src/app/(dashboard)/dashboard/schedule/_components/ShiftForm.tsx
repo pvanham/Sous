@@ -89,6 +89,20 @@ const shiftKeys = {
     [...shiftKeys.all, "schedule", scheduleId] as const,
 };
 
+/**
+ * Refresh every shift cache namespace after a create/update succeeds.
+ * The schedule grid now reads from `byWeek(weekStart)` while other
+ * consumers (AI tools, time-off flows) still subscribe to
+ * `bySchedule(scheduleId)`. A predicate-based invalidation on the
+ * shared root key keeps both in sync without having to thread the
+ * week-start into the form's prop surface.
+ */
+function invalidateAllShiftQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  queryClient.invalidateQueries({ queryKey: ["shifts"] });
+}
+
 export interface ShiftFormProps {
   mode: "create" | "edit";
   scheduleId: string;
@@ -284,11 +298,16 @@ export function ShiftForm({
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: shiftKeys.bySchedule(scheduleId) });
+      invalidateAllShiftQueries(queryClient);
     },
     onSuccess: (response) => {
       if (response.success) {
         toast.success("Shift created successfully");
+        // The grid keys its lookup off the read-only schedule query;
+        // a brand-new schedule (created via `ensureScheduleForCurrentWeek`
+        // when the user clicked Add Shift on an empty week) needs its
+        // meta refetched so the status badge flips from null to "Draft".
+        queryClient.invalidateQueries({ queryKey: ["schedules"] });
         onSuccess();
       } else {
         toast.error(response.error);
@@ -346,7 +365,7 @@ export function ShiftForm({
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: shiftKeys.bySchedule(scheduleId) });
+      invalidateAllShiftQueries(queryClient);
     },
     onSuccess: (response) => {
       if (response.success) {

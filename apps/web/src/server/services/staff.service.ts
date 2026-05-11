@@ -126,9 +126,9 @@ export const StaffService = {
    * Bulk-fetch staff records by ID for a tenant.
    *
    * Used by the mobile shift-roster route to materialize a
-   * collection of `staffId`s (returned by `ShiftService.getRoster`)
-   * into full `StaffDTO`s in a single round-trip rather than one
-   * `getById` per staff member.
+   * collection of `staffId`s (returned by
+   * `ShiftService.getRosterByOverlap`) into full `StaffDTO`s in a
+   * single round-trip rather than one `getById` per staff member.
    *
    * Invalid / non-`ObjectId` strings are filtered out silently so a
    * single bad input doesn't crash the whole query. Results are

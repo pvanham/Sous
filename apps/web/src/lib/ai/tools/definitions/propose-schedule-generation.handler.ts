@@ -40,11 +40,19 @@ export async function executeProposeScheduleGeneration(
       "Invalid date format for weekStartDate. Expected ISO date string (e.g., '2026-03-17')."
     );
   }
-  const weekStart = getWeekStart(parsed);
 
-  const [schedule, config, staff] = await Promise.all([
+  // Fetch the kitchen config first so we know the location's week-start
+  // anchor before normalizing. The config is also used downstream for the
+  // OCC dataVersion and overtime defaults, so the round-trip is "free".
+  const config = await KitchenConfigService.getByLocation(
+    context.orgId,
+    context.locationId,
+  );
+  const weekStartsOn = config?.weekStartsOn ?? "monday";
+  const weekStart = getWeekStart(parsed, weekStartsOn);
+
+  const [schedule, staff] = await Promise.all([
     ScheduleService.getByWeek(context.orgId, context.locationId, weekStart),
-    KitchenConfigService.getByLocation(context.orgId, context.locationId),
     StaffService.list(context.orgId, context.locationId),
   ]);
 

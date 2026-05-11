@@ -73,8 +73,11 @@ the role enum must be reflected there.
 
 ### KitchenConfig (`KitchenConfig.ts`)
 
-Per-location restaurant settings — stations, roles, operating hours.
-`stations` is the canonical list that every `Shift` validates against.
+Per-location restaurant settings — stations, roles, operating hours,
+and the calendar day each new weekly schedule starts on. `stations` is
+the canonical list that every `Shift` validates against; `weekStartsOn`
+is the single source of truth for week boundaries on both the web and
+mobile apps (default `"monday"`, owner-only edit).
 
 ```ts
 {
@@ -83,6 +86,7 @@ Per-location restaurant settings — stations, roles, operating hours.
   name: string,
   stations: string[],                  // e.g. ["Sauté", "Grill", "Prep", "Dish"]
   roles: string[],                     // e.g. ["Cook", "Shift Lead", "Manager"]
+  weekStartsOn: "monday" | ... | "sunday", // default "monday"; only owners can change
   operatingHours: {
     [day in "monday"..."sunday"]: {
       isOpen: boolean,
@@ -123,18 +127,51 @@ mobile app.
 
 ### Schedule (`Schedule.ts`)
 
-Week container. `weekStartDate` is **always a Monday** (00:00 local).
+Week container. `weekStartDate` matches the location's configured
+`KitchenConfig.weekStartsOn` (default Monday) and is interpreted as
+midnight **in the location's IANA timezone**, not server-local or UTC.
+The Mongoose validator only guards the basic "valid Date" invariant;
+the per-location weekday alignment lives in
+`ScheduleService.assertWeekStartAligned` so it can read the live
+config and the location TZ at the same time (a sync validator can't do
+either). Existing schedules keep their stored `weekStartDate` if
+`weekStartsOn` is changed later — only newly generated schedules
+switch to the new anchor.
 
 ```ts
 {
   orgId: ObjectId(Organization),
   locationId: ObjectId(Location),
-  weekStartDate: Date,                 // Monday 00:00 (location TZ)
+  weekStartDate: Date,                 // midnight in Location.timezone on the configured weekStartsOn
   status: "DRAFT" | "PUBLISHED",
   notes: string,
   createdAt, updatedAt: Date,
 }
 ```
+
+#### Schedule vs Shift visibility
+
+Staff-facing read endpoints (`/api/shifts`, `/api/shifts/next`,
+`/api/shifts/[shiftId]/roster`) always filter on
+`Schedule.status === "PUBLISHED"` via the `publishedOnly` service
+option (`ShiftService.getByStaffAndWeek`, `getNextForStaff`,
+`getRosterByOverlap`). A DRAFT shift must never leak to a staff phone.
+
+Manager-facing reads (the web grid + dashboard, via
+`listShiftsForLocationWeek` and `ShiftService.getByLocationAndDateRange`)
+deliberately surface both DRAFT and PUBLISHED so an in-progress week
+is editable before publish.
+
+#### Optical-window queries
+
+Every "what's on this week" read sources shifts by date range against
+`Shift.start` — never by `scheduleId`. After an owner flips
+`weekStartsOn`, two co-workers on the same Saturday can be attached to
+Schedule docs with different `weekStartDate` anchors; a `scheduleId`-
+scoped query would hide one of them. Helpers that follow this rule:
+`getByLocationAndDateRange`, `getByStaffAndWeek`, `getRosterByOverlap`.
+`getBySchedule` remains a write-path internal — adding a new read
+consumer requires this same optical-window pattern.
 
 ### Shift (`Shift.ts`)
 
@@ -292,7 +329,7 @@ this is only `schedule_generation`, but the shape is generic.
   clerkUserId: string,
   inputPayload: unknown,               // solver input snapshot
   scheduleId: string,
-  weekStartDate: string,               // ISO date (Monday)
+  weekStartDate: string,               // ISO date (matches the location's weekStartsOn; default Monday)
   result?: {
     solverStatus: string,
     objectiveValue: number,
