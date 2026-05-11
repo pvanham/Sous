@@ -85,6 +85,7 @@ export function AddEmailDialog({ open, onOpenChange }: AddEmailDialogProps) {
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       reset();
     }
   }, [open, reset]);

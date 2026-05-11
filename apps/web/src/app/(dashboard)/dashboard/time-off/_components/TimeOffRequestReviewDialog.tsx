@@ -59,6 +59,7 @@ export function TimeOffRequestReviewDialog({
   // For reviewed requests, show existing notes; for pending, start empty
   useEffect(() => {
     if (request) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotes(request.status !== "pending" ? (request.notes ?? "") : "");
     } else {
       setNotes("");

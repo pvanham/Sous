@@ -53,7 +53,7 @@ export default function FeaturesPage() {
             Smarter scheduling powered by Mathematics and AI
           </p>
           <p className="mt-6 text-lg leading-8 text-stone-600 dark:text-stone-300">
-            Sous isn't just a spreadsheet in the browser. It combines custom heuristics with a raw Constraint Programming SAT solver to give you perfect schedules.
+            Sous isn&apos;t just a spreadsheet in the browser. It combines custom heuristics with a raw Constraint Programming SAT solver to give you perfect schedules.
           </p>
         </div>
         

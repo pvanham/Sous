@@ -149,7 +149,8 @@ export function StaffFormDialog({
   // Update mutation
   const updateMutation = useMutation({
     mutationFn: async (data: StaffFormValues) => {
-      const { sendInvite: _, ...updateData } = data;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { sendInvite: _sendInvite, ...updateData } = data;
       const result = await updateStaff(staff!.id, updateData);
       if (!result.success) throw new Error(result.error);
       return result.data;

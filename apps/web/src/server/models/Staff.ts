@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import mongoose, { Schema, Document, Model } from "mongoose";
 import type { StaffSkill, StaffAddress, IStaff } from "@/types/staff";
 
 // Document interface (with Mongoose document methods)

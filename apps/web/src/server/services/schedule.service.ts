@@ -7,7 +7,6 @@ import type { KitchenConfigDTO } from "@/types/kitchen-config";
 import {
   getWeekStart,
   getWeekDays,
-  getDayKey,
   getStoreHoursForDay,
   formatFullDayLabel,
 } from "@/lib/utils/date";

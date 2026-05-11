@@ -11,6 +11,14 @@ import { OTPInput } from "@/components/ui/otp-input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Bot, Loader2 } from "lucide-react";
 
+function getClerkError(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null && "errors" in err) {
+    const errors = (err as { errors: { message: string }[] }).errors;
+    return errors?.[0]?.message || fallback;
+  }
+  return fallback;
+}
+
 /** Simple password strength calculation */
 function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
   if (!pw) return { score: 0, label: "", color: "" };
@@ -59,6 +67,7 @@ export default function SignUpPage() {
   useEffect(() => {
     if (!isLoaded || !isInvitationFlow) return;
     const invitedEmail = signUp?.emailAddress;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (invitedEmail) setEmail(invitedEmail);
   }, [isLoaded, isInvitationFlow, signUp]);
 
@@ -115,8 +124,8 @@ export default function SignUpPage() {
       });
 
       setPendingVerification(true);
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Something went wrong.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Something went wrong."));
     } finally {
       setIsLoading(false);
     }
@@ -139,8 +148,8 @@ export default function SignUpPage() {
       } else {
         setError("Verification was not complete. Please try again.");
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Invalid verification code.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Invalid verification code."));
     } finally {
       setIsLoading(false);
     }

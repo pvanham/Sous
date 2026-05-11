@@ -96,6 +96,7 @@ export function ActiveSessionsCard() {
 
   useEffect(() => {
     if (userLoaded && user && sessions === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       void refresh();
     }
   }, [refresh, sessions, user, userLoaded]);
@@ -152,7 +153,7 @@ export function ActiveSessionsCard() {
           <CardTitle>Active sessions</CardTitle>
           <CardDescription>
             Devices and browsers currently signed in. Revoke anything you
-            don't recognise.
+            don&apos;t recognise.
           </CardDescription>
         </div>
         <div className="flex items-center gap-2">
@@ -264,7 +265,7 @@ export function ActiveSessionsCard() {
                   </AlertDialogTitle>
                   <AlertDialogDescription>
                     Anyone signed in elsewhere will be sent back to the
-                    sign-in page. You'll stay signed in on this device.
+                    sign-in page. You&apos;ll stay signed in on this device.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

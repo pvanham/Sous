@@ -9,7 +9,8 @@ interface QuickActionsWidgetProps {
   scheduleStatus?: ScheduleStatus;
 }
 
-export function QuickActionsWidget({ scheduleStatus }: QuickActionsWidgetProps) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function QuickActionsWidget(_props: QuickActionsWidgetProps) {
   const actions = [
     {
       title: "Schedule",

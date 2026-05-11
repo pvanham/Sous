@@ -82,7 +82,7 @@ export function LaborGrid({ initialRequirements, initialConfig }: LaborGridProps
     initialData: initialConfig ?? undefined,
   });
 
-  const stations = config?.stations ?? [];
+  const stations = useMemo(() => config?.stations ?? [], [config?.stations]);
 
   // Group requirements by station and day for easy lookup, sorted by start time
   const requirementsByCell = useMemo(() => {

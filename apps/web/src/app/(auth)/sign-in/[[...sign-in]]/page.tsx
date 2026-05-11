@@ -14,6 +14,14 @@ import type { EmailCodeFactor } from "@clerk/types";
 
 type SignInStep = "credentials" | "second-factor" | "forgot-email" | "forgot-code" | "forgot-reset";
 
+function getClerkError(err: unknown, fallback: string): string {
+  if (typeof err === "object" && err !== null && "errors" in err) {
+    const errors = (err as { errors: { message: string }[] }).errors;
+    return errors?.[0]?.message || fallback;
+  }
+  return fallback;
+}
+
 export default function SignInPage() {
   const { isLoaded, signIn, setActive } = useSignIn();
   const router = useRouter();
@@ -60,8 +68,8 @@ export default function SignInPage() {
         console.error("Sign-in not complete:", result.status);
         setError("Unable to complete sign-in. Please try again.");
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Invalid email or password.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Invalid email or password."));
     } finally {
       setIsLoading(false);
     }
@@ -86,8 +94,8 @@ export default function SignInPage() {
       } else {
         setError("Verification was not complete. Please try again.");
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Invalid verification code.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Invalid verification code."));
     } finally {
       setIsLoading(false);
     }
@@ -106,8 +114,8 @@ export default function SignInPage() {
         identifier: email,
       });
       setStep("forgot-code");
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Could not send reset code. Check your email.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Could not send reset code. Check your email."));
     } finally {
       setIsLoading(false);
     }
@@ -132,8 +140,8 @@ export default function SignInPage() {
       } else {
         setError("Unexpected state. Please try again.");
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Invalid code.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Invalid code."));
     } finally {
       setIsLoading(false);
     }
@@ -157,8 +165,8 @@ export default function SignInPage() {
       } else {
         setError("Unable to reset password. Please try again.");
       }
-    } catch (err: any) {
-      setError(err.errors?.[0]?.message || "Password reset failed.");
+    } catch (err: unknown) {
+      setError(getClerkError(err, "Password reset failed."));
     } finally {
       setIsLoading(false);
     }
@@ -461,7 +469,7 @@ export default function SignInPage() {
       </CardContent>
       <CardFooter className="flex justify-center border-t pt-6">
         <div className="text-sm text-muted-foreground">
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <Link href="/sign-up" className="text-foreground font-medium underline-offset-4 hover:underline">
             Sign up
           </Link>

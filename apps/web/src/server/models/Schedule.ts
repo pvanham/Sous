@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import mongoose, { Schema, Document, Model } from "mongoose";
 import type { ISchedule, ScheduleStatus } from "@/types/schedule";
 
 // Document interface (with Mongoose document methods)

@@ -191,7 +191,7 @@ export function ShiftForm({
   });
 
   // Ensure allStaff is always an array
-  const staffList = Array.isArray(allStaff) ? allStaff : [];
+  const staffList = useMemo(() => Array.isArray(allStaff) ? allStaff : [], [allStaff]);
 
   // Get the staff member for display
   const currentStaffId = mode === "edit" ? shift?.staffId : staffId;

@@ -107,6 +107,7 @@ export function BillingClient({
       });
       const data = await response.json();
       if (data.url) {
+        // eslint-disable-next-line react-hooks/immutability
         window.location.href = data.url;
       } else {
         toast.error(data.error || "Failed to create checkout session.");

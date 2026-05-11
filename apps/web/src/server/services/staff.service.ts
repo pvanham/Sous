@@ -284,16 +284,6 @@ export const StaffService = {
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
 
-    // Get existing staff emails for this location
-    const existingEmails = new Set(
-      (
-        await Staff.find(
-          { orgId: orgObjectId, locationId: locationObjectId },
-          { email: 1 }
-        ).lean()
-      ).map((s) => s.email)
-    );
-
     const bulkOps = staffData.map((staff) => {
       // Cast skills to match Mongoose schema expectations
       const skills = (staff.skills || []).map((s) => ({

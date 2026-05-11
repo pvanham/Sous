@@ -1,5 +1,4 @@
 import type { IKitchenConfig, IOperatingHours, IWeeklyOperatingHours, IAISettings, IScheduleGenerationSettings } from "@/server/models/KitchenConfig";
-import type { StaffSkill } from "@sous/types";
 
 // Re-export shared types from @sous/types
 export type {

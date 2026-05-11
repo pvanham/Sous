@@ -40,15 +40,6 @@ import type {
   AcceptedShift,
 } from "@/types/ai-scheduling";
 import { GeneratedShiftPreview } from "./GeneratedShiftPreview";
-import { Slider } from "@/components/ui/slider";
-import { Label } from "@/components/ui/label";
-import { HelpCircle } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 // ────────────────────────────────────────────────────────────
 // Dialog step type

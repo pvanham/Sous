@@ -50,6 +50,7 @@ export function PreferencesSection() {
   // first paint of the radio state until mount to avoid a hydration
   // mismatch between SSR and the persisted preference.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true);
   }, []);
 

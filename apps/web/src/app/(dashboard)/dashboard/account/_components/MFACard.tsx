@@ -111,9 +111,9 @@ export function MFACard() {
           ) : user?.totpEnabled ? (
             <>
               <p className="text-sm text-muted-foreground">
-                You'll be asked for a 6-digit code from your authenticator
+                You&apos;ll be asked for a 6-digit code from your authenticator
                 app on every sign-in. Keep your backup codes in a safe
-                place — they're the only way back into your account if
+                place — they&apos;re the only way back into your account if
                 you lose your device.
               </p>
               <div className="flex flex-wrap gap-2">
@@ -187,7 +187,7 @@ export function MFACard() {
             <>
               <p className="text-sm text-muted-foreground">
                 Pair an authenticator app (1Password, Authy, Google
-                Authenticator, etc.) with your account. We'll show you a
+                Authenticator, etc.) with your account. We&apos;ll show you a
                 QR code to scan and a set of backup codes for safekeeping.
               </p>
               <Button

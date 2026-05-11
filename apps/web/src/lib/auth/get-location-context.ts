@@ -1,5 +1,5 @@
 import { dbConnect } from "@/lib/db";
-import { OrganizationService } from "@/server/services/organization.service";
+
 import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { clerkClient } from "@clerk/nextjs/server";

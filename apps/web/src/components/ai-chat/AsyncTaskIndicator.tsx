@@ -49,6 +49,27 @@ export function AsyncTaskIndicator({
   collapsed,
   collapsedMessage,
 }: AsyncTaskIndicatorProps) {
+  const { status, progressMessage } = task;
+  const isKnown = KNOWN_STATUSES.includes(status);
+  const effectiveStatus: AsyncTaskStatus | "unknown" = isKnown
+    ? status
+    : "unknown";
+
+  const [displayElapsed, setDisplayElapsed] = useState(task.elapsedMs);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDisplayElapsed(task.elapsedMs);
+  }, [task.elapsedMs, task.taskId]);
+
+  useEffect(() => {
+    if (status !== "pending" && status !== "running") return;
+    const id = window.setInterval(() => {
+      setDisplayElapsed((prev) => prev + 1000);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [status, task.taskId]);
+
   if (collapsed) {
     const text = collapsedMessage ?? "Schedule accepted.";
     return (
@@ -70,26 +91,6 @@ export function AsyncTaskIndicator({
       </div>
     );
   }
-
-  const { status, progressMessage } = task;
-  const isKnown = KNOWN_STATUSES.includes(status);
-  const effectiveStatus: AsyncTaskStatus | "unknown" = isKnown
-    ? status
-    : "unknown";
-
-  const [displayElapsed, setDisplayElapsed] = useState(task.elapsedMs);
-
-  useEffect(() => {
-    setDisplayElapsed(task.elapsedMs);
-  }, [task.elapsedMs, task.taskId]);
-
-  useEffect(() => {
-    if (status !== "pending" && status !== "running") return;
-    const id = window.setInterval(() => {
-      setDisplayElapsed((prev) => prev + 1000);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [status, task.taskId]);
 
   const showTimer =
     effectiveStatus === "pending" ||

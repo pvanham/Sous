@@ -84,7 +84,7 @@ export function BackupCodesDialog({
 
         <div className="rounded border border-amber-700/30 bg-amber-700/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-200 flex gap-2">
           <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>These codes won't be shown again. Store them now.</span>
+          <span>These codes won&apos;t be shown again. Store them now.</span>
         </div>
 
         <div className="grid grid-cols-2 gap-2 rounded border border-stone-300 dark:border-white/10 bg-stone-100 dark:bg-stone-900 p-4 font-mono text-sm">
@@ -131,7 +131,7 @@ export function BackupCodesDialog({
             onClick={handleClose}
             disabled={!acknowledged && !copied}
           >
-            I've saved my codes
+            I&apos;ve saved my codes
           </Button>
         </DialogFooter>
       </DialogContent>

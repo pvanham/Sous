@@ -221,7 +221,9 @@ function ShiftBlock({
         )}
         style={{ top: "8px", transform: "translateY(-50%)" }}
         onClick={handleButtonClick}
+        // eslint-disable-next-line react-hooks/refs
         aria-label={`Add new shift at ${formatTimeString(hoverTimeRef.current)}`}
+        // eslint-disable-next-line react-hooks/refs
         title={`Add shift at ${formatTimeString(hoverTimeRef.current)}`}
       >
         <Plus className="h-3 w-3" />

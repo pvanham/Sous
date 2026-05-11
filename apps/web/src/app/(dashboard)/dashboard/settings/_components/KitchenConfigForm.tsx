@@ -555,7 +555,7 @@ export function KitchenConfigForm({
         <div className="space-y-4 rounded-lg border p-6">
           <div className="space-y-0.5">
             <h3 className="text-lg font-medium">Operating Hours</h3>
-            <p className="text-sm text-muted-foreground">Set your kitchen's open and close times for scheduling.</p>
+            <p className="text-sm text-muted-foreground">Set your kitchen&apos;s open and close times for scheduling.</p>
           </div>
           <div className="space-y-4 pt-2">
             {DAYS_OF_WEEK.map((day) => (
@@ -632,7 +632,7 @@ export function KitchenConfigForm({
               <div className="flex flex-col">
                 <span className="font-medium">Unsaved Changes</span>
                 <span className="text-sm text-muted-foreground mr-4">
-                  Don't forget to save your settings
+                  Don&apos;t forget to save your settings
                 </span>
               </div>
               <div className="flex items-center gap-3">

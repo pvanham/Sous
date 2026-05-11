@@ -44,7 +44,7 @@ export function DangerZoneSection() {
               schedule but anonymised.
             </li>
             <li>
-              If you're the sole owner of your organization, the entire
+              If you&apos;re the sole owner of your organization, the entire
               organization, its locations, kitchen config, and team
               memberships are removed with it.
             </li>

@@ -29,11 +29,8 @@ import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { getWeekDays, formatTimeString } from "@/lib/utils/date";
 import { getStationDotColor } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
-import type { StaffDTO } from "@/types/staff";
+
 import type { ScheduleDTO } from "@/types/schedule";
-import type { LaborRequirementDTO } from "@/types/labor-requirement";
-import type { KitchenConfigDTO } from "@/types/kitchen-config";
-import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 
 // ─── Types ──────────────────────────────────────────────────
 interface ScheduleHealthDialogProps {
@@ -80,22 +77,6 @@ function calculateStaffWeeklyHours(staffId: string, shifts: ShiftDTO[]): number 
   return shifts
     .filter((s) => s.staffId === staffId)
     .reduce((sum, s) => sum + getShiftDurationHours(s), 0);
-}
-
-/** Check if a staff member has a manager role. */
-function isManager(staff: StaffDTO, managerRoles: string[]): boolean {
-  if (managerRoles.length > 0) {
-    return staff.roles.some((role) => managerRoles.includes(role));
-  }
-  return staff.roles.some(
-    (role) =>
-      role.toLowerCase().includes("manager") ||
-      role.toLowerCase() === "gm" ||
-      role.toLowerCase() === "km" ||
-      role.toLowerCase() === "agm" ||
-      role.toLowerCase() === "shift leader" ||
-      role.toLowerCase() === "sous chef",
-  );
 }
 
 // ─── Score Badge ────────────────────────────────────────────

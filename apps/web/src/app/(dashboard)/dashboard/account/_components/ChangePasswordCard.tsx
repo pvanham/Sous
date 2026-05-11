@@ -104,7 +104,7 @@ function ChangeForm() {
       <CardHeader>
         <CardTitle>Password</CardTitle>
         <CardDescription>
-          Use a strong password you don't reuse anywhere else. Updating
+          Use a strong password you don&apos;t reuse anywhere else. Updating
           can sign out your other devices.
         </CardDescription>
       </CardHeader>

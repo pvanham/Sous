@@ -151,28 +151,6 @@ function fmtTokens(t: TokenUsage): string {
   return `${t.totalTokens} tokens ($${(t.estimatedCostCents / 100).toFixed(3)})`;
 }
 
-/**
- * Format validation errors for terminal logging: type frequency + per-error details.
- */
-function formatErrorBreakdown(errors: ValidationError[]): string {
-  const byType = new Map<string, ValidationError[]>();
-  for (const e of errors) {
-    const list = byType.get(e.type) ?? [];
-    list.push(e);
-    byType.set(e.type, list);
-  }
-  const typeFreq = [...byType.entries()]
-    .map(([type, list]) => `${list.length}x ${type}`)
-    .join(", ");
-  const lines: string[] = [`  Errors: ${typeFreq}`];
-  for (const e of errors) {
-    const shortMsg = e.message
-      .replace(/^Staff "[^"]+"\s+/, "")
-      .replace(/\.\s*$/, "");
-    lines.push(`    [${e.type}] "${e.staffName}" — ${shortMsg}`);
-  }
-  return lines.join("\n");
-}
 
 /**
  * Format a quality score breakdown for terminal logging.
@@ -417,7 +395,6 @@ function logSwapResults(
   swaps: AISwapOutput["swaps"],
   appliedCount: number,
   skippedSwaps: Array<{ slot: string; reason: string }>,
-  aliasToId: Map<string, string>,
 ): void {
   if (swaps.length === 0) {
     console.log(`${LOG_PREFIX} ${dateStr} AI suggested 0 swaps (base is optimal)`);
@@ -1133,7 +1110,7 @@ export const SchedulingAgentService = {
         const { schedule: swappedSchedule, appliedCount, skippedSwaps } =
           applySwaps(baseSchedule, receivedSwaps, context.slots, aliasToId, adjacentDayShifts, clopeningSettings);
 
-        logSwapResults(dateStr, receivedSwaps, appliedCount, skippedSwaps, aliasToId);
+        logSwapResults(dateStr, receivedSwaps, appliedCount, skippedSwaps);
 
         if (appliedCount === 0) {
           // All swaps were invalid -- track with accurate error type
@@ -1354,7 +1331,7 @@ export const SchedulingAgentService = {
     let totalAssignmentsWithPreference = 0;
 
     // Accumulate synthetic shifts so we can derive previousDayClosingShifts
-    let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
+    const accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
 
     for (const dayCandidate of base.allDayCandidates) {
       const dayInfo = base.dayContextMap.get(dayCandidate.dayIndex)!;
@@ -1518,7 +1495,7 @@ export const SchedulingAgentService = {
     };
 
     const base = await prefetchAndSolve(context);
-    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator, overtimeSummary, totalCostCents, fallbackRatesUsed } = base;
+    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator, totalCostCents, fallbackRatesUsed } = base;
 
     let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
     let totalTokenUsage = emptyTokenUsage();

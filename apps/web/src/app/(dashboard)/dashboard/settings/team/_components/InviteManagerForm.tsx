@@ -56,7 +56,7 @@ export function InviteManagerForm({ locations }: InviteManagerFormProps) {
       } else {
         toast.error(result.error);
       }
-    } catch (e) {
+    } catch {
       toast.error("An unexpected error occurred.");
     } finally {
       setIsPending(false);
