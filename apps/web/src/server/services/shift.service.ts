@@ -521,6 +521,34 @@ export const ShiftService = {
   },
 
   /**
+   * Delete every shift at a location whose `start` falls in a half-open
+   * `[weekStart, weekEnd)` window, regardless of owning Schedule doc.
+   *
+   * Mirrors the same date-window semantics used by
+   * `getByLocationAndDateRange` so destructive clear-week operations
+   * align with what the manager sees in the schedule grid.
+     *
+   * @param orgId      Organization ID (tenancy filter).
+   * @param locationId Location ID (tenancy filter).
+   * @param weekStart  Inclusive lower bound.
+   * @param weekEnd    Exclusive upper bound.
+   * @returns Number of deleted documents.
+   */
+  async deleteByLocationAndDateRange(
+    orgId: string,
+    locationId: string,
+    weekStart: Date,
+    weekEnd: Date,
+  ): Promise<number> {
+    const result = await Shift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      start: { $gte: weekStart, $lt: weekEnd },
+    });
+    return result.deletedCount;
+  },
+
+  /**
    * Delete all shifts for a location (for testing/cleanup).
    * @param orgId - Organization ID
    * @param locationId - Location ID

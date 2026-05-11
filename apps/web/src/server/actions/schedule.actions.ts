@@ -10,6 +10,7 @@ import {
 import {
   ScheduleService,
   ManagerCoverageGap,
+  assertWeekStartAligned,
 } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -564,6 +565,61 @@ export async function clearWeekShifts(
     const shiftsDeleted = await ShiftService.deleteBySchedule(scheduleId);
 
     // 5. Return response
+    return {
+      success: true,
+      data: { shiftsDeleted },
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to clear week shifts";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Clear every shift visible in a location week window, regardless of
+ * which Schedule document owns those shifts.
+ *
+ * @param input - Object containing `weekStartDate`
+ * @returns ActionResponse with count of deleted shifts
+ */
+export async function clearWeekShiftsForLocationWeek(
+  input: unknown,
+): Promise<ActionResponse<{ shiftsDeleted: number }>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. Zod validation
+    const parseResult = scheduleWeekSchema.safeParse(input);
+    if (!parseResult.success) {
+      const errorMessage = parseResult.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+      return { success: false, error: errorMessage };
+    }
+    const { weekStartDate } = parseResult.data;
+
+    // 3. Get location context (handles DB connection)
+    const ctx = await getLocationContext(userId);
+
+    // 4. Enforce location-configured week anchor
+    await assertWeekStartAligned(ctx.orgId, ctx.locationId, weekStartDate);
+
+    // 5. Delete all shifts in the half-open week window
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const weekEnd = new Date(weekStartDate.getTime() + WEEK_MS);
+    const shiftsDeleted = await ShiftService.deleteByLocationAndDateRange(
+      ctx.orgId,
+      ctx.locationId,
+      weekStartDate,
+      weekEnd,
+    );
+
+    // 6. Return response
     return {
       success: true,
       data: { shiftsDeleted },

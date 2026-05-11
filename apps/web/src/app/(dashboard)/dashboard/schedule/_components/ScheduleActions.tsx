@@ -17,7 +17,7 @@ import {
   copyWeekShifts,
   publishSchedule,
   checkManagerCoverage,
-  clearWeekShifts,
+  clearWeekShiftsForLocationWeek,
 } from "@/server/actions/schedule.actions";
 import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 import { getPrevWeekStart } from "@/lib/utils/date";
@@ -54,6 +54,80 @@ interface ScheduleActionsProps {
   onStatusChange: () => void;
 }
 
+interface ClearWeekActionProps {
+  weekStart: Date;
+  shiftCount: number;
+  onCleared?: () => void;
+  className?: string;
+}
+
+export function ClearWeekAction({
+  weekStart,
+  shiftCount,
+  onCleared,
+  className,
+}: ClearWeekActionProps) {
+  const queryClient = useQueryClient();
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const result = await clearWeekShiftsForLocationWeek({
+        weekStartDate: weekStart,
+      });
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Cleared ${data.shiftsDeleted} shifts`);
+      setClearDialogOpen(false);
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      onCleared?.();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const isClearing = clearMutation.isPending;
+  const buttonClassName = [
+    "text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap",
+    className ?? "",
+  ]
+    .join(" ")
+    .trim();
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setClearDialogOpen(true)}
+        disabled={isClearing || shiftCount === 0}
+        className={buttonClassName}
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        Clear Week
+      </Button>
+
+      <ClearWeekDialog
+        open={clearDialogOpen}
+        onOpenChange={setClearDialogOpen}
+        onConfirm={() => clearMutation.mutate()}
+        isClearing={isClearing}
+        shiftCount={shiftCount}
+      />
+    </>
+  );
+}
+
 /**
  * ScheduleActions - Action buttons for schedule management.
  * Includes Publish/Unpublish and Copy Week functionality.
@@ -67,7 +141,6 @@ export function ScheduleActions({
 }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [healthDialogOpen, setHealthDialogOpen] = useState(false);
   const [managerWarnings, setManagerWarnings] = useState<ManagerCoverageGap[]>(
@@ -208,33 +281,6 @@ export function ScheduleActions({
     }
   };
 
-  // Clear week mutation
-  const clearMutation = useMutation({
-    mutationFn: async () => {
-      const result = await clearWeekShifts(schedule.id);
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      return result.data;
-    },
-    onSuccess: (data) => {
-      toast.success(`Cleared ${data.shiftsDeleted} shifts`);
-      setClearDialogOpen(false);
-      // Invalidate both the legacy `bySchedule` key (in case anything
-      // still subscribes) and the new `byWeek` key the grid now uses.
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
-      });
-      onStatusChange();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
   // Handle generation accept -- invalidate shift cache so grid reloads
   const handleGenerationAccept = () => {
     queryClient.invalidateQueries({
@@ -248,7 +294,6 @@ export function ScheduleActions({
 
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
-  const isClearing = clearMutation.isPending;
 
   return (
     <div className="flex items-center gap-2 flex-nowrap">
@@ -312,16 +357,12 @@ export function ScheduleActions({
       )}
 
       {/* Clear Week Button — ml-auto pushes it (and Copy) to the far right */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setClearDialogOpen(true)}
-        disabled={isClearing || shifts.length === 0}
-        className="ml-auto text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
-      >
-        <Trash2 className="mr-2 h-4 w-4" />
-        Clear Week
-      </Button>
+      <ClearWeekAction
+        weekStart={weekStart}
+        shiftCount={shifts.length}
+        onCleared={onStatusChange}
+        className="ml-auto"
+      />
 
       {/* Copy Week Dropdown */}
       <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
@@ -342,15 +383,6 @@ export function ScheduleActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* Clear Week Confirmation Dialog */}
-      <ClearWeekDialog
-        open={clearDialogOpen}
-        onOpenChange={setClearDialogOpen}
-        onConfirm={() => clearMutation.mutate()}
-        isClearing={isClearing}
-        shiftCount={shifts.length}
-      />
 
       {/* Manager Coverage Warning Dialog */}
       <ManagerCoverageWarningDialog

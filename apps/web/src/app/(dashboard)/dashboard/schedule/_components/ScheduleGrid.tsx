@@ -27,7 +27,7 @@ import type { TimeOffRequestDTO } from "@/types/time-off-request";
 import type { DayOfWeek } from "@sous/types";
 
 import { ScheduleHeader } from "./ScheduleHeader";
-import { ScheduleActions } from "./ScheduleActions";
+import { ClearWeekAction, ScheduleActions } from "./ScheduleActions";
 import { WeekSummary } from "./WeekSummary";
 import { StationLegend } from "./StationLegend";
 import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
@@ -560,6 +560,13 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
               ? "Shown shifts belong to a previous schedule. Add a shift to start a new one."
               : "Add a shift to create one."}
           </span>
+          {shifts.length > 0 && (
+            <ClearWeekAction
+              weekStart={currentWeek}
+              shiftCount={shifts.length}
+              onCleared={handleStatusChange}
+            />
+          )}
         </div>
       )}
 
