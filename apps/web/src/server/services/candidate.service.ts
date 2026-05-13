@@ -1,6 +1,7 @@
 import { StaffService } from "@/server/services/staff.service";
 import { StaffAvailabilityService } from "@/server/services/staff-availability.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import {
   getDayOfWeek,
   calculateShiftDuration,
@@ -8,6 +9,7 @@ import {
   getWeekStart,
   getWeekEnd,
 } from "@/lib/utils/date";
+import type { DayOfWeek } from "@sous/types";
 import type { StaffDTO } from "@/types/staff";
 import type { StaffAvailabilityDTO } from "@/types/staff-availability";
 import type { ShiftDTO } from "@/types/shift";
@@ -314,8 +316,12 @@ export const CandidateService = {
     const proposedStart = combineDateTime(date, startTime);
     const proposedEnd = combineDateTime(date, endTime);
     const slotDuration = getSlotDurationHours(startTime, endTime);
-    const weekStart = getWeekStart(date);
-    const weekEnd = getWeekEnd(date);
+    const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+      orgId,
+      locationId,
+    );
+    const weekStart = getWeekStart(date, weekStartsOn);
+    const weekEnd = getWeekEnd(date, weekStartsOn);
 
     // Step 1: Fetch all active staff and availability data in parallel
     const [allStaff, availableStaff] = await Promise.all([
@@ -451,8 +457,12 @@ export const CandidateService = {
     }
 
     const dayOfWeek = getDayOfWeek(date);
-    const weekStart = getWeekStart(date);
-    const weekEnd = getWeekEnd(date);
+    const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+      orgId,
+      locationId,
+    );
+    const weekStart = getWeekStart(date, weekStartsOn);
+    const weekEnd = getWeekEnd(date, weekStartsOn);
 
     // Batch fetch: all staff + all availability for this day of week
     const [allStaff, dayAvailability] = await Promise.all([
@@ -615,10 +625,11 @@ export const CandidateService = {
     staffId: string,
     proposedShift: { date: Date; startTime: string; endTime: string },
     existingShifts: ShiftDTO[],
-    maxHours: number
+    maxHours: number,
+    weekStartsOn: DayOfWeek,
   ): boolean {
-    const weekStart = getWeekStart(proposedShift.date);
-    const weekEnd = getWeekEnd(proposedShift.date);
+    const weekStart = getWeekStart(proposedShift.date, weekStartsOn);
+    const weekEnd = getWeekEnd(proposedShift.date, weekStartsOn);
 
     // Calculate current week hours for this staff member
     const hoursMap = calculateWeekHours(

@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test:phase-1": "tsx scripts/test-phase-1.ts",
     "test:phase-2": "tsx scripts/test-phase-2.ts",
     "test:phase-2.5": "tsx scripts/test-phase-2.5.ts",
@@ -22,7 +22,8 @@
     "seed:favorable": "tsx ../../scripts/seed-favorable-schedule.ts",
     "cleanup:favorable": "tsx ../../scripts/seed-favorable-schedule.ts --cleanup",
     "test:phase-4": "tsx scripts/test-phase4.ts",
-    "test:shi-10": "tsx ../../scripts/test-shi-10.ts"
+    "test:shi-10": "tsx ../../scripts/test-shi-10.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",
@@ -57,6 +58,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^17.2.3",
     "framer-motion": "^12.36.0",
     "geist": "^1.5.1",

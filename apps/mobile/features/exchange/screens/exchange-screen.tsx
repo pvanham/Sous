@@ -33,6 +33,8 @@ import {
 } from "../api";
 import { useExchangeLastSeen } from "../last-seen-store";
 import { fetchWeekShifts } from "@/features/schedule/api";
+import { useWeekStartsOn } from "@/features/auth/store";
+import { getWeekStart } from "@/lib/date";
 import type { ExchangeShift, ExchangeShiftStatus } from "@/types";
 
 type SegmentTab = "available" | "mine" | "pickups";
@@ -141,10 +143,11 @@ export function ExchangeScreen() {
     });
   }, [hasHydrated, bannerBaseline, myDroppedQuery.data, myPickupsQuery.data]);
 
+  const weekStartsOn = useWeekStartsOn();
   const { currentWeekStart, nextWeekStart, currentWeekIso, nextWeekIso } =
     useMemo(() => {
       const today = new Date();
-      const current = getWeekStart(today);
+      const current = getWeekStart(today, weekStartsOn);
       const next = addDays(current, 7);
       return {
         currentWeekStart: current,
@@ -152,7 +155,7 @@ export function ExchangeScreen() {
         currentWeekIso: toIsoDate(current),
         nextWeekIso: toIsoDate(next),
       };
-    }, []);
+    }, [weekStartsOn]);
 
   const currentWeekQuery = useQuery({
     queryKey: ["schedule", userId, "week", currentWeekIso],
@@ -799,14 +802,6 @@ function formatTime(date: Date): string {
     minute: "2-digit",
     hour12: true,
   });
-}
-
-/** Returns the most recent Sunday at midnight in local time. */
-function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay());
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function addDays(date: Date, delta: number): Date {

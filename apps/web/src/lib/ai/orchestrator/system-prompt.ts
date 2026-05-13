@@ -1,20 +1,68 @@
 import type { OrchestratorContext } from "./build-context";
+import { dayOfWeekToIndex, type DayOfWeek } from "@sous/types";
 
-const DAY_NAMES = [
+/**
+ * Calendar day names ordered Sunday-first so they're indexable by
+ * `Date.prototype.getDay()`. We intentionally keep this as the calendar
+ * frame of reference (NOT week-start-relative) because a few callers
+ * (e.g. the viewport `focusedDay`) use the JS calendar index.
+ */
+const CALENDAR_DAY_NAMES = [
+  "Sunday",
   "Monday",
   "Tuesday",
   "Wednesday",
   "Thursday",
   "Friday",
   "Saturday",
-  "Sunday",
 ] as const;
+
+const SHORT_DAY_NAMES = [
+  "Sun",
+  "Mon",
+  "Tue",
+  "Wed",
+  "Thu",
+  "Fri",
+  "Sat",
+] as const;
+
+/**
+ * Build the rotated, week-start-relative `dayOfWeek` index map used by
+ * tool parameters. With `weekStartsOn = "monday"` the result is the
+ * historical `{ Mon: 0, Tue: 1, ..., Sun: 6 }`; with `"wednesday"` it
+ * becomes `{ Wed: 0, Thu: 1, ..., Tue: 6 }`. Callers can therefore tell
+ * the model "0=<weekStart>..6=<weekEnd>" without the model needing to
+ * know the literal anchor.
+ */
+function buildShortDayIndexMap(
+  weekStartsOn: DayOfWeek,
+): Record<string, number> {
+  const startIndex = dayOfWeekToIndex(weekStartsOn);
+  const map: Record<string, number> = {};
+  for (let i = 0; i < 7; i++) {
+    const calendarIndex = (startIndex + i) % 7;
+    map[SHORT_DAY_NAMES[calendarIndex]] = i;
+  }
+  return map;
+}
+
+function getRotatedDayName(
+  weekStartsOn: DayOfWeek,
+  rotatedIndex: number,
+): string {
+  const startIndex = dayOfWeekToIndex(weekStartsOn);
+  return CALENDAR_DAY_NAMES[(startIndex + rotatedIndex) % 7];
+}
 
 function buildIdentitySection(): string {
   return `You are Sous AI, a scheduling assistant for kitchen/restaurant management. You help managers and shift leads view schedules, analyze staffing, manage time-off requests, and propose schedule changes.`;
 }
 
-function buildTemporalSection(timezone: string): string {
+function buildTemporalSection(
+  timezone: string,
+  weekStartsOn: DayOfWeek,
+): string {
   const tz = timezone || "UTC";
   const now = new Date();
 
@@ -53,16 +101,22 @@ function buildTemporalSection(timezone: string): string {
     timeZone: tz,
     weekday: "short",
   }).format(now);
-  const dayIndexMap: Record<string, number> = {
-    Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6,
-  };
+  // Rotate the index map so 0 always lines up with the location's
+  // configured `weekStartsOn`. The model never has to special-case
+  // Monday — it just trusts the index range we describe in the next
+  // line of the prompt.
+  const dayIndexMap = buildShortDayIndexMap(weekStartsOn);
   const dayIndex = dayIndexMap[shortDay] ?? 0;
+
+  const weekStartName = getRotatedDayName(weekStartsOn, 0);
+  const weekEndName = getRotatedDayName(weekStartsOn, 6);
 
   return [
     `Current Time Context: Today is ${formattedDate}, ${formattedTime}.`,
     `Today's ISO date is ${todayISO}. The day of the week is ${dayOfWeek}. The local timezone for this location is ${tz}.`,
-    `Today's day-of-week index for tool calls is ${dayIndex} (${dayOfWeek}) using the 0=Monday..6=Sunday system used by dayOfWeek parameters.`,
-    `Use this to resolve ALL relative time queries such as "today", "tonight", "tomorrow", "next week", "this Monday", etc. When the user says "next week", calculate the Monday date of the following week from today's date. When the user says "this week", use today's date.`,
+    `This location's weekly schedule starts on ${weekStartName}. Weeks run ${weekStartName} through ${weekEndName}.`,
+    `Today's day-of-week index for tool calls is ${dayIndex} (${dayOfWeek}) using the 0=${weekStartName}..6=${weekEndName} system used by dayOfWeek parameters.`,
+    `Use this to resolve ALL relative time queries such as "today", "tonight", "tomorrow", "next week", "this ${weekStartName}", etc. When the user says "next week", calculate the ${weekStartName} date of the following week from today's date. When the user says "this week", use today's date.`,
     `BARE WEEKDAY RULE: When the user mentions a weekday name without a qualifier (e.g. "Thursday" instead of "this Thursday" or "next Thursday"), ALWAYS resolve it to the next upcoming occurrence of that day on or after today's date. For example, if today is Tuesday March 31 and the user says "Thursday", that means Thursday April 2 — NOT Thursday March 27. Never pick a past date unless the user explicitly says "last Thursday" or "previous Thursday".`,
   ].join("\n");
 }
@@ -106,9 +160,10 @@ function buildProposalSection(): string {
   ].join(" ");
 }
 
-function buildScheduleGenerationGuidanceSection(): string {
+function buildScheduleGenerationGuidanceSection(weekStartsOn: DayOfWeek): string {
+  const weekStartName = getRotatedDayName(weekStartsOn, 0);
   return [
-    "SCHEDULE GENERATION WORKFLOW: When the user asks to generate a schedule, call propose_schedule_generation with ONLY the weekStartDate (the Monday ISO date of the target week).",
+    `SCHEDULE GENERATION WORKFLOW: When the user asks to generate a schedule, call propose_schedule_generation with ONLY the weekStartDate (the ${weekStartName} ISO date of the target week — this location's configured first day).`,
     "Do NOT ask the user for a template schedule ID or additional instructions unless they volunteer that information.",
     "templateScheduleId and additionalInstructions are optional parameters — omit them entirely if the user has not mentioned them.",
     "After the schedule is generated and the solver completes, summarize the results and then call propose_accept_generated_schedule so the user can confirm and save the shifts.",
@@ -155,7 +210,10 @@ function buildViewportSection(context: OrchestratorContext): string {
   }
 
   if (viewport.focusedDay !== undefined) {
-    const dayName = DAY_NAMES[viewport.focusedDay] ?? `day ${viewport.focusedDay}`;
+    // `focusedDay` is a calendar index (0=Sunday..6=Saturday) coming
+    // from the schedule grid, not a week-start-relative offset.
+    const dayName =
+      CALENDAR_DAY_NAMES[viewport.focusedDay] ?? `day ${viewport.focusedDay}`;
     parts.push(`Focused day: ${dayName}.`);
   }
 
@@ -179,6 +237,7 @@ function buildScopeConstraintSection(): string {
 /**
  * Build the system prompt string for the LLM, incorporating:
  * - Real-time date, day of week, and timezone
+ * - The location's configured `weekStartsOn` (rotates dayOfWeek index)
  * - Role and permission context
  * - Available tool descriptions
  * - Prompt injection guardrails
@@ -186,17 +245,18 @@ function buildScopeConstraintSection(): string {
  */
 export function buildSystemPrompt(
   context: OrchestratorContext,
-  timezone?: string
+  timezone: string,
+  weekStartsOn: DayOfWeek,
 ): string {
-  const tz = timezone ?? "UTC";
+  const tz = timezone || "UTC";
 
   const sections = [
     buildIdentitySection(),
-    buildTemporalSection(tz),
+    buildTemporalSection(tz, weekStartsOn),
     buildPermissionSection(context),
     buildToolUsageSection(),
     buildProposalSection(),
-    buildScheduleGenerationGuidanceSection(),
+    buildScheduleGenerationGuidanceSection(weekStartsOn),
     buildSwapGuidanceSection(),
     buildInjectionGuardrailSection(),
     buildViewportSection(context),

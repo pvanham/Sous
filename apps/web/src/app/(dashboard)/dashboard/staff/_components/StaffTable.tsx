@@ -101,7 +101,7 @@ export function StaffTable({ initialData }: StaffTableProps) {
   }, [searchInput]);
 
   // Fetch staff with pagination
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isFetching } = useQuery({
     queryKey: ["staff", { page, pageSize, sortOrder, search }],
     queryFn: async () => {
       const result = await listStaffPaginated({

@@ -1,15 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { CalendarDays, Loader2, Sparkles, Copy } from "lucide-react";
 import { toast } from "sonner";
 
-import { getOrCreateScheduleForWeek } from "@/server/actions/schedule.actions";
 import {
-  listShiftsBySchedule,
+  getOrCreateScheduleForWeek,
+  getScheduleByWeek,
+  getEffectiveStatusForWeek,
+  copyWeekShifts,
+} from "@/server/actions/schedule.actions";
+import {
+  listShiftsForLocationWeek,
   deleteShift,
 } from "@/server/actions/shift.actions";
+import { listTimeOffForLocationWeek } from "@/server/actions/time-off-request.actions";
 import { listStaff } from "@/server/actions/staff.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import {
@@ -18,9 +24,13 @@ import {
   getPrevWeekStart,
 } from "@/lib/utils/date";
 import type { ShiftDTO } from "@/types/shift";
+import type { ScheduleDTO } from "@/types/schedule";
+import type { TimeOffRequestDTO } from "@/types/time-off-request";
+import type { DayOfWeek } from "@sous/types";
 
 import { ScheduleHeader } from "./ScheduleHeader";
-import { ScheduleActions } from "./ScheduleActions";
+import { ClearWeekAction, ScheduleActions } from "./ScheduleActions";
+import { GenerateScheduleDialog } from "./GenerateScheduleDialog";
 import { WeekSummary } from "./WeekSummary";
 import { StationLegend } from "./StationLegend";
 import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
@@ -38,12 +48,25 @@ const scheduleKeys = {
   all: ["schedules"] as const,
   week: (weekStart: string) =>
     [...scheduleKeys.all, "week", weekStart] as const,
+  effectiveStatus: (weekStart: string) =>
+    [...scheduleKeys.all, "effectiveStatus", weekStart] as const,
 };
 
 const shiftKeys = {
   all: ["shifts"] as const,
+  // Legacy key — retained on the shiftKeys object so other consumers
+  // (mutations, AI tools) can still invalidate by scheduleId. The grid
+  // itself reads `byWeek` now.
   bySchedule: (scheduleId: string) =>
     [...shiftKeys.all, "schedule", scheduleId] as const,
+  byWeek: (weekStartIso: string) =>
+    [...shiftKeys.all, "week", weekStartIso] as const,
+};
+
+const timeOffKeys = {
+  all: ["timeOff"] as const,
+  byWeek: (weekStartIso: string) =>
+    [...timeOffKeys.all, "week", weekStartIso] as const,
 };
 
 const staffKeys = {
@@ -65,13 +88,27 @@ interface DialogState {
   station?: string;
   shift?: ShiftDTO;
   allowStaffSelection?: boolean;
+  /**
+   * Explicit scheduleId pulled from `ensureScheduleForCurrentWeek`
+   * during the create flow. This is the freshly-resolved id, used
+   * during the brief window between "schedule created" and "schedule
+   * query refetched". If unset, we fall back to the live `schedule.id`
+   * from the read query (the steady state once the cache catches up).
+   */
+  pendingScheduleId?: string;
 }
 
 interface ScheduleGridProps {
   initialWeek: Date;
+  /**
+   * Server-resolved location week-start anchor used for the very first
+   * render before the kitchen-config query loads. After mount, the
+   * cached `config.weekStartsOn` from TanStack Query takes over.
+   */
+  initialWeekStartsOn: DayOfWeek;
 }
 
-export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
+export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridProps) {
   const queryClient = useQueryClient();
 
   // State for current week
@@ -98,36 +135,129 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     shift: null,
   });
 
+  // State for the empty-state "Generate Schedule" flow.
+  // Because GenerateScheduleDialog requires a schedule doc, we first
+  // ensure one exists, set pendingGenerate=true, then open the dialog
+  // once the query refetches and schedule becomes non-null.
+  const [pendingGenerate, setPendingGenerate] = useState(false);
+  const [emptyStateGenerateOpen, setEmptyStateGenerateOpen] = useState(false);
+
+  // State for the empty-state "Copy Previous Week" flow.
+  const [isCopyingFromPrev, setIsCopyingFromPrev] = useState(false);
+
   // Convert week start to ISO string for query key
   const weekStartKey = currentWeek.toISOString();
 
-  // Get week days for column headers
-  const weekDays = getWeekDays(currentWeek);
+  // Query: Get kitchen config for time views and weekStartsOn anchor
+  const { data: config = null } = useQuery({
+    queryKey: kitchenConfigKeys.all,
+    queryFn: async () => {
+      const result = await getKitchenConfig();
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+  });
 
-  // Query: Get or create schedule for current week
+  // Active week-start anchor: prefer the freshly-fetched kitchen config,
+  // but fall back to the server-resolved value passed in props until the
+  // query lands so initial paint never uses a stale Monday.
+  const weekStartsOn: DayOfWeek = config?.weekStartsOn ?? initialWeekStartsOn;
+
+  // Get week days for column headers
+  const weekDays = getWeekDays(currentWeek, weekStartsOn);
+
+  // Query: Read-only lookup of the Schedule doc for this week. Returns
+  // `null` when no doc exists yet — visiting an empty week no longer
+  // side-effect-creates a draft. The `ensureScheduleForCurrentWeek`
+  // helper below promotes this to a write when the user actually starts
+  // a mutation (add shift, copy, etc.).
   const {
-    data: schedule,
+    data: schedule = null,
     isLoading: isScheduleLoading,
     error: scheduleError,
-  } = useQuery({
+  } = useQuery<ScheduleDTO | null>({
     queryKey: scheduleKeys.week(weekStartKey),
     queryFn: async () => {
-      const result = await getOrCreateScheduleForWeek({ weekStartDate: currentWeek });
+      const result = await getScheduleByWeek({ weekStartDate: currentWeek });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
   });
 
-  // Query: Get shifts for the schedule (only if we have a schedule)
+  // Query: Every shift whose `start` falls in this week, regardless of
+  // which Schedule doc owns it. Sourcing by date range is the only way
+  // to keep legacy Mon-anchored shifts visible after a Wed-anchored
+  // `weekStartsOn` flip.
   const { data: shifts = [], isLoading: isShiftsLoading } = useQuery({
-    queryKey: shiftKeys.bySchedule(schedule?.id ?? ""),
+    queryKey: shiftKeys.byWeek(weekStartKey),
     queryFn: async () => {
-      const result = await listShiftsBySchedule({ scheduleId: schedule!.id });
+      const result = await listShiftsForLocationWeek({
+        weekStartDate: currentWeek,
+      });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
-    enabled: !!schedule?.id,
   });
+
+  const { data: effectiveStatus = "EMPTY" } = useQuery<
+    "PUBLISHED" | "DRAFT" | "EMPTY"
+  >({
+    queryKey: scheduleKeys.effectiveStatus(weekStartKey),
+    queryFn: async () => {
+      const result = await getEffectiveStatusForWeek({
+        weekStartDate: currentWeek,
+      });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+  });
+
+  // Query: Approved + pending time-off for the displayed window. Drives
+  // the `TimeOffPill` overlay in each view sub-component so a manager
+  // can spot conflicts before assigning a shift. We always include
+  // `pending` so a freshly-submitted request previews the conflict
+  // even before a manager has reviewed it.
+  const { data: timeOff = [] } = useQuery<TimeOffRequestDTO[]>({
+    queryKey: timeOffKeys.byWeek(weekStartKey),
+    queryFn: async () => {
+      const result = await listTimeOffForLocationWeek({
+        weekStartDate: currentWeek,
+        statuses: ["approved", "pending"],
+      });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+  });
+
+  /**
+   * Promote the read-only schedule lookup to a write-intent: ensure a
+   * Schedule doc exists for the current week so subsequent mutations
+   * (add shift, copy, publish) have something to attach to. Returns the
+   * resolved Schedule id or `null` if creation failed (the caller should
+   * surface a toast and abort).
+   *
+   * Read paths never call this — only paths that are about to mutate.
+   * After resolution we invalidate the schedule meta query so the grid
+   * picks up the freshly-created doc and the status badge flips from
+   * "No schedule yet" to "Draft".
+   */
+  const ensureScheduleForCurrentWeek = async (): Promise<string | null> => {
+    if (schedule?.id) return schedule.id;
+    const result = await getOrCreateScheduleForWeek({
+      weekStartDate: currentWeek,
+    });
+    if (!result.success) {
+      toast.error(result.error);
+      return null;
+    }
+    await queryClient.invalidateQueries({
+      queryKey: scheduleKeys.week(weekStartKey),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStartKey),
+    });
+    return result.data.id;
+  };
 
   // Query: Get all staff members
   const { data: allStaff = [], isLoading: isStaffLoading } = useQuery({
@@ -139,57 +269,50 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     },
   });
 
-  // Query: Get kitchen config for time views
-  const { data: config = null } = useQuery({
-    queryKey: kitchenConfigKeys.all,
-    queryFn: async () => {
-      const result = await getKitchenConfig();
-      if (!result.success) throw new Error(result.error);
-      return result.data;
-    },
-  });
-
-  // Delete mutation with optimistic updates
+  // Delete mutation with optimistic updates against the date-range
+  // shift cache. We key by `weekStartKey` so the optimistic patch
+  // matches the grid's actual data source — the shift being deleted
+  // may belong to a legacy Schedule doc that the grid no longer
+  // references directly.
   const deleteMutation = useMutation({
     mutationFn: async (shiftId: string) => {
       return deleteShift({ shiftId });
     },
     onMutate: async (shiftId) => {
-      if (!schedule?.id) return;
-
       await queryClient.cancelQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
+        queryKey: shiftKeys.byWeek(weekStartKey),
       });
 
       const previousShifts = queryClient.getQueryData(
-        shiftKeys.bySchedule(schedule.id)
+        shiftKeys.byWeek(weekStartKey),
       );
 
       queryClient.setQueryData(
-        shiftKeys.bySchedule(schedule.id),
+        shiftKeys.byWeek(weekStartKey),
         (old: ShiftDTO[] | undefined) => {
           if (!old) return old;
           return old.filter((s) => s.id !== shiftId);
-        }
+        },
       );
 
       return { previousShifts };
     },
     onError: (_err, _shiftId, context) => {
-      if (context?.previousShifts && schedule?.id) {
+      if (context?.previousShifts) {
         queryClient.setQueryData(
-          shiftKeys.bySchedule(schedule.id),
-          context.previousShifts
+          shiftKeys.byWeek(weekStartKey),
+          context.previousShifts,
         );
       }
       toast.error("Failed to delete shift");
     },
     onSettled: () => {
-      if (schedule?.id) {
-        queryClient.invalidateQueries({
-          queryKey: shiftKeys.bySchedule(schedule.id),
-        });
-      }
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.byWeek(weekStartKey),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStartKey),
+      });
     },
     onSuccess: (response) => {
       if (response.success) {
@@ -203,15 +326,15 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   // Week navigation handlers
   const handlePrevWeek = () => {
-    setCurrentWeek((prev) => getPrevWeekStart(prev));
+    setCurrentWeek((prev) => getPrevWeekStart(prev, weekStartsOn));
     // Update selected day to first day of new week
-    setSelectedDay(getPrevWeekStart(currentWeek));
+    setSelectedDay(getPrevWeekStart(currentWeek, weekStartsOn));
   };
 
   const handleNextWeek = () => {
-    setCurrentWeek((prev) => getNextWeekStart(prev));
+    setCurrentWeek((prev) => getNextWeekStart(prev, weekStartsOn));
     // Update selected day to first day of new week
-    setSelectedDay(getNextWeekStart(currentWeek));
+    setSelectedDay(getNextWeekStart(currentWeek, weekStartsOn));
   };
 
   // View change handler
@@ -228,11 +351,23 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     setSelectedDay(day);
   };
 
-  // Dialog handlers for Staff View
-  const handleCreateShiftFromStaff = (staffId: string, date: Date) => {
+  // All "create shift" entry points are write-intent: ensure a Schedule
+  // doc exists for the current week before opening the dialog so the
+  // user never sees a phantom error from a missing scheduleId.
+  const openCreateDialog = async (state: Omit<DialogState, "open" | "mode">) => {
+    const scheduleId = await ensureScheduleForCurrentWeek();
+    if (!scheduleId) return;
     setDialogState({
       mode: "create",
       open: true,
+      ...state,
+      pendingScheduleId: scheduleId,
+    });
+  };
+
+  // Dialog handlers for Staff View
+  const handleCreateShiftFromStaff = (staffId: string, date: Date) => {
+    void openCreateDialog({
       staffId,
       date,
       allowStaffSelection: false,
@@ -241,9 +376,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
 
   // Dialog handlers for Time View
   const handleCreateShiftFromTime = (date: Date, startTime: string) => {
-    setDialogState({
-      mode: "create",
-      open: true,
+    void openCreateDialog({
       date,
       startTime,
       allowStaffSelection: true,
@@ -264,9 +397,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     startTime: string,
     station: string
   ) => {
-    setDialogState({
-      mode: "create",
-      open: true,
+    void openCreateDialog({
       date,
       startTime,
       station,
@@ -308,11 +439,82 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     queryClient.invalidateQueries({
       queryKey: scheduleKeys.week(weekStartKey),
     });
+    queryClient.invalidateQueries({
+      queryKey: shiftKeys.byWeek(weekStartKey),
+    });
+    queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStartKey),
+    });
     if (schedule?.id) {
       queryClient.invalidateQueries({
         queryKey: shiftKeys.bySchedule(schedule.id),
       });
     }
+  };
+
+  // Once the schedule doc materialises after ensureScheduleForCurrentWeek,
+  // open the generate dialog that was deferred from the empty state.
+  useEffect(() => {
+    if (pendingGenerate && schedule) {
+      setEmptyStateGenerateOpen(true);
+      setPendingGenerate(false);
+    }
+  }, [pendingGenerate, schedule]);
+
+  // Open the generate dialog from the empty state: create the schedule
+  // doc first, then let the useEffect above open the dialog once the
+  // query refetches and schedule is non-null.
+  const handleGenerateFromEmpty = async () => {
+    const scheduleId = await ensureScheduleForCurrentWeek();
+    if (!scheduleId) return;
+    setPendingGenerate(true);
+  };
+
+  // Copy the previous week's shifts into the current (empty) week.
+  // copyWeekShifts creates the target Schedule doc on demand, so no
+  // pre-existing doc is required.
+  const handleCopyFromPreviousWeekEmpty = async () => {
+    setIsCopyingFromPrev(true);
+    try {
+      const result = await copyWeekShifts({
+        sourceWeekStart: getPrevWeekStart(currentWeek, weekStartsOn),
+        targetWeekStart: currentWeek,
+      });
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      const { shiftsCreated, shiftsSkipped } = result.data;
+      if (shiftsCreated === 0 && shiftsSkipped === 0) {
+        toast.info("No shifts found in previous week to copy");
+      } else if (shiftsSkipped > 0) {
+        toast.success(
+          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
+        );
+      } else {
+        toast.success(`Copied ${shiftsCreated} shifts`);
+      }
+
+      queryClient.invalidateQueries({ queryKey: shiftKeys.byWeek(weekStartKey) });
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.week(weekStartKey) });
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.effectiveStatus(weekStartKey) });
+    } catch {
+      toast.error("Failed to copy from previous week");
+    } finally {
+      setIsCopyingFromPrev(false);
+    }
+  };
+
+  // Invalidate caches after the grid-level generate dialog accepts shifts.
+  const handleEmptyStateGenerationAccept = () => {
+    if (schedule?.id) {
+      queryClient.invalidateQueries({ queryKey: shiftKeys.bySchedule(schedule.id) });
+    }
+    queryClient.invalidateQueries({ queryKey: shiftKeys.byWeek(weekStartKey) });
+    queryClient.invalidateQueries({ queryKey: scheduleKeys.effectiveStatus(weekStartKey) });
+    handleStatusChange();
   };
 
   // Loading state
@@ -341,9 +543,13 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
     );
   }
 
-  // Render the appropriate view based on currentView
+  // Render the appropriate view based on currentView.
+  //
+  // Note: each view renders independent of `schedule` — the date-range
+  // shifts query feeds them directly, so legacy shifts from a pre-flip
+  // Schedule doc remain visible even when no new Wed-anchored doc has
+  // been created yet for this week.
   const renderView = () => {
-    if (!schedule) return null;
     switch (currentView) {
       case "staff":
         return (
@@ -351,6 +557,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
             shifts={shifts}
             staff={allStaff}
             weekDays={weekDays}
+            timeOff={timeOff}
             onCreateShift={handleCreateShiftFromStaff}
             onEditShift={handleEditShift}
           />
@@ -362,6 +569,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
             staff={allStaff}
             weekDays={weekDays}
             config={config}
+            timeOff={timeOff}
             onCreateShift={handleCreateShiftFromTime}
             onEditShift={handleEditShift}
           />
@@ -373,6 +581,7 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
             staff={allStaff}
             selectedDay={selectedDay}
             config={config}
+            timeOff={timeOff}
             onCreateShift={handleCreateShiftFromStation}
             onEditShift={handleEditShift}
           />
@@ -380,7 +589,11 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
       case "list":
         return (
           <ScheduleListView
-            scheduleId={schedule.id}
+            // List view's "Add shift" inline button targets a specific
+            // schedule; when no schedule exists yet we pass an empty
+            // string and the list-view dialog falls back to its
+            // "create on first save" path inside the form.
+            scheduleId={schedule?.id ?? ""}
             shifts={shifts}
             staff={allStaff}
             selectedDay={selectedDay}
@@ -422,20 +635,79 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </div>
       </div>
 
-      {/* Action Bar */}
+      {/* Action Bar — only meaningful once a Schedule doc exists for
+          this week. When `schedule` is null we still let the user see
+          shifts (legacy shifts from another Schedule doc may already
+          render) and create new ones; the action bar comes back as soon
+          as the first save through `ensureScheduleForCurrentWeek`
+          materializes a Schedule. */}
       {!isLoading && schedule && (
         <div className="overflow-x-auto">
           <ScheduleActions
             schedule={schedule}
             shifts={shifts}
             weekStart={currentWeek}
+            weekStartsOn={weekStartsOn}
+            effectiveStatus={effectiveStatus}
             onStatusChange={handleStatusChange}
           />
         </div>
       )}
 
+      {/* Empty-state hint when no Schedule doc exists yet for this week. */}
+      {!isLoading && !schedule && (
+        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border/60 bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+          <div className="flex items-center justify-between gap-4">
+            <span>
+              No schedule for this week yet.{" "}
+              {shifts.length > 0
+                ? "Shown shifts belong to a previous schedule. Add a shift to start a new one."
+                : "Add a shift to create one, or jump-start with one of the options below."}
+            </span>
+            {shifts.length > 0 && (
+              <ClearWeekAction
+                weekStart={currentWeek}
+                shiftCount={shifts.length}
+                onCleared={handleStatusChange}
+              />
+            )}
+          </div>
+          {shifts.length === 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleGenerateFromEmpty()}
+                disabled={pendingGenerate}
+                className="ai-gradient border-0 text-white shadow-md whitespace-nowrap"
+              >
+                {pendingGenerate ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                Generate Schedule
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCopyFromPreviousWeekEmpty()}
+                disabled={isCopyingFromPrev}
+                className="whitespace-nowrap"
+              >
+                {isCopyingFromPrev ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Copy className="mr-2 h-4 w-4" />
+                )}
+                Copy Previous Week
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Summary Card */}
-      {!isLoading && schedule && (
+      {!isLoading && (
         <WeekSummary shifts={shifts} staff={allStaff} />
       )}
 
@@ -499,13 +771,19 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
         </div>
       )}
 
-      {/* Shift Form Dialog */}
-      {schedule?.id && (
+      {/* Shift Form Dialog. The active schedule id is whichever
+          becomes available first: the synchronously-resolved
+          `pendingScheduleId` written by `openCreateDialog` after a
+          successful `ensureScheduleForCurrentWeek`, or the live
+          `schedule.id` once the read query refetches. Falling back to
+          the live id keeps edits-of-existing-shifts working without
+          needing to remember which schedule the dialog was opened for. */}
+      {(dialogState.pendingScheduleId || schedule?.id) && (
         <ShiftFormDialog
           mode={dialogState.mode}
           open={dialogState.open}
           onOpenChange={handleDialogOpenChange}
-          scheduleId={schedule.id}
+          scheduleId={dialogState.pendingScheduleId ?? schedule!.id}
           staffId={dialogState.staffId}
           date={dialogState.date}
           startTime={dialogState.startTime}
@@ -515,6 +793,18 @@ export function ScheduleGrid({ initialWeek }: ScheduleGridProps) {
             dialogState.mode === "edit" ? handleDeleteClick : undefined
           }
           allowStaffSelection={dialogState.allowStaffSelection}
+        />
+      )}
+
+      {/* Generate Schedule Dialog — opened from the empty-state buttons.
+          Only mounted once the schedule doc exists (ensured before open). */}
+      {schedule && (
+        <GenerateScheduleDialog
+          open={emptyStateGenerateOpen}
+          onOpenChange={setEmptyStateGenerateOpen}
+          schedule={schedule}
+          weekStart={currentWeek}
+          onAccept={handleEmptyStateGenerationAccept}
         />
       )}
 

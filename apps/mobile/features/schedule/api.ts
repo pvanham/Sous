@@ -1,5 +1,6 @@
 import type { ShiftDTO, StaffDTO } from "@sous/types";
 import { apiClient } from "@/lib/api-client";
+import { toIsoCalendarDate } from "@/lib/date";
 
 // ─────────────────────────────────────────────────────────────
 // Schedule tab — server-state access layer.
@@ -14,7 +15,8 @@ import { apiClient } from "@/lib/api-client";
 //     • Auth: Clerk JWT (Authorization: Bearer ...) — attached by the
 //       Axios interceptor in `lib/api-client.ts`.
 //     • `weekStart` is an ISO calendar date (YYYY-MM-DD) interpreted
-//       as midnight UTC. The server returns shifts whose `start`
+//       by the server as midnight in the location's IANA timezone
+//       (NOT midnight UTC). The server returns shifts whose `start`
 //       falls inside `[weekStart, weekStart + 7d)`. The caller's
 //       `staffId` is resolved server-side from the Clerk JWT — we
 //       never send a staffId from the client.
@@ -111,15 +113,4 @@ function reviveStaff(raw: SerializedStaff): StaffDTO {
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
   };
-}
-
-/**
- * Format a `Date` as a `YYYY-MM-DD` calendar date in UTC so the value
- * the mobile client sends matches the value the server interprets
- * (which also treats the date as UTC midnight). Using `toISOString`
- * keeps the cache key deterministic across devices regardless of the
- * device's local timezone.
- */
-function toIsoCalendarDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
 }

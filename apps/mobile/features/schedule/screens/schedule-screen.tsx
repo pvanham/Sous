@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   ScrollView,
@@ -7,13 +7,16 @@ import {
 } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-expo";
-import type { ShiftDTO } from "@sous/types";
+import type { ShiftDTO, TimeOffRequestDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
+import { useWeekStartsOn } from "@/features/auth/store";
+import { getWeekStart } from "@/lib/date";
 import { WeekNavigator } from "../components/week-navigator";
 import { DayRow } from "../components/day-row";
 import { RosterModal } from "../components/roster-modal";
 import { fetchWeekShifts, fetchShiftRoster } from "../api";
+import { fetchTimeOffForWeek } from "@/features/time-off/api";
 
 /**
  * Schedule tab screen.
@@ -37,9 +40,31 @@ import { fetchWeekShifts, fetchShiftRoster } from "../api";
  * sync after a drop / pickup.
  */
 export function ScheduleScreen() {
+  const weekStartsOn = useWeekStartsOn();
   const today = useMemo(() => startOfDay(new Date()), []);
-  const currentWeekStart = useMemo(() => getWeekStart(today), [today]);
+  const currentWeekStart = useMemo(
+    () => getWeekStart(today, weekStartsOn),
+    [today, weekStartsOn],
+  );
   const [weekStart, setWeekStart] = useState<Date>(currentWeekStart);
+
+  // Re-anchor the displayed week when the location's configured first
+  // day flips (e.g. owner just changed it on the web). We snap to the
+  // nearest anchor day on or before the currently viewed `weekStart` so
+  // the user keeps their place — at most a 6-day shift, never a full
+  // reset to "this week".
+  //
+  // Without this effect the `useState` initializer above captures the
+  // first-render anchor and never updates, so a stale Monday-based
+  // `weekStart` would survive even after the membership query refreshed
+  // and `weekStartsOn` flipped to Wednesday.
+  useEffect(() => {
+    setWeekStart((prev) => {
+      const expected = getWeekStart(prev, weekStartsOn);
+      return expected.getTime() === prev.getTime() ? prev : expected;
+    });
+  }, [weekStartsOn]);
+
   const [rosterShift, setRosterShift] = useState<ShiftDTO | null>(null);
   // `userId` namespaces the cache per Clerk identity so signing out
   // and back in as a different user never returns stale shifts.
@@ -62,6 +87,15 @@ export function ScheduleScreen() {
     enabled: rosterShift !== null && Boolean(userId),
   });
 
+  // Parallel query for the caller's approved + pending time off in the
+  // displayed window. Drives the "Off" pill overlay on `DayRow` so a
+  // staff member sees a planned absence before any shifts get pulled.
+  const timeOffQuery = useQuery({
+    queryKey: ["timeOff", userId, "week", weekStartIso],
+    queryFn: () => fetchTimeOffForWeek(weekStart),
+    enabled: Boolean(userId),
+  });
+
   const days = useMemo(() => buildWeek(weekStart), [weekStart]);
 
   const shiftsByDay = useMemo(() => {
@@ -82,6 +116,29 @@ export function ScheduleScreen() {
     }
     return map;
   }, [shiftsQuery.data]);
+
+  // Index time-off requests by each calendar day they touch so the
+  // DayRow can decide its overlay without doing the overlap math
+  // itself.
+  const timeOffByDay = useMemo(() => {
+    const map = new Map<string, TimeOffRequestDTO[]>();
+    for (const request of timeOffQuery.data ?? []) {
+      const start = startOfDay(new Date(request.startDate));
+      const end = startOfDay(new Date(request.endDate));
+      const cursor = new Date(start);
+      while (cursor.getTime() <= end.getTime()) {
+        const iso = toIsoDate(cursor);
+        const bucket = map.get(iso);
+        if (bucket) {
+          bucket.push(request);
+        } else {
+          map.set(iso, [request]);
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+    return map;
+  }, [timeOffQuery.data]);
 
   const summary = useMemo(() => {
     const shifts = shiftsQuery.data ?? [];
@@ -113,7 +170,8 @@ export function ScheduleScreen() {
 
   const handleRefresh = useCallback(() => {
     void shiftsQuery.refetch();
-  }, [shiftsQuery]);
+    void timeOffQuery.refetch();
+  }, [shiftsQuery, timeOffQuery]);
 
   const rosterLabel = rosterShift
     ? `${new Date(rosterShift.start).toLocaleDateString("en-US", {
@@ -175,6 +233,7 @@ export function ScheduleScreen() {
                 shifts={shiftsByDay.get(iso) ?? []}
                 isToday={iso === todayIso}
                 onShiftPress={handleShiftPress}
+                timeOff={timeOffByDay.get(iso) ?? []}
               />
             );
           })
@@ -225,14 +284,6 @@ function formatHours(hours: number): string {
   const rounded = Math.round(hours * 10) / 10;
   const display = Number.isInteger(rounded) ? `${rounded}` : rounded.toFixed(1);
   return `${display}h`;
-}
-
-/** Returns the most recent Sunday at midnight (local time). */
-function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay());
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function startOfDay(date: Date): Date {

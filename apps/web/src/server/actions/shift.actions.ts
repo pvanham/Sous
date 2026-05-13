@@ -4,11 +4,14 @@ import { auth } from "@clerk/nextjs/server";
 import {
   createShiftSchema,
   updateShiftSchema,
-  listShiftsByScheduleSchema,
   deleteShiftSchema,
 } from "@/lib/validations/shift.schema";
+import { scheduleWeekSchema } from "@sous/types/validations/schedule.schema";
 import { ShiftService } from "@/server/services/shift.service";
-import { ScheduleService } from "@/server/services/schedule.service";
+import {
+  ScheduleService,
+  assertWeekStartAligned,
+} from "@/server/services/schedule.service";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { NotificationEvents } from "@/server/services/notification-events";
@@ -278,12 +281,24 @@ export async function deleteShift(
 }
 
 /**
- * List all shifts for a schedule.
- * @param input - Object containing scheduleId
- * @returns ActionResponse containing array of ShiftDTOs
+ * List every shift at the caller's location whose `start` falls in the
+ * half-open `[weekStartDate, weekStartDate + 7d)` window, regardless of
+ * which Schedule document owns it.
+ *
+ * Backs the schedule grid and dashboard widget. After an owner changes
+ * `weekStartsOn`, the displayed week may include shifts that still live
+ * on a legacy Schedule doc with a different anchor; this action surfaces
+ * all of them so the manager never sees a falsely-empty week.
+ *
+ * `weekStartDate` is validated against the location's configured
+ * `weekStartsOn` so a stale URL with a misaligned date returns a
+ * readable error rather than slicing a non-canonical window.
+ *
+ * @param input - Object containing `weekStartDate: Date`
+ * @returns ActionResponse containing array of ShiftDTOs sorted by `start`
  */
-export async function listShiftsBySchedule(
-  input: unknown
+export async function listShiftsForLocationWeek(
+  input: unknown,
 ): Promise<ActionResponse<ShiftDTO[]>> {
   try {
     // 1. Auth check
@@ -292,23 +307,35 @@ export async function listShiftsBySchedule(
       return { success: false, error: "Unauthorized" };
     }
 
-    // 2. Zod validation
-    const parseResult = listShiftsByScheduleSchema.safeParse(input);
+    // 2. Zod validation (midnight-aligned date, same as scheduleWeekSchema)
+    const parseResult = scheduleWeekSchema.safeParse(input);
     if (!parseResult.success) {
       const errorMessage = parseResult.error.issues
         .map((e) => `${e.path.join(".")}: ${e.message}`)
         .join(", ");
       return { success: false, error: errorMessage };
     }
-    const { scheduleId } = parseResult.data;
+    const { weekStartDate } = parseResult.data;
 
-    // 3. Get location context (handles DB connection - for auth check)
-    await getLocationContext(userId);
+    // 3. Get location context (handles DB connection + tenancy)
+    const ctx = await getLocationContext(userId);
 
-    // 4. Service call
-    const shifts = await ShiftService.getBySchedule(scheduleId);
+    // 4. Enforce the location's configured anchor in the location's
+    //    timezone — single source of truth shared with the schedule
+    //    service write path.
+    await assertWeekStartAligned(ctx.orgId, ctx.locationId, weekStartDate);
 
-    // 5. Return response
+    // 5. Service call — half-open `[weekStart, weekStart + 7d)`.
+    const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const weekEnd = new Date(weekStartDate.getTime() + WEEK_MS);
+    const shifts = await ShiftService.getByLocationAndDateRange(
+      ctx.orgId,
+      ctx.locationId,
+      weekStartDate,
+      weekEnd,
+    );
+
+    // 6. Return response
     return { success: true, data: shifts };
   } catch (error) {
     const message =

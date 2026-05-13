@@ -17,12 +17,13 @@ import {
   copyWeekShifts,
   publishSchedule,
   checkManagerCoverage,
-  clearWeekShifts,
+  clearWeekShiftsForLocationWeek,
 } from "@/server/actions/schedule.actions";
 import type { ManagerCoverageGap } from "@/server/services/schedule.service";
 import { getPrevWeekStart } from "@/lib/utils/date";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
+import type { DayOfWeek } from "@sous/types";
 
 import { ScheduleStatusBadge } from "./ScheduleStatusBadge";
 import { ClearWeekDialog } from "./ClearWeekDialog";
@@ -35,19 +36,102 @@ const scheduleKeys = {
   all: ["schedules"] as const,
   week: (weekStart: string) =>
     [...scheduleKeys.all, "week", weekStart] as const,
+  effectiveStatus: (weekStart: string) =>
+    [...scheduleKeys.all, "effectiveStatus", weekStart] as const,
 };
 
 const shiftKeys = {
   all: ["shifts"] as const,
   bySchedule: (scheduleId: string) =>
     [...shiftKeys.all, "schedule", scheduleId] as const,
+  byWeek: (weekStartIso: string) =>
+    [...shiftKeys.all, "week", weekStartIso] as const,
 };
 
-interface ScheduleActionsProps {
+export interface ScheduleActionsProps {
   schedule: ScheduleDTO;
   shifts: ShiftDTO[];
   weekStart: Date;
+  weekStartsOn: DayOfWeek;
+  effectiveStatus: "PUBLISHED" | "DRAFT" | "EMPTY";
   onStatusChange: () => void;
+}
+
+interface ClearWeekActionProps {
+  weekStart: Date;
+  shiftCount: number;
+  onCleared?: () => void;
+  className?: string;
+}
+
+export function ClearWeekAction({
+  weekStart,
+  shiftCount,
+  onCleared,
+  className,
+}: ClearWeekActionProps) {
+  const queryClient = useQueryClient();
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
+
+  const clearMutation = useMutation({
+    mutationFn: async () => {
+      const result = await clearWeekShiftsForLocationWeek({
+        weekStartDate: weekStart,
+      });
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      return result.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Cleared ${data.shiftsDeleted} shifts`);
+      setClearDialogOpen(false);
+      queryClient.invalidateQueries({
+        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+      });
+      onCleared?.();
+    },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const isClearing = clearMutation.isPending;
+  const buttonClassName = [
+    "text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap",
+    className ?? "",
+  ]
+    .join(" ")
+    .trim();
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => setClearDialogOpen(true)}
+        disabled={isClearing || shiftCount === 0}
+        className={buttonClassName}
+      >
+        <Trash2 className="mr-2 h-4 w-4" />
+        Clear Week
+      </Button>
+
+      <ClearWeekDialog
+        open={clearDialogOpen}
+        onOpenChange={setClearDialogOpen}
+        onConfirm={() => clearMutation.mutate()}
+        isClearing={isClearing}
+        shiftCount={shiftCount}
+      />
+    </>
+  );
 }
 
 /**
@@ -58,11 +142,12 @@ export function ScheduleActions({
   schedule,
   shifts,
   weekStart,
+  weekStartsOn,
+  effectiveStatus,
   onStatusChange,
 }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
   const [copyMenuOpen, setCopyMenuOpen] = useState(false);
-  const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [healthDialogOpen, setHealthDialogOpen] = useState(false);
   const [managerWarnings, setManagerWarnings] = useState<ManagerCoverageGap[]>(
@@ -70,6 +155,10 @@ export function ScheduleActions({
   );
   const [warningDialogOpen, setWarningDialogOpen] = useState(false);
   const [isCheckingCoverage, setIsCheckingCoverage] = useState(false);
+  // Copy-week runs as a plain async handler (no useMutation) because it
+  // chains a couple of toasts + cache invalidations; this local boolean
+  // gates the copy menu button so double-clicks can't fire two copies.
+  const [isCopying, setIsCopying] = useState(false);
 
   // Publish mutation (called directly or after user confirms warnings)
   const publishMutation = useMutation({
@@ -87,6 +176,9 @@ export function ScheduleActions({
 
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
       });
       onStatusChange();
     },
@@ -144,6 +236,9 @@ export function ScheduleActions({
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
       });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+      });
       onStatusChange();
     },
     onError: (error: Error) => {
@@ -151,70 +246,20 @@ export function ScheduleActions({
     },
   });
 
-  // Copy from previous week mutation
-  const copyWeekMutation = useMutation({
-    mutationFn: async () => {
-      const prevWeekStart = getPrevWeekStart(weekStart);
-      const result = await copyWeekShifts({
-        sourceScheduleId: schedule.id,
-        targetWeekStart: weekStart,
-      });
-
-      // This copies FROM the previous week TO the current week
-      // We need to get the previous week's schedule first
-      // Let's adjust the logic: we want to copy from prev week to current week
-      return result;
-    },
-    onSuccess: (result) => {
-      if (!result.success) {
-        toast.error(result.error);
-        return;
-      }
-
-      const { shiftsCreated, shiftsSkipped } = result.data;
-      if (shiftsCreated === 0 && shiftsSkipped === 0) {
-        toast.info("No shifts found in previous week to copy");
-      } else if (shiftsSkipped > 0) {
-        toast.success(
-          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
-        );
-      } else {
-        toast.success(`Copied ${shiftsCreated} shifts`);
-      }
-
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
-      });
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
-
-  // Copy from previous week - need to get the previous week's schedule first
+  // Copy from previous week.
+  //
+  // The action now sources shifts by date range and creates the target
+  // Schedule on demand, so we no longer need a separate round-trip to
+  // resolve the source schedule's ObjectId — that prefetch was the
+  // exact step that landed on an empty Wed-anchored doc after a
+  // `weekStartsOn` flip and silently copied zero shifts.
   const handleCopyFromPreviousWeek = async () => {
     setCopyMenuOpen(false);
+    setIsCopying(true);
 
-    // Get the previous week's schedule ID by making a request
-    const prevWeekStart = getPrevWeekStart(weekStart);
-
-    // We need to call copyWeekShifts with the PREVIOUS week's schedule as source
-    // and CURRENT week as target
     try {
-      // First, we need the previous week's schedule
-      const { getOrCreateScheduleForWeek } =
-        await import("@/server/actions/schedule.actions");
-      const prevScheduleResult = await getOrCreateScheduleForWeek({
-        weekStartDate: prevWeekStart,
-      });
-
-      if (!prevScheduleResult.success) {
-        toast.error("Could not find previous week's schedule");
-        return;
-      }
-
       const result = await copyWeekShifts({
-        sourceScheduleId: prevScheduleResult.data.id,
+        sourceWeekStart: getPrevWeekStart(weekStart, weekStartsOn),
         targetWeekStart: weekStart,
       });
 
@@ -234,52 +279,47 @@ export function ScheduleActions({
         toast.success(`Copied ${shiftsCreated} shifts`);
       }
 
+      // Invalidate both the byWeek shift cache and the schedule meta so
+      // the grid picks up the freshly-created (or existing) target doc.
       queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
+        queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
       });
     } catch {
       toast.error("Failed to copy from previous week");
+    } finally {
+      setIsCopying(false);
     }
   };
-
-  // Clear week mutation
-  const clearMutation = useMutation({
-    mutationFn: async () => {
-      const result = await clearWeekShifts(schedule.id);
-      if (!result.success) {
-        throw new Error(result.error);
-      }
-      return result.data;
-    },
-    onSuccess: (data) => {
-      toast.success(`Cleared ${data.shiftsDeleted} shifts`);
-      setClearDialogOpen(false);
-      queryClient.invalidateQueries({
-        queryKey: shiftKeys.bySchedule(schedule.id),
-      });
-      onStatusChange();
-    },
-    onError: (error: Error) => {
-      toast.error(error.message);
-    },
-  });
 
   // Handle generation accept -- invalidate shift cache so grid reloads
   const handleGenerationAccept = () => {
     queryClient.invalidateQueries({
       queryKey: shiftKeys.bySchedule(schedule.id),
     });
+    queryClient.invalidateQueries({
+      queryKey: shiftKeys.byWeek(weekStart.toISOString()),
+    });
+    queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+    });
     onStatusChange();
   };
 
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
-  const isCopying = copyWeekMutation.isPending;
-  const isClearing = clearMutation.isPending;
+  const canUnpublish = schedule.status === "PUBLISHED";
+  const displayStatus =
+    effectiveStatus === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
 
   return (
     <div className="flex items-center gap-2 flex-nowrap">
-      <ScheduleStatusBadge status={schedule.status} />
+      <ScheduleStatusBadge status={displayStatus} />
 
       {/* Generate Schedule Button (AI) */}
       {schedule.status === "DRAFT" && (
@@ -307,11 +347,11 @@ export function ScheduleActions({
       </Button>
 
       {/* Publish/Unpublish Button */}
-      {schedule.status === "DRAFT" ? (
+      {!canUnpublish ? (
         <Button
           size="sm"
           onClick={handlePublishClick}
-          disabled={isPublishing || shifts.length === 0}
+          disabled={isPublishing || shifts.length === 0 || effectiveStatus === "PUBLISHED"}
           className="whitespace-nowrap"
         >
           {isPublishing ? (
@@ -339,16 +379,12 @@ export function ScheduleActions({
       )}
 
       {/* Clear Week Button — ml-auto pushes it (and Copy) to the far right */}
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => setClearDialogOpen(true)}
-        disabled={isClearing || shifts.length === 0}
-        className="ml-auto text-destructive hover:text-destructive hover:bg-destructive/10 whitespace-nowrap"
-      >
-        <Trash2 className="mr-2 h-4 w-4" />
-        Clear Week
-      </Button>
+      <ClearWeekAction
+        weekStart={weekStart}
+        shiftCount={shifts.length}
+        onCleared={onStatusChange}
+        className="ml-auto"
+      />
 
       {/* Copy Week Dropdown */}
       <DropdownMenu open={copyMenuOpen} onOpenChange={setCopyMenuOpen}>
@@ -369,15 +405,6 @@ export function ScheduleActions({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* Clear Week Confirmation Dialog */}
-      <ClearWeekDialog
-        open={clearDialogOpen}
-        onOpenChange={setClearDialogOpen}
-        onConfirm={() => clearMutation.mutate()}
-        isClearing={isClearing}
-        shiftCount={shifts.length}
-      />
 
       {/* Manager Coverage Warning Dialog */}
       <ManagerCoverageWarningDialog

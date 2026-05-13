@@ -85,6 +85,7 @@ export function MFASetupDialog({ open, onOpenChange }: MFASetupDialogProps) {
   useEffect(() => {
     if (!open || !user) return;
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCreating(true);
     setError(null);
     user
@@ -110,6 +111,7 @@ export function MFASetupDialog({ open, onOpenChange }: MFASetupDialogProps) {
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       reset();
     }
   }, [open, reset]);
@@ -242,7 +244,7 @@ export function MFASetupDialog({ open, onOpenChange }: MFASetupDialogProps) {
                   onClick={() => setStep("verify")}
                   disabled={creating || !totp?.uri}
                 >
-                  I've added it — continue
+                  I&apos;ve added it — continue
                 </Button>
               </DialogFooter>
             </div>

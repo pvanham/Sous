@@ -126,9 +126,9 @@ export const StaffService = {
    * Bulk-fetch staff records by ID for a tenant.
    *
    * Used by the mobile shift-roster route to materialize a
-   * collection of `staffId`s (returned by `ShiftService.getRoster`)
-   * into full `StaffDTO`s in a single round-trip rather than one
-   * `getById` per staff member.
+   * collection of `staffId`s (returned by
+   * `ShiftService.getRosterByOverlap`) into full `StaffDTO`s in a
+   * single round-trip rather than one `getById` per staff member.
    *
    * Invalid / non-`ObjectId` strings are filtered out silently so a
    * single bad input doesn't crash the whole query. Results are
@@ -283,16 +283,6 @@ export const StaffService = {
 
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
-
-    // Get existing staff emails for this location
-    const existingEmails = new Set(
-      (
-        await Staff.find(
-          { orgId: orgObjectId, locationId: locationObjectId },
-          { email: 1 }
-        ).lean()
-      ).map((s) => s.email)
-    );
 
     const bulkOps = staffData.map((staff) => {
       // Cast skills to match Mongoose schema expectations

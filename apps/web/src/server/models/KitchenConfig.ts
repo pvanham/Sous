@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
+import { DAYS_OF_WEEK, type DayOfWeek } from "@sous/types/validations/kitchen-config.schema";
 
 // Operating hours interface for a single day
 export interface IOperatingHours {
@@ -46,6 +47,7 @@ export interface IKitchenConfig {
   minTimeOffAdvanceDays: number;
   aiSettings: IAISettings;
   scheduleGenerationSettings: IScheduleGenerationSettings;
+  weekStartsOn: DayOfWeek;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -139,6 +141,12 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
         monthlyGenerationLimit: 50,
         subscriptionTier: "free",
       }),
+    },
+    weekStartsOn: {
+      type: String,
+      enum: DAYS_OF_WEEK,
+      default: "monday",
+      required: true,
     },
     scheduleGenerationSettings: {
       type: new Schema<IScheduleGenerationSettings>(

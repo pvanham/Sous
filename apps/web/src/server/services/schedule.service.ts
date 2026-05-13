@@ -1,15 +1,20 @@
 import { Types } from "mongoose";
 import Schedule from "@/server/models/Schedule";
+import Shift from "@/server/models/Shift";
 import { ScheduleDTO, ScheduleStatus, toScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
 import {
+  getWeekStart,
   getWeekDays,
-  getDayKey,
   getStoreHoursForDay,
   formatFullDayLabel,
 } from "@/lib/utils/date";
+import { dayOfWeekToIndex } from "@sous/types";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { LocationService } from "@/server/services/location.service";
+import { getDayOfWeekInTz } from "@/lib/utils/timezone";
 
 /**
  * Manager coverage gap info for a specific day.
@@ -18,6 +23,8 @@ export interface ManagerCoverageGap {
   day: string; // Human-readable day label
   gaps: { start: string; end: string }[]; // Array of gap periods
 }
+
+export type EffectiveScheduleStatus = "PUBLISHED" | "DRAFT" | "EMPTY";
 
 /**
  * Check if a staff member has a manager role.
@@ -159,15 +166,49 @@ function findManagerGapsForDay(
 }
 
 /**
+ * Throws if the supplied date does not fall on the location's
+ * configured `weekStartsOn` calendar day, interpreted in the location's
+ * timezone. Used by every code path that reads or writes a Schedule
+ * by week-start so a stale URL or AI-supplied date can never silently
+ * land on a non-canonical week.
+ *
+ * Exported so the manager-facing actions (which run their own
+ * week-bounded queries before touching the Schedule collection) can
+ * share the same TZ-aware check — otherwise a server in UTC and a
+ * developer's laptop in PDT would disagree on what "Monday" means.
+ */
+export async function assertWeekStartAligned(
+  orgId: string,
+  locationId: string,
+  weekStartDate: Date,
+): Promise<void> {
+  const [weekStartsOn, location] = await Promise.all([
+    KitchenConfigService.getWeekStartsOn(orgId, locationId),
+    LocationService.getById(locationId),
+  ]);
+  const tz = location?.timezone ?? "UTC";
+  const expectedDayIndex = dayOfWeekToIndex(weekStartsOn);
+  if (getDayOfWeekInTz(weekStartDate, tz) !== expectedDayIndex) {
+    throw new Error(
+      `Schedule week must start on ${weekStartsOn} for this location.`,
+    );
+  }
+}
+
+/**
  * ScheduleService - Service layer for Schedule operations.
  * This is the ONLY place that imports and interacts with the Schedule Mongoose model.
  */
 export const ScheduleService = {
   /**
-   * Get or create a schedule for a specific week.
+   * Get or create a schedule for a specific week. Write path — call
+   * from a flow that intends to mutate (add shift, generate, copy,
+   * publish from a clean slate). Read paths should use `getByWeek`
+   * so they don't pollute the collection with empty draft docs.
    * @param orgId - Organization ID
    * @param locationId - Location ID
-   * @param weekStartDate - Monday of the week
+   * @param weekStartDate - The week-start date (must align to the location's
+   *                       configured `weekStartsOn`; default Monday)
    * @returns ScheduleDTO
    */
   async getOrCreateForWeek(
@@ -178,6 +219,11 @@ export const ScheduleService = {
     // Normalize to start of day
     const normalizedDate = new Date(weekStartDate);
     normalizedDate.setHours(0, 0, 0, 0);
+
+    // Enforce the per-location week-start alignment. The Mongoose model
+    // dropped its hardcoded "Monday" validator (alignment is now per
+    // location), so this is the single source of truth before insertion.
+    await assertWeekStartAligned(orgId, locationId, normalizedDate);
 
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
@@ -205,10 +251,15 @@ export const ScheduleService = {
   },
 
   /**
-   * Get a schedule by week start date.
+   * Get a schedule by week start date. Read-only — never side-effect-
+   * creates a new doc. Validates the date against the location's
+   * `weekStartsOn` so a misaligned input returns a clear error rather
+   * than silently returning `null` (and tricking the caller into a
+   * "no schedule yet" branch they'd never get out of).
+   *
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)
-   * @param weekStartDate - Monday of the week
+   * @param weekStartDate - The week-start date (must align to weekStartsOn)
    * @returns ScheduleDTO or null if not found
    */
   async getByWeek(
@@ -219,6 +270,8 @@ export const ScheduleService = {
     // Normalize to start of day
     const normalizedDate = new Date(weekStartDate);
     normalizedDate.setHours(0, 0, 0, 0);
+
+    await assertWeekStartAligned(orgId, locationId, normalizedDate);
 
     const doc = await Schedule.findOne({
       orgId: new Types.ObjectId(orgId),
@@ -248,13 +301,12 @@ export const ScheduleService = {
       .lean();
 
     if (!doc) {
-      const monday = new Date();
-      const dayIndex = monday.getDay(); // 0=Sun ... 6=Sat
-      const daysSinceMonday = (dayIndex + 6) % 7;
-      monday.setDate(monday.getDate() - daysSinceMonday);
-      monday.setHours(0, 0, 0, 0);
-
-      return this.getOrCreateForWeek(orgId, locationId, monday);
+      const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+        orgId,
+        locationId,
+      );
+      const weekStart = getWeekStart(new Date(), weekStartsOn);
+      return this.getOrCreateForWeek(orgId, locationId, weekStart);
     }
     return toScheduleDTO(doc);
   },
@@ -358,6 +410,71 @@ export const ScheduleService = {
   },
 
   /**
+   * Delete a schedule only when it has no shifts.
+   * @returns true when deleted, false when skipped/not found.
+   */
+  async deleteIfEmpty(
+    orgId: string,
+    locationId: string,
+    scheduleId: string,
+  ): Promise<boolean> {
+    const shiftCount = await Shift.countDocuments({
+      scheduleId: new Types.ObjectId(scheduleId),
+    });
+    if (shiftCount > 0) return false;
+
+    const result = await Schedule.deleteOne({
+      _id: scheduleId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
+    return result.deletedCount > 0;
+  },
+
+  /**
+   * List schedules for a location by week-start date range.
+   */
+  async listByWeekStartRange(
+    orgId: string,
+    locationId: string,
+    start: Date,
+    end: Date,
+  ): Promise<ScheduleDTO[]> {
+    const docs = await Schedule.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      weekStartDate: { $gte: start, $lt: end },
+    }).lean();
+    return docs.map(toScheduleDTO);
+  },
+
+  /**
+   * Resolve the aggregate status for the visible location-week window.
+   */
+  async getEffectiveStatusForWeek(
+    orgId: string,
+    locationId: string,
+    weekStart: Date,
+    weekEnd: Date,
+  ): Promise<EffectiveScheduleStatus> {
+    const scheduleIds = await Shift.distinct("scheduleId", {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      start: { $gte: weekStart, $lt: weekEnd },
+    });
+
+    if (scheduleIds.length === 0) return "EMPTY";
+
+    const schedules = await Schedule.find(
+      { _id: { $in: scheduleIds } },
+      { status: 1 },
+    ).lean();
+    return schedules.every((s) => s.status === "PUBLISHED")
+      ? "PUBLISHED"
+      : "DRAFT";
+  },
+
+  /**
    * Delete all schedules for a location (for testing/cleanup).
    * @param orgId - Organization ID
    * @param locationId - Location ID
@@ -399,7 +516,7 @@ export const ScheduleService = {
     config: KitchenConfigDTO,
   ): ManagerCoverageGap[] {
     const warnings: ManagerCoverageGap[] = [];
-    const weekDays = getWeekDays(weekStartDate);
+    const weekDays = getWeekDays(weekStartDate, config.weekStartsOn);
 
     for (const day of weekDays) {
       // Get store hours for this day (without buffer)

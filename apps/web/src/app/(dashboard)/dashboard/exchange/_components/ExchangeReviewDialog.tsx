@@ -54,6 +54,7 @@ export function ExchangeReviewDialog({
 
   useEffect(() => {
     if (row) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotes(row.managerNotes ?? "");
     } else {
       setNotes("");

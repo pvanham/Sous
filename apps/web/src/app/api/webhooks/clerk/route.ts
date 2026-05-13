@@ -57,7 +57,6 @@ export async function POST(req: Request) {
     });
   }
 
-  const { id } = evt.data;
   const eventType = evt.type;
 
   await dbConnect();
@@ -119,7 +118,7 @@ export async function POST(req: Request) {
           name: defaultName,
         });
 
-        const newLocation = await LocationService.create(newOrg.id, {
+        await LocationService.create(newOrg.id, {
           name: "Main Kitchen",
           timezone: "America/New_York",
         });

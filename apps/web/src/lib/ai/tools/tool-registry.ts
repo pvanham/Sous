@@ -42,7 +42,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "get_shift_roster",
     description:
-      "Get a paginated list of shifts for a schedule. Omit staffId to get ALL staff shifts; provide a specific staffId to filter to one person. Omit dayOfWeek to get all days; provide 0-6 (Mon-Sun) to filter to one day. Requires a scheduleId from resolve_schedule. Falls back to most recent schedule if omitted, which may not be the week the user intended. Never pass literal strings like 'all' for staffId — omit the field instead.",
+      "Get a paginated list of shifts for a schedule. Omit staffId to get ALL staff shifts; provide a specific staffId to filter to one person. Omit dayOfWeek to get all days; provide 0-6 (where 0 is the location's configured first day of the week, default Monday) to filter to one day. Requires a scheduleId from resolve_schedule. Falls back to most recent schedule if omitted, which may not be the week the user intended. Never pass literal strings like 'all' for staffId — omit the field instead.",
     requiredPermission: "shift:read",
     parameters: getShiftRosterParamsSchema,
     execute: executeGetShiftRoster,
@@ -76,7 +76,7 @@ const TOOL_REGISTRY: AIToolDefinition[] = [
   defineTool({
     name: "propose_schedule_generation",
     description:
-      "Propose generating a new weekly schedule using the constraint solver. Only weekStartDate (ISO Monday date) is required. " +
+      "Propose generating a new weekly schedule using the constraint solver. Only weekStartDate (ISO date for the location's configured first day of the week, default Monday) is required. " +
       "templateScheduleId and additionalInstructions are fully optional — omit them unless the user explicitly provides them. " +
       "Do NOT ask the user for a template ID; just call the tool with weekStartDate. Returns a proposal for user confirmation.",
     requiredPermission: "schedule:generate",

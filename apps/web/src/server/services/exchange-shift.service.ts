@@ -619,8 +619,11 @@ export const ExchangeShiftService = {
     const swapStart = new Date(row.start);
     const swapEnd = new Date(row.end);
     const swapDuration = calculateShiftDuration(swapStart, swapEnd);
-    const weekStart = getWeekStart(swapStart);
-    const weekEnd = getWeekEnd(swapStart);
+    // The kitchen config was already fetched above for clopen settings;
+    // reuse it for the location's week-start anchor (default Monday).
+    const weekStartsOn = kitchen?.weekStartsOn ?? "monday";
+    const weekStart = getWeekStart(swapStart, weekStartsOn);
+    const weekEnd = getWeekEnd(swapStart, weekStartsOn);
 
     const clopenThresholdHours =
       kitchen?.scheduleGenerationSettings?.clopeningWarningThresholdHours ??

@@ -216,6 +216,7 @@ export function useAIChat({
 
   const stableConversationId = useRef(conversationId ?? generateObjectId());
   const viewportRef = useRef(viewportContext);
+  // eslint-disable-next-line react-hooks/refs
   viewportRef.current = viewportContext;
   const pollAbortRef = useRef<AbortController | null>(null);
 
@@ -227,6 +228,7 @@ export function useAIChat({
 
   const transport = useMemo(
     () =>
+      // eslint-disable-next-line react-hooks/refs
       new DefaultChatTransport({
         api: "/api/ai/chat",
         prepareSendMessagesRequest({ messages, body }) {
@@ -302,6 +304,7 @@ export function useAIChat({
         const isExpiredByTTL =
           !overriddenStatus &&
           createdAt &&
+          // eslint-disable-next-line react-hooks/purity
           Date.now() - new Date(createdAt).getTime() >
             PROPOSAL_TTL_MINUTES * 60_000;
 

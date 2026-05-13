@@ -47,6 +47,7 @@ export function DeleteAccountDialog({
 
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setConfirmation("");
       setSubmitting(false);
       setError(null);
@@ -101,7 +102,7 @@ export function DeleteAccountDialog({
           </DialogTitle>
           <DialogDescription>
             This permanently deletes your Sous account and Clerk identity.
-            If you're the sole owner of your organization, your kitchen,
+            If you&apos;re the sole owner of your organization, your kitchen,
             locations, and team memberships are removed with it.
           </DialogDescription>
         </DialogHeader>

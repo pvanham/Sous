@@ -1,5 +1,6 @@
 import type { TimeOffRequestDTO } from "@sous/types";
 import { apiClient } from "@/lib/api-client";
+import { toIsoCalendarDate } from "@/lib/date";
 import type { CreateTimeOffRequestInput } from "@/types";
 
 // ─────────────────────────────────────────────────────────────
@@ -51,6 +52,25 @@ import type { CreateTimeOffRequestInput } from "@/types";
 export async function fetchTimeOffRequests(): Promise<TimeOffRequestDTO[]> {
   const response = await apiClient.get<SerializedTimeOffRequest[]>(
     "/time-off",
+  );
+  return response.data.map(reviveTimeOffRequest);
+}
+
+/**
+ * Returns the caller's approved + pending time-off requests overlapping
+ * the 7-day window beginning at `weekStart`. Backs the schedule tab's
+ * "off day" overlay: a day with an overlapping request renders an
+ * approved or pending pill instead of (or alongside) the muted "Off"
+ * text. Same `YYYY-MM-DD` calendar-date convention as `fetchWeekShifts`
+ * so the two TanStack query keys stay aligned.
+ */
+export async function fetchTimeOffForWeek(
+  weekStart: Date,
+): Promise<TimeOffRequestDTO[]> {
+  const weekStartIso = toIsoCalendarDate(weekStart);
+  const response = await apiClient.get<SerializedTimeOffRequest[]>(
+    "/time-off",
+    { params: { weekStart: weekStartIso } },
   );
   return response.data.map(reviveTimeOffRequest);
 }

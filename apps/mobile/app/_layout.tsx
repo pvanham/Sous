@@ -104,7 +104,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     queryFn: () => fetchMembership(getToken),
     enabled: Boolean(isLoaded && isSignedIn),
     retry: 1,
-    staleTime: 5 * 60 * 1000,
+    // Inherit the global 30s staleTime so a `weekStartsOn` change made
+    // on the web propagates within roughly half a minute (or instantly
+    // on app foreground via `focusManager` in `lib/query-focus.ts`).
+    // Membership rows themselves rarely change; the small extra refetch
+    // is acceptable and keeps the schedule screen from holding a stale
+    // anchor for up to five minutes after an owner flips the setting.
   });
 
   // Push registration is identity-scoped, not navigation-scoped:

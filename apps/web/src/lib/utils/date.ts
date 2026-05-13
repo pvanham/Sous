@@ -5,43 +5,51 @@ import {
   subWeeks,
   format,
   eachDayOfInterval,
-  isMonday,
   getDay,
 } from "date-fns";
+import { dayOfWeekToIndex, type DayOfWeek } from "@sous/types";
 
 /**
- * Get the start of the week (Monday) for a given date.
+ * Get the start of the week for a given date, anchored to the location's
+ * configured `weekStartsOn`. Callers must always pass the value resolved
+ * from `KitchenConfig` (see `KitchenConfigService.getWeekStartsOn`) — the
+ * helper takes no default so we can't accidentally regress to a hardcoded
+ * Monday assumption.
+ *
  * @param date - Any date
- * @returns Monday 00:00:00 of that week
+ * @param weekStartsOn - The location's configured first day of the week
+ * @returns Anchor day at 00:00:00 of that week
  */
-export function getWeekStart(date: Date): Date {
-  return startOfWeek(date, { weekStartsOn: 1 }); // 1 = Monday
+export function getWeekStart(date: Date, weekStartsOn: DayOfWeek): Date {
+  return startOfWeek(date, { weekStartsOn: dayOfWeekToIndex(weekStartsOn) });
 }
 
 /**
- * Get the end of the week (Sunday) for a given date.
+ * Get the end of the week (one ms before the next anchor day) for a given date.
  * @param date - Any date
- * @returns Sunday 23:59:59.999 of that week
+ * @param weekStartsOn - The location's configured first day of the week
+ * @returns 23:59:59.999 on the day before the next anchor
  */
-export function getWeekEnd(date: Date): Date {
-  return endOfWeek(date, { weekStartsOn: 1 });
+export function getWeekEnd(date: Date, weekStartsOn: DayOfWeek): Date {
+  return endOfWeek(date, { weekStartsOn: dayOfWeekToIndex(weekStartsOn) });
 }
 
 /**
- * Get an array of all 7 days in a week starting from Monday.
- * @param weekStart - The Monday of the week
- * @returns Array of 7 Date objects (Mon-Sun)
+ * Get an array of all 7 days in a week starting from the location's anchor.
+ * @param weekStart - The week-start date (already aligned to `weekStartsOn`)
+ * @param weekStartsOn - The location's configured first day of the week
+ * @returns Array of 7 Date objects in chronological order from the anchor
  */
-export function getWeekDays(weekStart: Date): Date[] {
+export function getWeekDays(weekStart: Date, weekStartsOn: DayOfWeek): Date[] {
   return eachDayOfInterval({
     start: weekStart,
-    end: endOfWeek(weekStart, { weekStartsOn: 1 }),
+    end: endOfWeek(weekStart, { weekStartsOn: dayOfWeekToIndex(weekStartsOn) }),
   });
 }
 
 /**
  * Format a week start date as a human-readable label.
- * @param weekStart - The Monday of the week
+ * @param weekStart - The week-start date
  * @returns String like "Week of January 20, 2026"
  */
 export function formatWeekLabel(weekStart: Date): string {
@@ -86,30 +94,23 @@ export function formatTimeRange(start: Date, end: Date): string {
 }
 
 /**
- * Get the next week's Monday.
+ * Get the next week's anchor date for the location.
  * @param date - Any date
- * @returns Monday of the next week
+ * @param weekStartsOn - The location's configured first day of the week
+ * @returns Anchor day of the next week
  */
-export function getNextWeekStart(date: Date): Date {
-  return addWeeks(getWeekStart(date), 1);
+export function getNextWeekStart(date: Date, weekStartsOn: DayOfWeek): Date {
+  return addWeeks(getWeekStart(date, weekStartsOn), 1);
 }
 
 /**
- * Get the previous week's Monday.
+ * Get the previous week's anchor date for the location.
  * @param date - Any date
- * @returns Monday of the previous week
+ * @param weekStartsOn - The location's configured first day of the week
+ * @returns Anchor day of the previous week
  */
-export function getPrevWeekStart(date: Date): Date {
-  return subWeeks(getWeekStart(date), 1);
-}
-
-/**
- * Check if a date is a Monday.
- * @param date - Any date
- * @returns true if the date is a Monday
- */
-export function checkIsMonday(date: Date): boolean {
-  return isMonday(date);
+export function getPrevWeekStart(date: Date, weekStartsOn: DayOfWeek): Date {
+  return subWeeks(getWeekStart(date, weekStartsOn), 1);
 }
 
 /**

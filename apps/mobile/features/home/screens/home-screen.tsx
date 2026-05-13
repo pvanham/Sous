@@ -10,6 +10,8 @@ import { useQuery } from "@tanstack/react-query";
 import type { ShiftDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
+import { useWeekStartsOn } from "@/features/auth/store";
+import { getWeekStart } from "@/lib/date";
 import { GreetingHeader } from "../components/greeting-header";
 import { NextShiftCard } from "../components/next-shift-card";
 import { WeekStatsCard } from "../components/week-stats-card";
@@ -33,8 +35,12 @@ import { fetchNextShift, fetchAnnouncements, fetchWeekShifts } from "../api";
 export function HomeScreen() {
   const { user } = useUser();
   const { userId } = useAuth();
+  const weekStartsOn = useWeekStartsOn();
 
-  const currentWeekStart = useMemo(() => getWeekStart(new Date()), []);
+  const currentWeekStart = useMemo(
+    () => getWeekStart(new Date(), weekStartsOn),
+    [weekStartsOn],
+  );
   const weekStartIso = useMemo(
     () => currentWeekStart.toISOString().slice(0, 10),
     [currentWeekStart],
@@ -173,13 +179,4 @@ function NextShiftSection({ loading, error, shift }: NextShiftSectionProps) {
   }
 
   return <NextShiftCard shift={shift} />;
-}
-
-/** Returns the most recent Sunday at midnight in local time — matches
- * the Schedule tab's week convention so cache keys stay canonical. */
-function getWeekStart(date: Date): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() - d.getDay());
-  d.setHours(0, 0, 0, 0);
-  return d;
 }

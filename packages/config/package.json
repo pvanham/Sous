@@ -8,6 +8,9 @@
   "exports": {
     "./tailwind-preset": "./tailwind-preset.ts"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3"

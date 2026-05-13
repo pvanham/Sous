@@ -6,6 +6,7 @@ import type {
   ScheduleGenerationSettingsInput,
 } from "@/lib/validations/kitchen-config.schema";
 import { KitchenConfigDTO, toKitchenConfigDTO } from "@/types/kitchen-config";
+import type { DayOfWeek } from "@sous/types";
 
 /**
  * KitchenConfigService - Service layer for KitchenConfig operations.
@@ -60,6 +61,7 @@ export const KitchenConfigService = {
       managerRoles: (data.managerRoles ?? []).filter((mr) => filteredRoles.includes(mr)),
       operatingHours: data.operatingHours,
       minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
+      weekStartsOn: data.weekStartsOn,
     };
 
     // Include aiSettings if provided, using defaults for missing values
@@ -141,6 +143,28 @@ export const KitchenConfigService = {
     }
 
     return toKitchenConfigDTO(doc);
+  },
+
+  /**
+   * Resolve only the `weekStartsOn` field for a location. Cheap, used by
+   * every code path that needs to compute a week boundary (date helpers,
+   * schedule service, AI orchestrator, async-task service) without
+   * pulling the full kitchen config DTO. Defaults to "monday" when the
+   * config row does not exist (e.g. brand-new tenant before initial
+   * setup) so callers never have to special-case the missing-row state.
+   */
+  async getWeekStartsOn(
+    orgId: string,
+    locationId: string,
+  ): Promise<DayOfWeek> {
+    const doc = await KitchenConfig.findOne(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { weekStartsOn: 1 },
+    ).lean();
+    return (doc?.weekStartsOn as DayOfWeek | undefined) ?? "monday";
   },
 
   /**

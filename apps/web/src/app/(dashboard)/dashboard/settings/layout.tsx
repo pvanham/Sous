@@ -1,7 +1,7 @@
 import { SettingsNav } from "./_components/SettingsNav";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
-import type { MemberRole } from "@/server/models/OrganizationMember";
+
 
 export default async function SettingsLayout({
   children,

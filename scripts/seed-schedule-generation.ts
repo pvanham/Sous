@@ -67,6 +67,7 @@ import { ShiftService } from "../apps/web/src/server/services/shift.service";
 import { LaborRequirementService } from "../apps/web/src/server/services/labor-requirement.service";
 import { AIUsageService } from "../apps/web/src/server/services/ai-usage.service";
 import type { KitchenConfigInput } from "../apps/web/src/lib/validations/kitchen-config.schema";
+import { dayOfWeekToIndex } from "@sous/types";
 import { startOfWeek, addWeeks } from "date-fns";
 import mongoose from "mongoose";
 import { createClerkClient } from "@clerk/backend";
@@ -96,22 +97,6 @@ const STAFF_PASSWORD =
 // addresses.
 //
 // See: https://clerk.com/docs/testing/test-emails-and-phones
-
-/**
- * Compute the target test week: the upcoming Monday from today.
- * If today IS a Monday, use next Monday so we always get a future week.
- */
-function getTargetTestWeek(): Date {
-  const now = new Date();
-  let monday = startOfWeek(now, { weekStartsOn: 1 });
-  if (now >= monday) {
-    monday = addWeeks(monday, 1);
-  }
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
-
-const TEST_WEEK_START = getTargetTestWeek();
 
 // ============================================================================
 // Kitchen Configuration
@@ -150,7 +135,26 @@ const KITCHEN_CONFIG: KitchenConfigInput = {
     monthlyGenerationLimit: 100,
     subscriptionTier: "pro",
   },
+  weekStartsOn: "monday",
 };
+
+/**
+ * Compute the target test week: the upcoming week-start anchor from
+ * today. If today IS the anchor day, use next week so we always get a
+ * future window. The anchor is sourced from the seeded kitchen config.
+ */
+function getTargetTestWeek(): Date {
+  const now = new Date();
+  const anchor = dayOfWeekToIndex(KITCHEN_CONFIG.weekStartsOn);
+  let weekStart = startOfWeek(now, { weekStartsOn: anchor });
+  if (now >= weekStart) {
+    weekStart = addWeeks(weekStart, 1);
+  }
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+const TEST_WEEK_START = getTargetTestWeek();
 
 // ============================================================================
 // Staff Definitions (28 total: 26 active + 2 inactive)
