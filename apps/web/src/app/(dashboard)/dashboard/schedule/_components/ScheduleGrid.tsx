@@ -1,14 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { CalendarDays, Loader2, Sparkles, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import {
   getOrCreateScheduleForWeek,
   getScheduleByWeek,
   getEffectiveStatusForWeek,
+  copyWeekShifts,
 } from "@/server/actions/schedule.actions";
 import {
   listShiftsForLocationWeek,
@@ -29,6 +30,7 @@ import type { DayOfWeek } from "@sous/types";
 
 import { ScheduleHeader } from "./ScheduleHeader";
 import { ClearWeekAction, ScheduleActions } from "./ScheduleActions";
+import { GenerateScheduleDialog } from "./GenerateScheduleDialog";
 import { WeekSummary } from "./WeekSummary";
 import { StationLegend } from "./StationLegend";
 import { ViewSwitcher, type ScheduleViewType } from "./ViewSwitcher";
@@ -132,6 +134,16 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     open: false,
     shift: null,
   });
+
+  // State for the empty-state "Generate Schedule" flow.
+  // Because GenerateScheduleDialog requires a schedule doc, we first
+  // ensure one exists, set pendingGenerate=true, then open the dialog
+  // once the query refetches and schedule becomes non-null.
+  const [pendingGenerate, setPendingGenerate] = useState(false);
+  const [emptyStateGenerateOpen, setEmptyStateGenerateOpen] = useState(false);
+
+  // State for the empty-state "Copy Previous Week" flow.
+  const [isCopyingFromPrev, setIsCopyingFromPrev] = useState(false);
 
   // Convert week start to ISO string for query key
   const weekStartKey = currentWeek.toISOString();
@@ -440,6 +452,71 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     }
   };
 
+  // Once the schedule doc materialises after ensureScheduleForCurrentWeek,
+  // open the generate dialog that was deferred from the empty state.
+  useEffect(() => {
+    if (pendingGenerate && schedule) {
+      setEmptyStateGenerateOpen(true);
+      setPendingGenerate(false);
+    }
+  }, [pendingGenerate, schedule]);
+
+  // Open the generate dialog from the empty state: create the schedule
+  // doc first, then let the useEffect above open the dialog once the
+  // query refetches and schedule is non-null.
+  const handleGenerateFromEmpty = async () => {
+    const scheduleId = await ensureScheduleForCurrentWeek();
+    if (!scheduleId) return;
+    setPendingGenerate(true);
+  };
+
+  // Copy the previous week's shifts into the current (empty) week.
+  // copyWeekShifts creates the target Schedule doc on demand, so no
+  // pre-existing doc is required.
+  const handleCopyFromPreviousWeekEmpty = async () => {
+    setIsCopyingFromPrev(true);
+    try {
+      const result = await copyWeekShifts({
+        sourceWeekStart: getPrevWeekStart(currentWeek, weekStartsOn),
+        targetWeekStart: currentWeek,
+      });
+
+      if (!result.success) {
+        toast.error(result.error);
+        return;
+      }
+
+      const { shiftsCreated, shiftsSkipped } = result.data;
+      if (shiftsCreated === 0 && shiftsSkipped === 0) {
+        toast.info("No shifts found in previous week to copy");
+      } else if (shiftsSkipped > 0) {
+        toast.success(
+          `Copied ${shiftsCreated} shifts (${shiftsSkipped} skipped due to conflicts)`,
+        );
+      } else {
+        toast.success(`Copied ${shiftsCreated} shifts`);
+      }
+
+      queryClient.invalidateQueries({ queryKey: shiftKeys.byWeek(weekStartKey) });
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.week(weekStartKey) });
+      queryClient.invalidateQueries({ queryKey: scheduleKeys.effectiveStatus(weekStartKey) });
+    } catch {
+      toast.error("Failed to copy from previous week");
+    } finally {
+      setIsCopyingFromPrev(false);
+    }
+  };
+
+  // Invalidate caches after the grid-level generate dialog accepts shifts.
+  const handleEmptyStateGenerationAccept = () => {
+    if (schedule?.id) {
+      queryClient.invalidateQueries({ queryKey: shiftKeys.bySchedule(schedule.id) });
+    }
+    queryClient.invalidateQueries({ queryKey: shiftKeys.byWeek(weekStartKey) });
+    queryClient.invalidateQueries({ queryKey: scheduleKeys.effectiveStatus(weekStartKey) });
+    handleStatusChange();
+  };
+
   // Loading state
   const isLoading = isScheduleLoading || isStaffLoading;
 
@@ -579,19 +656,52 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
 
       {/* Empty-state hint when no Schedule doc exists yet for this week. */}
       {!isLoading && !schedule && (
-        <div className="flex items-center justify-between rounded-xl border border-dashed border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          <span>
-            No schedule for this week yet.{" "}
-            {shifts.length > 0
-              ? "Shown shifts belong to a previous schedule. Add a shift to start a new one."
-              : "Add a shift to create one."}
-          </span>
-          {shifts.length > 0 && (
-            <ClearWeekAction
-              weekStart={currentWeek}
-              shiftCount={shifts.length}
-              onCleared={handleStatusChange}
-            />
+        <div className="flex flex-col gap-3 rounded-xl border border-dashed border-border/60 bg-muted/30 px-4 py-4 text-sm text-muted-foreground">
+          <div className="flex items-center justify-between gap-4">
+            <span>
+              No schedule for this week yet.{" "}
+              {shifts.length > 0
+                ? "Shown shifts belong to a previous schedule. Add a shift to start a new one."
+                : "Add a shift to create one, or jump-start with one of the options below."}
+            </span>
+            {shifts.length > 0 && (
+              <ClearWeekAction
+                weekStart={currentWeek}
+                shiftCount={shifts.length}
+                onCleared={handleStatusChange}
+              />
+            )}
+          </div>
+          {shifts.length === 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                onClick={() => void handleGenerateFromEmpty()}
+                disabled={pendingGenerate}
+                className="ai-gradient border-0 text-white shadow-md whitespace-nowrap"
+              >
+                {pendingGenerate ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                Generate Schedule
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void handleCopyFromPreviousWeekEmpty()}
+                disabled={isCopyingFromPrev}
+                className="whitespace-nowrap"
+              >
+                {isCopyingFromPrev ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Copy className="mr-2 h-4 w-4" />
+                )}
+                Copy Previous Week
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -683,6 +793,18 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
             dialogState.mode === "edit" ? handleDeleteClick : undefined
           }
           allowStaffSelection={dialogState.allowStaffSelection}
+        />
+      )}
+
+      {/* Generate Schedule Dialog — opened from the empty-state buttons.
+          Only mounted once the schedule doc exists (ensured before open). */}
+      {schedule && (
+        <GenerateScheduleDialog
+          open={emptyStateGenerateOpen}
+          onOpenChange={setEmptyStateGenerateOpen}
+          schedule={schedule}
+          weekStart={currentWeek}
+          onAccept={handleEmptyStateGenerationAccept}
         />
       )}
 
