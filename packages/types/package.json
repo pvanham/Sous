@@ -9,6 +9,9 @@
     ".": "./src/index.ts",
     "./validations/*": "./src/validations/*"
   },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "date-fns": "^4.1.0",
     "zod": "^4.3.5"

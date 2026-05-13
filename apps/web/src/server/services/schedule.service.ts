@@ -1,5 +1,6 @@
 import { Types } from "mongoose";
 import Schedule from "@/server/models/Schedule";
+import Shift from "@/server/models/Shift";
 import { ScheduleDTO, ScheduleStatus, toScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
@@ -22,6 +23,8 @@ export interface ManagerCoverageGap {
   day: string; // Human-readable day label
   gaps: { start: string; end: string }[]; // Array of gap periods
 }
+
+export type EffectiveScheduleStatus = "PUBLISHED" | "DRAFT" | "EMPTY";
 
 /**
  * Check if a staff member has a manager role.
@@ -404,6 +407,71 @@ export const ScheduleService = {
       locationId: new Types.ObjectId(locationId),
     });
     return result.deletedCount > 0;
+  },
+
+  /**
+   * Delete a schedule only when it has no shifts.
+   * @returns true when deleted, false when skipped/not found.
+   */
+  async deleteIfEmpty(
+    orgId: string,
+    locationId: string,
+    scheduleId: string,
+  ): Promise<boolean> {
+    const shiftCount = await Shift.countDocuments({
+      scheduleId: new Types.ObjectId(scheduleId),
+    });
+    if (shiftCount > 0) return false;
+
+    const result = await Schedule.deleteOne({
+      _id: scheduleId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    });
+    return result.deletedCount > 0;
+  },
+
+  /**
+   * List schedules for a location by week-start date range.
+   */
+  async listByWeekStartRange(
+    orgId: string,
+    locationId: string,
+    start: Date,
+    end: Date,
+  ): Promise<ScheduleDTO[]> {
+    const docs = await Schedule.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      weekStartDate: { $gte: start, $lt: end },
+    }).lean();
+    return docs.map(toScheduleDTO);
+  },
+
+  /**
+   * Resolve the aggregate status for the visible location-week window.
+   */
+  async getEffectiveStatusForWeek(
+    orgId: string,
+    locationId: string,
+    weekStart: Date,
+    weekEnd: Date,
+  ): Promise<EffectiveScheduleStatus> {
+    const scheduleIds = await Shift.distinct("scheduleId", {
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      start: { $gte: weekStart, $lt: weekEnd },
+    });
+
+    if (scheduleIds.length === 0) return "EMPTY";
+
+    const schedules = await Schedule.find(
+      { _id: { $in: scheduleIds } },
+      { status: 1 },
+    ).lean();
+    return schedules.every((s) => s.status === "PUBLISHED")
+      ? "PUBLISHED"
+      : "DRAFT";
   },
 
   /**

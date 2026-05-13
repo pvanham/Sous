@@ -162,6 +162,12 @@ Manager-facing reads (the web grid + dashboard, via
 deliberately surface both DRAFT and PUBLISHED so an in-progress week
 is editable before publish.
 
+Publishing from the manager grid is a consolidating write: before the
+target Schedule flips to `PUBLISHED`, every shift whose `start` is in
+that visible 7-day window is reassigned to the target schedule. This
+prevents duplicate published windows after a `weekStartsOn` flip and
+keeps web/mobile in sync on which shifts are canonical for that week.
+
 #### Optical-window queries
 
 Every "what's on this week" read sources shifts by date range against
@@ -172,6 +178,11 @@ scoped query would hide one of them. Helpers that follow this rule:
 `getByLocationAndDateRange`, `getByStaffAndWeek`, `getRosterByOverlap`.
 `getBySchedule` remains a write-path internal — adding a new read
 consumer requires this same optical-window pattern.
+
+The schedule badge on the web grid also follows this optical-window
+rule: "effective status" is derived from the owner schedules of visible
+shifts in the week window, not from a single schedule doc's stored
+status.
 
 ### Shift (`Shift.ts`)
 

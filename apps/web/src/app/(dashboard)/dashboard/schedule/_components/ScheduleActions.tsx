@@ -36,6 +36,8 @@ const scheduleKeys = {
   all: ["schedules"] as const,
   week: (weekStart: string) =>
     [...scheduleKeys.all, "week", weekStart] as const,
+  effectiveStatus: (weekStart: string) =>
+    [...scheduleKeys.all, "effectiveStatus", weekStart] as const,
 };
 
 const shiftKeys = {
@@ -46,11 +48,12 @@ const shiftKeys = {
     [...shiftKeys.all, "week", weekStartIso] as const,
 };
 
-interface ScheduleActionsProps {
+export interface ScheduleActionsProps {
   schedule: ScheduleDTO;
   shifts: ShiftDTO[];
   weekStart: Date;
   weekStartsOn: DayOfWeek;
+  effectiveStatus: "PUBLISHED" | "DRAFT" | "EMPTY";
   onStatusChange: () => void;
 }
 
@@ -88,6 +91,9 @@ export function ClearWeekAction({
       });
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
       });
       onCleared?.();
     },
@@ -137,6 +143,7 @@ export function ScheduleActions({
   shifts,
   weekStart,
   weekStartsOn,
+  effectiveStatus,
   onStatusChange,
 }: ScheduleActionsProps) {
   const queryClient = useQueryClient();
@@ -169,6 +176,9 @@ export function ScheduleActions({
 
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
       });
       onStatusChange();
     },
@@ -226,6 +236,9 @@ export function ScheduleActions({
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
       });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+      });
       onStatusChange();
     },
     onError: (error: Error) => {
@@ -274,6 +287,9 @@ export function ScheduleActions({
       queryClient.invalidateQueries({
         queryKey: scheduleKeys.week(weekStart.toISOString()),
       });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+      });
     } catch {
       toast.error("Failed to copy from previous week");
     } finally {
@@ -289,15 +305,21 @@ export function ScheduleActions({
     queryClient.invalidateQueries({
       queryKey: shiftKeys.byWeek(weekStart.toISOString()),
     });
+    queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStart.toISOString()),
+    });
     onStatusChange();
   };
 
   const isPublishing =
     publishMutation.isPending || unpublishMutation.isPending || isCheckingCoverage;
+  const canUnpublish = schedule.status === "PUBLISHED";
+  const displayStatus =
+    effectiveStatus === "PUBLISHED" ? "PUBLISHED" : "DRAFT";
 
   return (
     <div className="flex items-center gap-2 flex-nowrap">
-      <ScheduleStatusBadge status={schedule.status} />
+      <ScheduleStatusBadge status={displayStatus} />
 
       {/* Generate Schedule Button (AI) */}
       {schedule.status === "DRAFT" && (
@@ -325,11 +347,11 @@ export function ScheduleActions({
       </Button>
 
       {/* Publish/Unpublish Button */}
-      {schedule.status === "DRAFT" ? (
+      {!canUnpublish ? (
         <Button
           size="sm"
           onClick={handlePublishClick}
-          disabled={isPublishing || shifts.length === 0}
+          disabled={isPublishing || shifts.length === 0 || effectiveStatus === "PUBLISHED"}
           className="whitespace-nowrap"
         >
           {isPublishing ? (

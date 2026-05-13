@@ -22,7 +22,8 @@
     "seed:favorable": "tsx ../../scripts/seed-favorable-schedule.ts",
     "cleanup:favorable": "tsx ../../scripts/seed-favorable-schedule.ts --cleanup",
     "test:phase-4": "tsx scripts/test-phase4.ts",
-    "test:shi-10": "tsx ../../scripts/test-shi-10.ts"
+    "test:shi-10": "tsx ../../scripts/test-shi-10.ts",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [],
   "author": "",

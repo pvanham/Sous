@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import {
   getOrCreateScheduleForWeek,
   getScheduleByWeek,
+  getEffectiveStatusForWeek,
 } from "@/server/actions/schedule.actions";
 import {
   listShiftsForLocationWeek,
@@ -45,6 +46,8 @@ const scheduleKeys = {
   all: ["schedules"] as const,
   week: (weekStart: string) =>
     [...scheduleKeys.all, "week", weekStart] as const,
+  effectiveStatus: (weekStart: string) =>
+    [...scheduleKeys.all, "effectiveStatus", weekStart] as const,
 };
 
 const shiftKeys = {
@@ -184,6 +187,19 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     },
   });
 
+  const { data: effectiveStatus = "EMPTY" } = useQuery<
+    "PUBLISHED" | "DRAFT" | "EMPTY"
+  >({
+    queryKey: scheduleKeys.effectiveStatus(weekStartKey),
+    queryFn: async () => {
+      const result = await getEffectiveStatusForWeek({
+        weekStartDate: currentWeek,
+      });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+  });
+
   // Query: Approved + pending time-off for the displayed window. Drives
   // the `TimeOffPill` overlay in each view sub-component so a manager
   // can spot conflicts before assigning a shift. We always include
@@ -224,6 +240,9 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     }
     await queryClient.invalidateQueries({
       queryKey: scheduleKeys.week(weekStartKey),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStartKey),
     });
     return result.data.id;
   };
@@ -278,6 +297,9 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     onSettled: () => {
       queryClient.invalidateQueries({
         queryKey: shiftKeys.byWeek(weekStartKey),
+      });
+      queryClient.invalidateQueries({
+        queryKey: scheduleKeys.effectiveStatus(weekStartKey),
       });
     },
     onSuccess: (response) => {
@@ -407,6 +429,9 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     });
     queryClient.invalidateQueries({
       queryKey: shiftKeys.byWeek(weekStartKey),
+    });
+    queryClient.invalidateQueries({
+      queryKey: scheduleKeys.effectiveStatus(weekStartKey),
     });
     if (schedule?.id) {
       queryClient.invalidateQueries({
@@ -546,6 +571,7 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
             shifts={shifts}
             weekStart={currentWeek}
             weekStartsOn={weekStartsOn}
+            effectiveStatus={effectiveStatus}
             onStatusChange={handleStatusChange}
           />
         </div>

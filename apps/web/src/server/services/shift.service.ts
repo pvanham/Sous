@@ -6,14 +6,13 @@ import { Types } from "mongoose";
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
- * Resolve the set of Schedule ids whose `weekStartDate` could plausibly
- * own a shift inside `[weekStart, weekEnd)`, optionally filtered by
- * status. The +/- 7d padding covers the edge case where a shift on a
- * flipped `weekStartsOn` boundary belongs to a Schedule doc whose own
- * `weekStartDate` falls outside the display window. Returned ids are
- * fed into the shift query as `{ scheduleId: { $in: [...] } }` so
- * Mongo can intersect with the existing `(orgId, locationId, start)`
- * index.
+ * Resolve the set of published Schedule ids that own at least one shift
+ * that **overlaps** `[weekStart, weekEnd)` — i.e. shift.start < weekEnd
+ * AND shift.end > weekStart. Overlap semantics are required so that
+ * getRosterByOverlap can surface shifts that began before the query
+ * window (e.g. a 10am shift when the roster window opens at 11am).
+ * getByStaffAndWeek further filters to start-in-window, so the broader
+ * candidateIds pool does not corrupt those results.
  */
 async function resolvePublishedScheduleIds(
   orgId: string,
@@ -21,26 +20,29 @@ async function resolvePublishedScheduleIds(
   weekStart: Date,
   weekEnd: Date,
 ): Promise<Types.ObjectId[]> {
+  const candidateScheduleIds = await Shift.distinct("scheduleId", {
+    orgId: new Types.ObjectId(orgId),
+    locationId: new Types.ObjectId(locationId),
+    start: { $lt: weekEnd },
+    end: { $gt: weekStart },
+  });
+  if (candidateScheduleIds.length === 0) return [];
+
   const docs = await Schedule.find(
     {
-      orgId: new Types.ObjectId(orgId),
-      locationId: new Types.ObjectId(locationId),
+      _id: { $in: candidateScheduleIds },
       status: "PUBLISHED",
-      weekStartDate: {
-        $gte: new Date(weekStart.getTime() - WEEK_MS),
-        $lt: new Date(weekEnd.getTime() + WEEK_MS),
-      },
     },
     { _id: 1 },
-  ).lean();
+  )
+    .sort({ _id: 1 })
+    .limit(64)
+    .lean();
   return docs.map((d) => d._id as Types.ObjectId);
 }
 
 /**
- * "From now into the future" variant for the next-shift lookup, where
- * we don't know how far ahead the staff member's next shift sits. The
- * 7d lower padding catches a parent Schedule whose `weekStartDate` is
- * earlier in the current week.
+ * "From now into the future" variant for the next-shift lookup.
  */
 async function resolvePublishedScheduleIdsFrom(
   orgId: string,
@@ -52,10 +54,13 @@ async function resolvePublishedScheduleIdsFrom(
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
       status: "PUBLISHED",
-      weekStartDate: { $gte: new Date(from.getTime() - WEEK_MS) },
+      weekStartDate: { $gt: new Date(from.getTime() - WEEK_MS) },
     },
     { _id: 1 },
-  ).lean();
+  )
+    .sort({ weekStartDate: 1 })
+    .limit(64)
+    .lean();
   return docs.map((d) => d._id as Types.ObjectId);
 }
 
@@ -546,6 +551,29 @@ export const ShiftService = {
       start: { $gte: weekStart, $lt: weekEnd },
     });
     return result.deletedCount;
+  },
+
+  /**
+   * Reassign every shift in a location-week window to the target schedule.
+   * Returns how many rows were moved.
+   */
+  async reassignShiftsForLocationWeek(
+    orgId: string,
+    locationId: string,
+    weekStart: Date,
+    weekEnd: Date,
+    targetScheduleId: string,
+  ): Promise<number> {
+    const result = await Shift.updateMany(
+      {
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        start: { $gte: weekStart, $lt: weekEnd },
+        scheduleId: { $ne: new Types.ObjectId(targetScheduleId) },
+      },
+      { $set: { scheduleId: new Types.ObjectId(targetScheduleId) } },
+    );
+    return result.modifiedCount;
   },
 
   /**

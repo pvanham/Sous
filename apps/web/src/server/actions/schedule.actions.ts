@@ -9,6 +9,7 @@ import {
 } from "@/lib/validations/schedule.schema";
 import {
   ScheduleService,
+  type EffectiveScheduleStatus,
   ManagerCoverageGap,
   assertWeekStartAligned,
 } from "@/server/services/schedule.service";
@@ -19,6 +20,8 @@ import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Publish result with optional manager coverage warnings.
@@ -114,6 +117,48 @@ export async function getScheduleByWeek(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to get schedule";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Get the effective status for all visible shifts in a location week.
+ */
+export async function getEffectiveStatusForWeek(
+  input: unknown,
+): Promise<ActionResponse<EffectiveScheduleStatus>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const parseResult = scheduleWeekSchema.safeParse(input);
+    if (!parseResult.success) {
+      const errorMessage = parseResult.error.issues
+        .map((e) => `${e.path.join(".")}: ${e.message}`)
+        .join(", ");
+      return { success: false, error: errorMessage };
+    }
+    const { weekStartDate } = parseResult.data;
+
+    const ctx = await getLocationContext(userId);
+    await assertWeekStartAligned(ctx.orgId, ctx.locationId, weekStartDate);
+
+    const weekEnd = new Date(weekStartDate.getTime() + WEEK_MS);
+    const status = await ScheduleService.getEffectiveStatusForWeek(
+      ctx.orgId,
+      ctx.locationId,
+      weekStartDate,
+      weekEnd,
+    );
+
+    return { success: true, data: status };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to get effective schedule status";
     return { success: false, error: message };
   }
 }
@@ -397,8 +442,16 @@ export async function publishSchedule(
       return { success: false, error: "Schedule is already published" };
     }
 
-    // 5. Verify at least one shift exists
-    const shifts = await ShiftService.getBySchedule(scheduleId);
+    const weekStart = new Date(schedule.weekStartDate);
+    const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
+
+    // 5. Verify at least one shift exists in the visible week window
+    const shifts = await ShiftService.getByLocationAndDateRange(
+      ctx.orgId,
+      ctx.locationId,
+      weekStart,
+      weekEnd,
+    );
     if (shifts.length === 0) {
       return {
         success: false,
@@ -407,7 +460,38 @@ export async function publishSchedule(
       };
     }
 
-    // 6. Check for manager coverage gaps
+    // 6. Reassign visible week shifts to the schedule being published.
+    await ShiftService.reassignShiftsForLocationWeek(
+      ctx.orgId,
+      ctx.locationId,
+      weekStart,
+      weekEnd,
+      schedule.id,
+    );
+
+    // 7. Sweep now-empty legacy schedules near this window.
+    const sweepStart = new Date(weekStart.getTime() - WEEK_MS);
+    const sweepEnd = new Date(weekEnd.getTime() + WEEK_MS);
+    const nearbySchedules = await ScheduleService.listByWeekStartRange(
+      ctx.orgId,
+      ctx.locationId,
+      sweepStart,
+      sweepEnd,
+    );
+
+    for (const nearby of nearbySchedules) {
+      if (nearby.id === schedule.id) continue;
+      await ScheduleService.deleteIfEmpty(ctx.orgId, ctx.locationId, nearby.id);
+    }
+
+    // 8. Re-read shifts after consolidation and check manager coverage gaps.
+    const consolidatedShifts = await ShiftService.getByLocationAndDateRange(
+      ctx.orgId,
+      ctx.locationId,
+      weekStart,
+      weekEnd,
+    );
+
     let managerWarnings: ManagerCoverageGap[] = [];
     const [staff, config] = await Promise.all([
       StaffService.list(ctx.orgId, ctx.locationId),
@@ -416,14 +500,14 @@ export async function publishSchedule(
 
     if (config) {
       managerWarnings = ScheduleService.validateManagerCoverage(
-        new Date(schedule.weekStartDate),
-        shifts,
+        weekStart,
+        consolidatedShifts,
         staff,
         config,
       );
     }
 
-    // 7. Update status to PUBLISHED
+    // 9. Update status to PUBLISHED
     const updatedSchedule = await ScheduleService.updateStatus(
       ctx.orgId,
       ctx.locationId,
@@ -434,7 +518,7 @@ export async function publishSchedule(
       return { success: false, error: "Failed to update schedule status" };
     }
 
-    // 8. Fire-and-forget notifications. The dispatcher never throws,
+    // 10. Fire-and-forget notifications. The dispatcher never throws,
     // so wrap each emission in `void` and let the action return.
     void NotificationEvents.schedulePublished({
       schedule: updatedSchedule,
@@ -458,7 +542,7 @@ export async function publishSchedule(
       });
     }
 
-    // 9. Return response with warnings
+    // 11. Return response with warnings
     return {
       success: true,
       data: {
@@ -503,8 +587,15 @@ export async function checkManagerCoverage(
     }
 
     // 4. Get shifts, staff, and config
+    const weekStart = new Date(schedule.weekStartDate);
+    const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
     const [shifts, staff, config] = await Promise.all([
-      ShiftService.getBySchedule(scheduleId),
+      ShiftService.getByLocationAndDateRange(
+        ctx.orgId,
+        ctx.locationId,
+        weekStart,
+        weekEnd,
+      ),
       StaffService.list(ctx.orgId, ctx.locationId),
       KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
     ]);
@@ -513,7 +604,7 @@ export async function checkManagerCoverage(
     let warnings: ManagerCoverageGap[] = [];
     if (config) {
       warnings = ScheduleService.validateManagerCoverage(
-        new Date(schedule.weekStartDate),
+        weekStart,
         shifts,
         staff,
         config,
