@@ -8,7 +8,10 @@ import { useEffect } from "react";
 import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
-import { createAnnouncement } from "@/server/actions/announcement.actions";
+import {
+  createAnnouncement,
+  updateAnnouncement,
+} from "@/server/actions/announcement.actions";
 import {
   createAnnouncementSchema,
   type CreateAnnouncementInput,
@@ -39,16 +42,20 @@ import { PublishWindowFields } from "./PublishWindowFields";
 import { RichTextEditorPlaceholder } from "./RichTextEditorPlaceholder";
 import { TagInput } from "./TagInput";
 
-/**
- * Phase 3 — Announcement Composer
- * TODO(Phase 4): Replace /dashboard redirect with /dashboard/announcements.
- */
+export type AnnouncementComposerMode =
+  | { kind: "create" }
+  | { kind: "edit"; announcementId: string };
+
 type AnnouncementComposerProps = {
+  mode: AnnouncementComposerMode;
+  initialValues?: Partial<CreateAnnouncementInput>;
   initialAvailableRoles: string[];
   initialManagerRoles: string[];
 };
 
 export function AnnouncementComposer({
+  mode,
+  initialValues,
   initialAvailableRoles,
   initialManagerRoles,
 }: AnnouncementComposerProps) {
@@ -58,21 +65,38 @@ export function AnnouncementComposer({
     resolver: zodResolver(
       createAnnouncementSchema
     ) as Resolver<CreateAnnouncementInput>,
-    defaultValues: composerDefaultValues(),
+    defaultValues: {
+      ...composerDefaultValues(),
+      ...initialValues,
+    },
     mode: "onBlur",
   });
 
-  const createMutation = useMutation({
+  const upsertMutation = useMutation({
     mutationFn: async (values: CreateAnnouncementInput) => {
-      const result = await createAnnouncement(values);
+      if (mode.kind === "create") {
+        const result = await createAnnouncement(values);
+        if (!result.success) {
+          throw new Error(result.error || "Failed to create announcement");
+        }
+        return result.data;
+      }
+
+      const result = await updateAnnouncement({
+        ...values,
+        announcementId: mode.announcementId,
+      });
       if (!result.success) {
-        throw new Error(result.error || "Failed to create announcement");
+        throw new Error(result.error || "Failed to update announcement");
       }
       return result.data;
     },
     onSuccess: () => {
-      toast.success("Announcement created");
-      router.push("/dashboard");
+      toast.success(
+        mode.kind === "create" ? "Announcement created" : "Announcement updated"
+      );
+      router.push("/dashboard/announcements");
+      router.refresh();
     },
     onError: (error: Error) => {
       toast.error(error.message);
@@ -80,7 +104,7 @@ export function AnnouncementComposer({
   });
 
   const onSubmit = (values: CreateAnnouncementInput) => {
-    createMutation.mutate(values);
+    upsertMutation.mutate(values);
   };
 
   useEffect(() => {
@@ -127,7 +151,7 @@ export function AnnouncementComposer({
                         {...field}
                         placeholder="e.g. Friday dinner rush prep update"
                         maxLength={120}
-                        disabled={createMutation.isPending}
+                        disabled={upsertMutation.isPending}
                       />
                     </FormControl>
                     <FormMessage />
@@ -146,7 +170,7 @@ export function AnnouncementComposer({
                         value={field.value}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
-                        disabled={createMutation.isPending}
+                        disabled={upsertMutation.isPending}
                       />
                     </FormControl>
                     <FormMessage />
@@ -164,7 +188,7 @@ export function AnnouncementComposer({
                       <TagInput
                         value={field.value ?? []}
                         onChange={field.onChange}
-                        disabled={createMutation.isPending}
+                        disabled={upsertMutation.isPending}
                       />
                     </FormControl>
                     <FormMessage />
@@ -182,7 +206,7 @@ export function AnnouncementComposer({
                       <AttachmentDropzone
                         value={field.value ?? []}
                         onChange={field.onChange}
-                        disabled={createMutation.isPending}
+                        disabled={upsertMutation.isPending}
                       />
                     </FormControl>
                     <FormMessage />
@@ -212,7 +236,7 @@ export function AnnouncementComposer({
                       <PriorityToggle
                         value={field.value}
                         onChange={field.onChange}
-                        disabled={createMutation.isPending}
+                        disabled={upsertMutation.isPending}
                       />
                     </FormControl>
                     <FormMessage />
@@ -222,7 +246,7 @@ export function AnnouncementComposer({
 
               <PublishWindowFields
                 control={form.control}
-                disabled={createMutation.isPending}
+                disabled={upsertMutation.isPending}
               />
             </CardContent>
           </Card>
@@ -236,7 +260,7 @@ export function AnnouncementComposer({
                   <AudienceSelector
                     value={field.value ?? []}
                     onChange={field.onChange}
-                    disabled={createMutation.isPending}
+                    disabled={upsertMutation.isPending}
                     initialAvailableRoles={initialAvailableRoles}
                     initialManagerRoles={initialManagerRoles}
                   />
@@ -253,15 +277,21 @@ export function AnnouncementComposer({
                   type="button"
                   variant="outline"
                   onClick={() => router.back()}
-                  disabled={createMutation.isPending}
+                  disabled={upsertMutation.isPending}
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createMutation.isPending || !hasValidAudience}>
-                  {createMutation.isPending && (
+                <Button type="submit" disabled={upsertMutation.isPending || !hasValidAudience}>
+                  {upsertMutation.isPending && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}
-                  {createMutation.isPending ? "Saving..." : "Save announcement"}
+                  {upsertMutation.isPending
+                    ? mode.kind === "create"
+                      ? "Saving..."
+                      : "Updating..."
+                    : mode.kind === "create"
+                      ? "Save announcement"
+                      : "Update announcement"}
                 </Button>
               </div>
             </CardContent>

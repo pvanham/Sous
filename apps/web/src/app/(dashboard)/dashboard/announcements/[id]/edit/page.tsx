@@ -1,37 +1,26 @@
-import { Megaphone } from "lucide-react";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
+import { Megaphone } from "lucide-react";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { getAnnouncementById } from "@/server/actions/announcement.actions";
-import { AnnouncementComposer } from "../_components/AnnouncementComposer";
+import { AnnouncementComposer } from "../../_components/AnnouncementComposer";
 import type { CreateAnnouncementInput } from "@/lib/validations/announcement.schema";
 
-/**
- * Phase 3 — Announcement Composer access guard + audience bootstrap.
- */
-type CreateAnnouncementPageProps = {
-  searchParams?: Promise<{ from?: string }>;
+type EditAnnouncementPageProps = {
+  params: Promise<{ id: string }>;
 };
 
-function buildDuplicateInitialValues(
+function toComposerInitialValues(
   source: CreateAnnouncementInput
 ): Partial<CreateAnnouncementInput> {
-  const titleSuffix = " (Copy)";
-  const title =
-    source.title.length + titleSuffix.length <= 120
-      ? `${source.title}${titleSuffix}`
-      : source.title;
-
-  return {
-    ...source,
-    title,
-  };
+  return { ...source };
 }
 
-export default async function CreateAnnouncementPage({
-  searchParams,
-}: CreateAnnouncementPageProps) {
+export default async function EditAnnouncementPage({
+  params,
+}: EditAnnouncementPageProps) {
+  const { id } = await params;
   const { userId } = await auth();
   if (!userId) return null;
 
@@ -40,31 +29,19 @@ export default async function CreateAnnouncementPage({
     redirect("/dashboard");
   }
 
-  const configResult = await getKitchenConfig();
+  const [announcementResult, configResult] = await Promise.all([
+    getAnnouncementById(id),
+    getKitchenConfig(),
+  ]);
+  if (!announcementResult.success) {
+    notFound();
+  }
+
+  const announcement = announcementResult.data;
   const availableRoles =
     configResult.success && configResult.data ? configResult.data.roles : [];
   const managerRoles =
     configResult.success && configResult.data ? configResult.data.managerRoles : [];
-
-  let initialValues: Partial<CreateAnnouncementInput> | undefined;
-  const params = await searchParams;
-  const duplicateSourceId = params?.from;
-  if (duplicateSourceId) {
-    const source = await getAnnouncementById(duplicateSourceId);
-    if (source.success) {
-      initialValues = buildDuplicateInitialValues({
-        title: source.data.title,
-        body: source.data.body,
-        priority: source.data.priority,
-        targetAudience: source.data.targetAudience,
-        tags: source.data.tags,
-        publishDate: source.data.publishDate,
-        expirationDate: source.data.expirationDate,
-        attachments: source.data.attachments,
-        requiresAcknowledgment: source.data.requiresAcknowledgment,
-      });
-    }
-  }
 
   return (
     <div className="space-y-6">
@@ -76,18 +53,28 @@ export default async function CreateAnnouncementPage({
           </div>
           <div>
             <h1 className="bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-2xl font-bold tracking-tight text-transparent">
-              New Announcement
+              Edit Announcement
             </h1>
             <p className="text-sm text-muted-foreground">
-              Draft and publish a staff announcement for your location.
+              Update title, audience, timing, and attachments.
             </p>
           </div>
         </div>
       </div>
 
       <AnnouncementComposer
-        mode={{ kind: "create" }}
-        initialValues={initialValues}
+        mode={{ kind: "edit", announcementId: announcement.id }}
+        initialValues={toComposerInitialValues({
+          title: announcement.title,
+          body: announcement.body,
+          priority: announcement.priority,
+          targetAudience: announcement.targetAudience,
+          tags: announcement.tags,
+          publishDate: announcement.publishDate,
+          expirationDate: announcement.expirationDate,
+          attachments: announcement.attachments,
+          requiresAcknowledgment: announcement.requiresAcknowledgment,
+        })}
         initialAvailableRoles={availableRoles}
         initialManagerRoles={managerRoles}
       />

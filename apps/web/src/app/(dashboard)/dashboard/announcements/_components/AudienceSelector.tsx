@@ -7,7 +7,13 @@ import { useQuery } from "@tanstack/react-query";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { decodeAudience, encodeAudience } from "@/lib/announcement/audience";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ANNOUNCEMENT_AUDIENCE_TOKENS } from "@sous/types";
@@ -50,7 +56,8 @@ export function AudienceSelector({
 
   const selection = useMemo(() => decodeAudience(value), [value]);
   const managerRoleSet = useMemo(() => new Set(managerRoles), [managerRoles]);
-  const hasNoConfiguredAudience = availableRoles.length === 0 && managerRoles.length === 0;
+  const hasNoConfiguredAudience =
+    availableRoles.length === 0 && managerRoles.length === 0;
 
   const syncSelection = (patch: Partial<ReturnType<typeof decodeAudience>>) => {
     onChange(encodeAudience({ ...selection, ...patch }));
@@ -96,7 +103,11 @@ export function AudienceSelector({
                 onChange([ANNOUNCEMENT_AUDIENCE_TOKENS.everyone]);
                 return;
               }
-              syncSelection({ includeEveryone: false, includeManagers: false, specificRoles: [] });
+              syncSelection({
+                includeEveryone: false,
+                includeManagers: false,
+                specificRoles: [],
+              });
             }}
           />
         </div>

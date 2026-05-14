@@ -28,6 +28,7 @@ import type { MemberRole } from "@/server/models/OrganizationMember";
 // - 4-tier priority enum (`urgent|high|normal|low`)
 // - `authorClerkUserId`
 // - `Global` audience sentinel (Phase 3 replaces it with `@everyone`)
+// - org-wide read paths that skip `getLocationContext` scoping
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -311,6 +312,131 @@ export async function deleteAnnouncement(
     console.error("deleteAnnouncement error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to delete announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * List announcements bucketed by lifecycle for the manager dashboard.
+ */
+export async function listAnnouncementsByLifecycle(): Promise<
+  ActionResponse<
+    Record<"draft" | "scheduled" | "active" | "expired", AnnouncementDTO[]>
+  >
+> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    const ctx = await getLocationContext(userId);
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can view announcement management",
+      };
+    }
+
+    const data = await AnnouncementService.listByLifecycle(
+      ctx.orgId,
+      ctx.locationId
+    );
+    return { success: true, data };
+  } catch (error) {
+    console.error("listAnnouncementsByLifecycle error:", error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to list announcement lifecycle buckets";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Fetch one announcement for manager edit/duplicate flows.
+ */
+export async function getAnnouncementById(
+  id: string
+): Promise<ActionResponse<AnnouncementDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!id || typeof id !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can view announcement details",
+      };
+    }
+
+    const data = await AnnouncementService.getById(ctx.orgId, ctx.locationId, id);
+    if (!data) {
+      return { success: false, error: "Announcement not found" };
+    }
+    return { success: true, data };
+  } catch (error) {
+    console.error("getAnnouncementById error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Force-expire an announcement by setting expirationDate to now.
+ */
+export async function forceExpireAnnouncement(
+  id: string
+): Promise<ActionResponse<AnnouncementDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!id || typeof id !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can force-expire announcements",
+      };
+    }
+
+    const existing = await AnnouncementService.getById(ctx.orgId, ctx.locationId, id);
+    if (!existing) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    const now = new Date();
+    if (
+      existing.expirationDate !== null &&
+      existing.expirationDate.getTime() <= now.getTime()
+    ) {
+      return { success: false, error: "Announcement is already expired" };
+    }
+
+    const updated = await AnnouncementService.update(ctx.orgId, ctx.locationId, {
+      announcementId: id,
+      expirationDate: now,
+    });
+
+    if (!updated) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    return { success: true, data: updated };
+  } catch (error) {
+    console.error("forceExpireAnnouncement error:", error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to force-expire announcement";
     return { success: false, error: message };
   }
 }
