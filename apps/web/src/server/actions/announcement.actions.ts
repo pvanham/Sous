@@ -8,6 +8,8 @@ import {
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { validateAudienceEntriesWithRoleSet } from "@/lib/announcement/audience";
 import { NotificationEvents } from "@/server/services/notification-events";
+import { AnnouncementAcknowledgmentService } from "@/server/services/announcement-acknowledgment.service";
+import { AnnouncementAnalyticsService } from "@/server/services/announcement-analytics.service";
 import {
   createAnnouncementSchema,
   updateAnnouncementSchema,
@@ -15,6 +17,8 @@ import {
 } from "@/lib/validations/announcement.schema";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { AnnouncementDTO } from "@/types/announcement";
+import type { AnnouncementAcknowledgmentDTO } from "@/types/announcement";
+import type { AnnouncementAnalyticsDTO } from "@/types/announcement-analytics";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
 // ─────────────────────────────────────────────────────────────
@@ -29,6 +33,8 @@ import type { MemberRole } from "@/server/models/OrganizationMember";
 // - `authorClerkUserId`
 // - `Global` audience sentinel (Phase 3 replaces it with `@everyone`)
 // - org-wide read paths that skip `getLocationContext` scoping
+// - direct model writes for read/ack (must go through ack service)
+// - manager analytics reads that bypass location scoping
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -437,6 +443,131 @@ export async function forceExpireAnnouncement(
       error instanceof Error
         ? error.message
         : "Failed to force-expire announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Mark an announcement as read for the currently signed-in member.
+ */
+export async function markAnnouncementRead(
+  announcementId: string
+): Promise<ActionResponse<AnnouncementAcknowledgmentDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!announcementId || typeof announcementId !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+    const announcement = await AnnouncementService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      announcementId
+    );
+    if (!announcement) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    const data = await AnnouncementAcknowledgmentService.markRead({
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+      announcementId,
+      userId,
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("markAnnouncementRead error:", error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to mark announcement as read";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Acknowledge an announcement for the currently signed-in member.
+ */
+export async function acknowledgeAnnouncement(
+  announcementId: string
+): Promise<ActionResponse<AnnouncementAcknowledgmentDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!announcementId || typeof announcementId !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+    const announcement = await AnnouncementService.getById(
+      ctx.orgId,
+      ctx.locationId,
+      announcementId
+    );
+    if (!announcement) {
+      return { success: false, error: "Announcement not found" };
+    }
+    if (!announcement.requiresAcknowledgment) {
+      return { success: false, error: "Acknowledgment not required" };
+    }
+
+    const data = await AnnouncementAcknowledgmentService.acknowledge({
+      orgId: ctx.orgId,
+      locationId: ctx.locationId,
+      announcementId,
+      userId,
+    });
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("acknowledgeAnnouncement error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to acknowledge announcement";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Fetch manager analytics for a single announcement.
+ */
+export async function getAnnouncementAnalytics(
+  announcementId: string
+): Promise<ActionResponse<AnnouncementAnalyticsDTO>> {
+  try {
+    const { userId } = await auth();
+    if (!userId) return { success: false, error: "Unauthorized" };
+
+    if (!announcementId || typeof announcementId !== "string") {
+      return { success: false, error: "Invalid announcement ID" };
+    }
+
+    const ctx = await getLocationContext(userId);
+    if (!WRITE_ROLES.includes(ctx.role)) {
+      return {
+        success: false,
+        error: "Only managers and owners can view announcement analytics",
+      };
+    }
+
+    const data = await AnnouncementAnalyticsService.get(
+      ctx.orgId,
+      ctx.locationId,
+      announcementId
+    );
+    if (!data) {
+      return { success: false, error: "Announcement not found" };
+    }
+
+    return { success: true, data };
+  } catch (error) {
+    console.error("getAnnouncementAnalytics error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch announcement analytics";
     return { success: false, error: message };
   }
 }

@@ -22,6 +22,7 @@
     "typecheck": "turbo typecheck",
     "test:announcements-phase-3": "npm run test:announcements-phase-3 --workspace=@sous/web",
     "test:announcements-phase-4": "npm run test:announcements-phase-4 --workspace=@sous/web",
+    "test:announcements-phase-5": "npm run test:announcements-phase-5 --workspace=@sous/web",
     "test:announcement-composer-phase-2": "npm run test:announcement-composer-phase-2 --workspace=@sous/web",
     "verify:react": "node scripts/verify-react-singletons.mjs",
     "postinstall": "node scripts/verify-react-singletons.mjs"

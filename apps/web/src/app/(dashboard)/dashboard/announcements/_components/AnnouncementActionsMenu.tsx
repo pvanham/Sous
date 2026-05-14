@@ -91,6 +91,15 @@ export function AnnouncementActionsMenu({
           >
             Duplicate
           </DropdownMenuItem>
+          {lifecycle === "active" || lifecycle === "expired" ? (
+            <DropdownMenuItem
+              onSelect={() => {
+                router.push(`/dashboard/announcements/${announcementId}/analytics`);
+              }}
+            >
+              View analytics
+            </DropdownMenuItem>
+          ) : null}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             disabled={lifecycle === "expired"}
