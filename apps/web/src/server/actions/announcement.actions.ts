@@ -117,6 +117,11 @@ export async function listAnnouncements(
 
 /**
  * Create a new announcement. Manager / owner only.
+ *
+ * Phase 2 composer contract note:
+ * `/dashboard/announcements/create` depends on this action's existing
+ * ActionResponse shape (`{ success, data?, error? }`) and field semantics.
+ * Phase 3 may extend role/audience logic, but must preserve this contract.
  */
 export async function createAnnouncement(
   input: unknown

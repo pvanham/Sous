@@ -51,8 +51,14 @@ const baseAnnouncementMutationSchema = z
       )
       .max(20, "Tags can include at most 20 entries")
       .optional(),
-    publishDate: z.union([z.coerce.date(), z.null()]).optional(),
-    expirationDate: z.union([z.coerce.date(), z.null()]).optional(),
+    publishDate: z.preprocess(
+      (value) => (value === null || value === "" ? null : value),
+      z.union([z.null(), z.coerce.date()])
+    ).optional(),
+    expirationDate: z.preprocess(
+      (value) => (value === null || value === "" ? null : value),
+      z.union([z.null(), z.coerce.date()])
+    ).optional(),
     attachments: z
       .array(z.string().url("Attachments must be valid URLs"))
       .max(10, "Attachments can include at most 10 files")
@@ -84,7 +90,7 @@ export const createAnnouncementSchema = baseAnnouncementMutationSchema
     targetAudience: true,
     publishDate: true,
   })
-  .extend({
+  .safeExtend({
     tags: z
       .array(
         z
@@ -106,7 +112,7 @@ export const createAnnouncementSchema = baseAnnouncementMutationSchema
  * Schema for partial updates.
  */
 export const updateAnnouncementSchema = baseAnnouncementMutationSchema
-  .extend({
+  .safeExtend({
     announcementId: z.string().min(1, "Announcement ID is required"),
   })
   .refine(
