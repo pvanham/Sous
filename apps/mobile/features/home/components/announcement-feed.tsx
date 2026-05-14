@@ -3,6 +3,12 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { Announcement, AnnouncementPriority } from "@/types";
 import { StyledText } from "@/components/ui/text";
 
+// ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// Shared priority values are now `Standard` / `Urgent`.
+// ─────────────────────────────────────────────────────────────
+
 interface AnnouncementFeedProps {
   announcements: Announcement[];
   loading?: boolean;
@@ -19,7 +25,7 @@ interface PriorityStyle {
 }
 
 const PRIORITY_STYLES: Record<AnnouncementPriority, PriorityStyle> = {
-  urgent: {
+  Urgent: {
     bar: "bg-destructive",
     badgeBg: "bg-destructive/15",
     badgeText: "text-destructive",
@@ -27,29 +33,13 @@ const PRIORITY_STYLES: Record<AnnouncementPriority, PriorityStyle> = {
     iconColor: "#dc2626",
     label: "Urgent",
   },
-  high: {
-    bar: "bg-primary",
-    badgeBg: "bg-primary/15",
-    badgeText: "text-primary",
-    icon: "priority-high",
-    iconColor: "#b45309",
-    label: "Important",
-  },
-  normal: {
+  Standard: {
     bar: "bg-muted-foreground/50",
     badgeBg: "bg-muted",
     badgeText: "text-muted-foreground",
     icon: "campaign",
     iconColor: "#78716c",
     label: "Update",
-  },
-  low: {
-    bar: "bg-border",
-    badgeBg: "bg-muted",
-    badgeText: "text-muted-foreground",
-    icon: "info-outline",
-    iconColor: "#78716c",
-    label: "FYI",
   },
 };
 
@@ -115,8 +105,7 @@ function EmptyState({ loading, error }: { loading: boolean; error: boolean }) {
 function AnnouncementItem({ announcement }: { announcement: Announcement }) {
   const timeAgo = getRelativeTime(announcement.createdAt);
   const style = PRIORITY_STYLES[announcement.priority];
-  const showBadge =
-    announcement.priority === "urgent" || announcement.priority === "high";
+  const showBadge = announcement.priority === "Urgent";
 
   return (
     <View className="flex-row bg-card border border-border rounded-md overflow-hidden">

@@ -15,6 +15,18 @@ import type { ActionResponse } from "@/lib/safe-action";
 import type { AnnouncementDTO } from "@/types/announcement";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
+// ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// This action file is intentionally a compatibility shim while later
+// phases implement the full manager composer and analytics flows.
+//
+// Do NOT reintroduce:
+// - legacy expiry field names from pre-Phase-1 schema
+// - 4-tier priority enum (`urgent|high|normal|low`)
+// - `authorClerkUserId`
+// ─────────────────────────────────────────────────────────────
+
 /**
  * Roles allowed to author / edit / delete announcements. Read-side
  * actions are open to every signed-in member of the location.
@@ -78,11 +90,20 @@ export async function listAnnouncements(
 
     const includeExpired =
       parsed.data.includeExpired && WRITE_ROLES.includes(ctx.role);
+    const includeDrafts =
+      parsed.data.includeDrafts && WRITE_ROLES.includes(ctx.role);
+    const includeScheduled =
+      parsed.data.includeScheduled && WRITE_ROLES.includes(ctx.role);
 
     const data = await AnnouncementService.list(
       ctx.orgId,
       ctx.locationId,
-      { limit: parsed.data.limit, includeExpired }
+      {
+        limit: parsed.data.limit,
+        includeExpired,
+        includeDrafts,
+        includeScheduled,
+      }
     );
 
     return { success: true, data };
@@ -129,19 +150,29 @@ export async function createAnnouncement(
     const data = await AnnouncementService.create({
       orgId: ctx.orgId,
       locationId: ctx.locationId,
-      authorClerkUserId: userId,
+      authorId: userId,
       authorName,
       title: parsed.data.title,
       body: parsed.data.body,
       priority: parsed.data.priority,
-      expiresAt: parsed.data.expiresAt ?? null,
+      targetAudience: parsed.data.targetAudience,
+      tags: parsed.data.tags ?? [],
+      publishDate: parsed.data.publishDate ?? null,
+      expirationDate: parsed.data.expirationDate ?? null,
+      attachments: parsed.data.attachments ?? [],
+      requiresAcknowledgment: parsed.data.requiresAcknowledgment ?? false,
     });
 
-    void NotificationEvents.announcementCreated({
-      announcement: data,
-      orgId: ctx.orgId,
-      locationId: ctx.locationId,
-    });
+    // TODO(Phase 3): Add scheduler support for future-dated announcements.
+    // For now we only dispatch notifications if the announcement is
+    // effectively published now.
+    if (data.publishDate !== null && data.publishDate.getTime() <= Date.now()) {
+      void NotificationEvents.announcementCreated({
+        announcement: data,
+        orgId: ctx.orgId,
+        locationId: ctx.locationId,
+      });
+    }
 
     return { success: true, data };
   } catch (error) {

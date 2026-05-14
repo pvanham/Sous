@@ -425,11 +425,19 @@ export interface SaveKitchenConfigOptions {
 // ── Announcement ─────────────────────────────────────────────
 
 /**
- * Priority bucket for an announcement. Drives presentation on the
- * mobile home tab (urgent → red banner, high → amber, etc.) and
- * sorting (urgent / high pin to the top within the recency window).
+ * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+ *
+ * The old values (`urgent` / `high` / `normal` / `low`) and old
+ * `expiresAt` field are intentionally removed. Future work should use
+ * this canonical 2-tier enum and the publish/expiration lifecycle.
  */
-export type AnnouncementPriority = "urgent" | "high" | "normal" | "low";
+export type AnnouncementPriority = "Standard" | "Urgent";
+
+export type AnnouncementLifecycleStatus =
+  | "draft"
+  | "scheduled"
+  | "active"
+  | "expired";
 
 /**
  * Manager-authored announcement scoped to a single location.
@@ -443,17 +451,49 @@ export interface AnnouncementDTO {
   orgId: string;
   locationId: string;
   /** Clerk user id of the manager / owner who authored the post. */
-  authorClerkUserId: string;
+  authorId: string;
   /** Display name captured at write time so deletions don't break the feed. */
   authorName: string;
   title: string;
   body: string;
   priority: AnnouncementPriority;
-  /** Optional expiry — when set, expired announcements are filtered out. */
-  expiresAt?: Date | null;
+  /** Role-targeting values and/or the `Global` sentinel. */
+  targetAudience: string[];
+  tags: string[];
+  publishDate: Date | null;
+  expirationDate: Date | null;
+  attachments: string[];
+  requiresAcknowledgment: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface AnnouncementAcknowledgmentDTO {
+  id: string;
+  orgId: string;
+  locationId: string;
+  announcementId: string;
+  userId: string;
+  readAt: Date | null;
+  acknowledgedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export {
+  announcementPriorityValues,
+  createAnnouncementSchema,
+  updateAnnouncementSchema,
+  listAnnouncementsSchema,
+  acknowledgeAnnouncementSchema,
+} from "./validations/announcement.schema";
+
+export type {
+  CreateAnnouncementInput,
+  UpdateAnnouncementInput,
+  ListAnnouncementsInput,
+  AcknowledgeAnnouncementInput,
+} from "./validations/announcement.schema";
 
 // ── Exchange Shift ───────────────────────────────────────────
 

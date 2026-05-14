@@ -2,6 +2,13 @@ import type { ShiftDTO } from "@sous/types";
 import { apiClient } from "@/lib/api-client";
 import type { Announcement } from "@/types";
 
+// ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// Keep this shim aligned with shared `AnnouncementDTO` while web-only
+// manager flows are implemented in later phases.
+// ─────────────────────────────────────────────────────────────
+
 // Re-export `fetchWeekShifts` from the schedule feature so the home
 // tab can surface the rest of the current week without duplicating
 // the wire contract / date-revive logic that lives there.
@@ -32,7 +39,8 @@ export { fetchWeekShifts } from "@/features/schedule/api";
 //     • 401 → { error } when the JWT is missing/invalid
 //
 // Wire format
-//   Both responses arrive as JSON. `start`, `end`, `expiresAt`,
+//   Both responses arrive as JSON. `start`, `end`, `publishDate`,
+//   `expirationDate`,
 //   `createdAt`, `updatedAt` come back as ISO strings — the DTOs
 //   declare them as `Date`, so we revive them here before returning
 //   to the UI. Components rely on real `Date` objects for relative
@@ -77,9 +85,10 @@ type SerializedShift = Omit<ShiftDTO, "start" | "end" | "createdAt" | "updatedAt
 
 type SerializedAnnouncement = Omit<
   Announcement,
-  "expiresAt" | "createdAt" | "updatedAt"
+  "publishDate" | "expirationDate" | "createdAt" | "updatedAt"
 > & {
-  expiresAt: string | null;
+  publishDate: string | null;
+  expirationDate: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -97,7 +106,8 @@ function reviveShift(raw: SerializedShift): ShiftDTO {
 function reviveAnnouncement(raw: SerializedAnnouncement): Announcement {
   return {
     ...raw,
-    expiresAt: raw.expiresAt ? new Date(raw.expiresAt) : null,
+    publishDate: raw.publishDate ? new Date(raw.publishDate) : null,
+    expirationDate: raw.expirationDate ? new Date(raw.expirationDate) : null,
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
   };

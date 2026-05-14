@@ -19,6 +19,8 @@ import Staff from "../apps/web/src/server/models/Staff";
 import { AnnouncementService } from "../apps/web/src/server/services/announcement.service";
 import { ExchangeShiftService } from "../apps/web/src/server/services/exchange-shift.service";
 
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE.
+
 let passed = 0;
 let failed = 0;
 
@@ -107,24 +109,35 @@ async function main(): Promise<void> {
     const ann1 = await AnnouncementService.create({
       orgId: String(orgId),
       locationId: String(locationId),
-      authorClerkUserId: "user_test",
+      authorId: "user_test",
       authorName: "Manager Test",
       title: "Welcome Pat!",
       body: "First shift tomorrow",
-      priority: "high",
+      priority: "Urgent",
+      targetAudience: ["Global"],
+      tags: [],
+      publishDate: new Date(Date.now() - 5 * 60 * 1000),
+      expirationDate: null,
+      attachments: [],
+      requiresAcknowledgment: false,
     });
     assert(Boolean(ann1.id), "create returns DTO with id");
-    assert(ann1.priority === "high", "priority passes through");
+    assert(ann1.priority === "Urgent", "priority passes through");
 
     const ann2 = await AnnouncementService.create({
       orgId: String(orgId),
       locationId: String(locationId),
-      authorClerkUserId: "user_test",
+      authorId: "user_test",
       authorName: "Manager Test",
       title: "Expired post",
       body: "should not appear",
-      priority: "low",
-      expiresAt: new Date(Date.now() - 60_000),
+      priority: "Standard",
+      targetAudience: ["Global"],
+      tags: [],
+      publishDate: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      expirationDate: new Date(Date.now() - 60_000),
+      attachments: [],
+      requiresAcknowledgment: false,
     });
 
     const list = await AnnouncementService.list(

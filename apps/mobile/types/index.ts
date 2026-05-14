@@ -15,6 +15,13 @@ export type {
   ExchangeShiftStatus,
 } from "@sous/types";
 
+// ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// Announcement priority is `Standard` / `Urgent`, and date fields are
+// `publishDate` / `expirationDate`.
+// ─────────────────────────────────────────────────────────────
+
 export type { SubmitTimeOffRequestInput as CreateTimeOffRequestInput } from "@sous/types/validations/time-off-request.schema";
 
 import type {

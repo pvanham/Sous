@@ -1,9 +1,28 @@
 // Re-export shared types from @sous/types so the web app can import
 // from a single, app-local module while the wire shape stays the
 // canonical one in `packages/types/src`.
-export type { AnnouncementPriority, AnnouncementDTO } from "@sous/types";
+export type {
+  AnnouncementPriority,
+  AnnouncementDTO,
+  AnnouncementAcknowledgmentDTO,
+  AnnouncementLifecycleStatus,
+} from "@sous/types";
 
-import type { AnnouncementDTO, AnnouncementPriority } from "@sous/types";
+import type {
+  AnnouncementDTO,
+  AnnouncementPriority,
+  AnnouncementAcknowledgmentDTO,
+  AnnouncementLifecycleStatus,
+} from "@sous/types";
+
+/**
+ * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+ *
+ * Removed fields:
+ * - `authorClerkUserId` (replaced by `authorId`)
+ * - `expiresAt` (replaced by `expirationDate`)
+ * - legacy 4-tier priorities (`urgent|high|normal|low`)
+ */
 
 // ── Server-coupled: Mongoose document interface ──────────────
 //
@@ -15,12 +34,28 @@ import type { AnnouncementDTO, AnnouncementPriority } from "@sous/types";
 export interface IAnnouncement {
   orgId: unknown;
   locationId: unknown;
-  authorClerkUserId: string;
+  authorId: string;
   authorName: string;
   title: string;
   body: string;
   priority: AnnouncementPriority;
-  expiresAt?: Date | null;
+  targetAudience: string[];
+  tags: string[];
+  publishDate: Date | null;
+  expirationDate: Date | null;
+  attachments: string[];
+  requiresAcknowledgment: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface IAnnouncementAcknowledgment {
+  orgId: unknown;
+  locationId: unknown;
+  announcementId: unknown;
+  userId: string;
+  readAt: Date | null;
+  acknowledgedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -39,13 +74,49 @@ export function toAnnouncementDTO(
     id: String(doc._id),
     orgId: String(doc.orgId),
     locationId: String(doc.locationId),
-    authorClerkUserId: doc.authorClerkUserId,
+    authorId: doc.authorId,
     authorName: doc.authorName,
     title: doc.title,
     body: doc.body,
     priority: doc.priority,
-    expiresAt: doc.expiresAt ?? null,
+    targetAudience: doc.targetAudience,
+    tags: doc.tags,
+    publishDate: doc.publishDate ?? null,
+    expirationDate: doc.expirationDate ?? null,
+    attachments: doc.attachments,
+    requiresAcknowledgment: doc.requiresAcknowledgment,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
   };
+}
+
+export function toAnnouncementAcknowledgmentDTO(
+  doc: IAnnouncementAcknowledgment & { _id: unknown }
+): AnnouncementAcknowledgmentDTO {
+  return {
+    id: String(doc._id),
+    orgId: String(doc.orgId),
+    locationId: String(doc.locationId),
+    announcementId: String(doc.announcementId),
+    userId: doc.userId,
+    readAt: doc.readAt ?? null,
+    acknowledgedAt: doc.acknowledgedAt ?? null,
+    createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+export function computeAnnouncementLifecycle(
+  announcement: Pick<AnnouncementDTO, "publishDate" | "expirationDate">,
+  now: Date = new Date()
+): AnnouncementLifecycleStatus {
+  if (announcement.publishDate === null) return "draft";
+  if (announcement.publishDate.getTime() > now.getTime()) return "scheduled";
+  if (
+    announcement.expirationDate !== null &&
+    announcement.expirationDate.getTime() <= now.getTime()
+  ) {
+    return "expired";
+  }
+  return "active";
 }

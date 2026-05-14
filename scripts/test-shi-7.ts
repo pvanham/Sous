@@ -24,6 +24,8 @@ import { AnnouncementService } from "../apps/web/src/server/services/announcemen
 import { ShiftService } from "../apps/web/src/server/services/shift.service";
 import { StaffService } from "../apps/web/src/server/services/staff.service";
 
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE.
+
 let passed = 0;
 let failed = 0;
 
@@ -221,35 +223,50 @@ async function main(): Promise<void> {
     await Announcement.create({
       orgId,
       locationId,
-      authorClerkUserId: clerkUserId,
+      authorId: clerkUserId,
       authorName: "Manager",
       title: "Older",
       body: "Older announcement.",
-      priority: "normal",
-      expiresAt: null,
+      priority: "Standard",
+      targetAudience: ["Global"],
+      tags: [],
+      publishDate: new Date(Date.now() - 2 * 60 * 60 * 1000),
+      expirationDate: null,
+      attachments: [],
+      requiresAcknowledgment: false,
       createdAt: new Date(Date.now() - 60 * 60 * 1000),
       updatedAt: new Date(Date.now() - 60 * 60 * 1000),
     });
     await Announcement.create({
       orgId,
       locationId,
-      authorClerkUserId: clerkUserId,
+      authorId: clerkUserId,
       authorName: "Manager",
       title: "Newer",
       body: "Newer announcement.",
-      priority: "high",
-      expiresAt: null,
+      priority: "Urgent",
+      targetAudience: ["Global"],
+      tags: [],
+      publishDate: new Date(Date.now() - 30 * 60 * 1000),
+      expirationDate: null,
+      attachments: [],
+      requiresAcknowledgment: false,
     });
     // Cross-tenant noise
     await Announcement.create({
       orgId: otherOrgId,
       locationId: otherLocationId,
-      authorClerkUserId: "user_other",
+      authorId: "user_other",
       authorName: "Other",
       title: "DO NOT LEAK",
       body: "Cross-tenant.",
-      priority: "low",
-      expiresAt: null,
+      priority: "Standard",
+      targetAudience: ["Global"],
+      tags: [],
+      publishDate: new Date(Date.now() - 15 * 60 * 1000),
+      expirationDate: null,
+      attachments: [],
+      requiresAcknowledgment: false,
     });
 
     const list = await AnnouncementService.list(

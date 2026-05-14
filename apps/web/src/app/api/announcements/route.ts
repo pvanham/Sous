@@ -4,6 +4,17 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import { AnnouncementService } from "@/server/services/announcement.service";
 
 // ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// This route intentionally stays a thin shim over AnnouncementService
+// while later phases implement richer dashboard/composer flows.
+//
+// Do NOT reintroduce:
+// - `expiresAt`
+// - legacy 4-tier priority values
+// ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
 // GET /api/announcements?limit=20  —  Mobile (Home tab)
 //
 // Backs `apps/mobile/features/home/api.ts → fetchAnnouncements()`.

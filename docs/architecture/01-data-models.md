@@ -420,19 +420,26 @@ roles in `announcement.actions.ts`.
 {
   orgId: ObjectId(Organization),
   locationId: ObjectId(Location),
-  authorClerkUserId: string,           // who posted (Clerk user ID)
+  authorId: string,                    // who posted (Clerk user ID)
   authorName: string,                  // snapshot at write time
   title: string,                       // 1..120 chars
-  body: string,                        // 1..2000 chars
-  priority: "urgent" | "high" | "normal" | "low",   // default "normal"
-  expiresAt?: Date | null,             // when set, must be in the future
+  body: string,                        // 1..10000 chars (rich text / HTML)
+  priority: "Standard" | "Urgent",     // default "Standard"
+  targetAudience: string[],            // one or more role names or "Global"
+  tags: string[],
+  publishDate: Date | null,            // null = Draft
+  expirationDate: Date | null,         // must be strictly > publishDate when both exist
+  attachments: string[],               // file URLs
+  requiresAcknowledgment: boolean,     // Phase-2+ mandatory "I Agree" flow
   createdAt, updatedAt: Date,
 }
 ```
 
 Indexes: `(orgId, locationId, createdAt)` for the newest-first feed
-and `(orgId, locationId, expiresAt)` for the still-active filter.
-We deliberately do **not** use a TTL index — `expiresAt` controls
+plus `(orgId, locationId, publishDate)` and
+`(orgId, locationId, expirationDate)` for lifecycle bucketing/filtering.
+Tag filtering uses `(orgId, locationId, tags)` (multikey). We
+deliberately do **not** use a TTL index — `expirationDate` controls
 visibility, not deletion, so the manager-side history outlives the
 staff-facing window.
 
@@ -442,6 +449,31 @@ The DTO and Zod schemas live in `@sous/types`
 `listAnnouncementsSchema`). The web wrapper at
 `apps/web/src/types/announcement.ts` adds the Mongoose-flavoured
 `IAnnouncement` interface and the `toAnnouncementDTO` converter.
+
+### AnnouncementAcknowledgment (`AnnouncementAcknowledgment.ts`)
+
+Per-user read/ack tracking for an announcement. This intentionally uses
+its own collection (instead of an embedded `Announcement[]` subdocument
+array) to keep high-read mobile queries cheap and enforce one row per
+`announcementId + userId`.
+
+```ts
+{
+  orgId: ObjectId(Organization),         // denormalized for tenancy filters
+  locationId: ObjectId(Location),
+  announcementId: ObjectId(Announcement),
+  userId: string,                        // Clerk user ID
+  readAt: Date | null,
+  acknowledgedAt: Date | null,           // requires readAt
+  createdAt, updatedAt: Date,
+}
+```
+
+Indexes:
+
+- Unique `(announcementId, userId)` — one tracking row per user per post.
+- `(orgId, locationId, userId, readAt)` — supports unread/read counters.
+- `(announcementId, acknowledgedAt)` — supports Phase 5 ack roster splits.
 
 ### ExchangeShift (`ExchangeShift.ts`)
 
