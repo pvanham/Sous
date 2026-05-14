@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useForm, type Resolver } from "react-hook-form";
+import { useEffect } from "react";
+import { useForm, useWatch, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
 import { createAnnouncement } from "@/server/actions/announcement.actions";
@@ -32,17 +33,25 @@ import {
 import { Input } from "@/components/ui/input";
 
 import { AttachmentDropzone } from "./AttachmentDropzone";
-import { AudiencePlaceholder } from "./AudiencePlaceholder";
+import { AudienceSelector } from "./AudienceSelector";
 import { PriorityToggle } from "./PriorityToggle";
 import { PublishWindowFields } from "./PublishWindowFields";
 import { RichTextEditorPlaceholder } from "./RichTextEditorPlaceholder";
 import { TagInput } from "./TagInput";
 
 /**
- * Phase 2 — Announcement Composer
+ * Phase 3 — Announcement Composer
  * TODO(Phase 4): Replace /dashboard redirect with /dashboard/announcements.
  */
-export function AnnouncementComposer() {
+type AnnouncementComposerProps = {
+  initialAvailableRoles: string[];
+  initialManagerRoles: string[];
+};
+
+export function AnnouncementComposer({
+  initialAvailableRoles,
+  initialManagerRoles,
+}: AnnouncementComposerProps) {
   const router = useRouter();
 
   const form = useForm<CreateAnnouncementInput>({
@@ -55,14 +64,7 @@ export function AnnouncementComposer() {
 
   const createMutation = useMutation({
     mutationFn: async (values: CreateAnnouncementInput) => {
-      const payload: CreateAnnouncementInput = {
-        ...values,
-        // TODO(Phase 3): Replace this default with real audience selector output.
-        targetAudience:
-          values.targetAudience.length > 0 ? values.targetAudience : ["Global"],
-      };
-
-      const result = await createAnnouncement(payload);
+      const result = await createAnnouncement(values);
       if (!result.success) {
         throw new Error(result.error || "Failed to create announcement");
       }
@@ -80,6 +82,27 @@ export function AnnouncementComposer() {
   const onSubmit = (values: CreateAnnouncementInput) => {
     createMutation.mutate(values);
   };
+
+  useEffect(() => {
+    const currentAudience = form.getValues("targetAudience");
+    if (currentAudience.length > 0) {
+      return;
+    }
+
+    if (initialAvailableRoles.length === 0 && initialManagerRoles.length === 0) {
+      form.setValue("targetAudience", ["@everyone"], {
+        shouldDirty: false,
+        shouldTouch: false,
+        shouldValidate: true,
+      });
+    }
+  }, [form, initialAvailableRoles.length, initialManagerRoles.length]);
+
+  const watchedAudience = useWatch({
+    control: form.control,
+    name: "targetAudience",
+  });
+  const hasValidAudience = (watchedAudience?.length ?? 0) > 0;
 
   return (
     <Form {...form}>
@@ -204,7 +227,24 @@ export function AnnouncementComposer() {
             </CardContent>
           </Card>
 
-          <AudiencePlaceholder />
+          <FormField
+            control={form.control}
+            name="targetAudience"
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <AudienceSelector
+                    value={field.value ?? []}
+                    onChange={field.onChange}
+                    disabled={createMutation.isPending}
+                    initialAvailableRoles={initialAvailableRoles}
+                    initialManagerRoles={initialManagerRoles}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
           <Card className="sticky bottom-4">
             <CardContent className="pt-6">
@@ -217,7 +257,7 @@ export function AnnouncementComposer() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" disabled={createMutation.isPending}>
+                <Button type="submit" disabled={createMutation.isPending || !hasValidAudience}>
                   {createMutation.isPending && (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   )}

@@ -1,6 +1,9 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { IAnnouncement } from "@/types/announcement";
-import type { AnnouncementPriority } from "@sous/types";
+import {
+  ANNOUNCEMENT_AUDIENCE_TOKENS,
+  type AnnouncementPriority,
+} from "@sous/types";
 
 /**
  * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
@@ -142,6 +145,20 @@ AnnouncementSchema.pre("validate", function () {
 
   if (Array.isArray(this.targetAudience)) {
     this.targetAudience = this.targetAudience.map((entry) => entry.trim());
+
+    for (const entry of this.targetAudience) {
+      if (
+        entry.startsWith("@") &&
+        entry !== ANNOUNCEMENT_AUDIENCE_TOKENS.everyone &&
+        entry !== ANNOUNCEMENT_AUDIENCE_TOKENS.managers
+      ) {
+        this.invalidate(
+          "targetAudience",
+          "Audience entries prefixed with @ are reserved for @everyone and @managers"
+        );
+        break;
+      }
+    }
   }
 
   if (Array.isArray(this.attachments)) {

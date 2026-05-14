@@ -20,6 +20,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
+    "test:announcements-phase-3": "npm run test:announcements-phase-3 --workspace=@sous/web",
     "test:announcement-composer-phase-2": "npm run test:announcement-composer-phase-2 --workspace=@sous/web",
     "verify:react": "node scripts/verify-react-singletons.mjs",
     "postinstall": "node scripts/verify-react-singletons.mjs"

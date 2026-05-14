@@ -17,6 +17,27 @@ export const announcementPriorityValues = [
   "Urgent",
 ] as const;
 
+export const ANNOUNCEMENT_AUDIENCE_TOKENS = {
+  everyone: "@everyone",
+  managers: "@managers",
+} as const;
+
+const announcementAudienceEntrySchema = z
+  .string()
+  .trim()
+  .min(1, "Audience entries cannot be empty")
+  .max(60, "Audience entries must be 60 characters or less")
+  .refine(
+    (entry) =>
+      !entry.startsWith("@") ||
+      entry === ANNOUNCEMENT_AUDIENCE_TOKENS.everyone ||
+      entry === ANNOUNCEMENT_AUDIENCE_TOKENS.managers,
+    {
+      message:
+        "Audience entries prefixed with @ are reserved for @everyone and @managers",
+    }
+  );
+
 const baseAnnouncementMutationSchema = z
   .object({
     title: z
@@ -32,13 +53,7 @@ const baseAnnouncementMutationSchema = z
       .optional(),
     priority: z.enum(announcementPriorityValues).optional(),
     targetAudience: z
-      .array(
-        z
-          .string()
-          .trim()
-          .min(1, "Audience entries cannot be empty")
-          .max(60, "Audience entries must be 60 characters or less")
-      )
+      .array(announcementAudienceEntrySchema)
       .max(20, "Target audience can include at most 20 entries")
       .optional(),
     tags: z
@@ -73,6 +88,29 @@ const baseAnnouncementMutationSchema = z
     {
       message: "Expiration date must be strictly after publish date",
       path: ["expirationDate"],
+    }
+  )
+  .refine(
+    (value) => {
+      if (value.targetAudience === undefined) return true;
+      return value.targetAudience.length > 0;
+    },
+    {
+      message: "Target audience must include at least one entry",
+      path: ["targetAudience"],
+    }
+  )
+  .refine(
+    (value) => {
+      if (value.targetAudience === undefined) return true;
+      if (!value.targetAudience.includes(ANNOUNCEMENT_AUDIENCE_TOKENS.everyone)) {
+        return true;
+      }
+      return value.targetAudience.length === 1;
+    },
+    {
+      message: "@everyone cannot be combined with specific audience entries",
+      path: ["targetAudience"],
     }
   );
 

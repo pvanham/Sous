@@ -5,6 +5,8 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import {
   AnnouncementService,
 } from "@/server/services/announcement.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { validateAudienceEntriesWithRoleSet } from "@/lib/announcement/audience";
 import { NotificationEvents } from "@/server/services/notification-events";
 import {
   createAnnouncementSchema,
@@ -25,6 +27,7 @@ import type { MemberRole } from "@/server/models/OrganizationMember";
 // - legacy expiry field names from pre-Phase-1 schema
 // - 4-tier priority enum (`urgent|high|normal|low`)
 // - `authorClerkUserId`
+// - `Global` audience sentinel (Phase 3 replaces it with `@everyone`)
 // ─────────────────────────────────────────────────────────────
 
 /**
@@ -36,6 +39,15 @@ import type { MemberRole } from "@/server/models/OrganizationMember";
  * mirrors it for the AI tool surface.
  */
 const WRITE_ROLES: MemberRole[] = ["owner", "manager"];
+
+async function validateAudienceAgainstKitchenConfig(
+  orgId: string,
+  locationId: string,
+  targetAudience: string[]
+): Promise<string | null> {
+  const config = await KitchenConfigService.getByLocation(orgId, locationId);
+  return validateAudienceEntriesWithRoleSet(targetAudience, config?.roles ?? []);
+}
 
 /**
  * Resolve the caller's display name from Clerk. Falls back to the
@@ -150,6 +162,15 @@ export async function createAnnouncement(
       };
     }
 
+    const audienceValidationError = await validateAudienceAgainstKitchenConfig(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.targetAudience
+    );
+    if (audienceValidationError) {
+      return { success: false, error: audienceValidationError };
+    }
+
     const authorName = await resolveAuthorName(userId);
 
     const data = await AnnouncementService.create({
@@ -168,7 +189,7 @@ export async function createAnnouncement(
       requiresAcknowledgment: parsed.data.requiresAcknowledgment ?? false,
     });
 
-    // TODO(Phase 3): Add scheduler support for future-dated announcements.
+    // TODO(Phase 4): Add scheduler support for future-dated announcements.
     // For now we only dispatch notifications if the announcement is
     // effectively published now.
     if (data.publishDate !== null && data.publishDate.getTime() <= Date.now()) {
@@ -216,6 +237,17 @@ export async function updateAnnouncement(
         success: false,
         error: "Only managers and owners can edit announcements",
       };
+    }
+
+    if (parsed.data.targetAudience !== undefined) {
+      const audienceValidationError = await validateAudienceAgainstKitchenConfig(
+        ctx.orgId,
+        ctx.locationId,
+        parsed.data.targetAudience
+      );
+      if (audienceValidationError) {
+        return { success: false, error: audienceValidationError };
+      }
     }
 
     const data = await AnnouncementService.update(

@@ -30,7 +30,10 @@ async function main(): Promise<void> {
 
   const defaults = composerDefaultValues();
   assert(defaults.priority === "Standard", "defaults priority to Standard");
-  assert(defaults.targetAudience[0] === "Global", "defaults audience to Global");
+  assert(
+    defaults.targetAudience[0] === "@everyone",
+    "defaults audience to @everyone"
+  );
   assert(defaults.publishDate === null, "defaults publishDate to null");
   assert(defaults.attachments.length === 0, "defaults attachments to empty array");
 
@@ -39,7 +42,7 @@ async function main(): Promise<void> {
     title: "New prep checklist",
     body: "<p>Prep station updates for this weekend.</p>",
     priority: "Standard" as const,
-    targetAudience: ["Global"],
+    targetAudience: ["@everyone"],
     publishDate: new Date("2026-06-01T09:30:00.000Z"),
   };
   const parsedValid = createAnnouncementSchema.safeParse(validPayload);

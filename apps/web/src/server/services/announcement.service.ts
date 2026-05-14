@@ -17,6 +17,11 @@ import type {
  * Do not reintroduce pre-Phase-1 field names, `authorClerkUserId`, or
  * the 4-tier priority enum in this layer.
  *
+ * Phase 3 audience sentinel contract:
+ * - `@everyone` means broadcast to all staff in location.
+ * - `@managers` means every role listed in KitchenConfig.managerRoles.
+ * - legacy `Global` sentinel must not be reintroduced.
+ *
  * Internal create payload — what the service actually consumes.
  *
  * We split this from the Zod-derived `CreateAnnouncementInput` because

@@ -25,6 +25,7 @@
     "test:shi-10": "tsx ../../scripts/test-shi-10.ts",
     "test:announcements-phase-1": "tsx ../../scripts/test-announcements-phase-1.ts",
     "test:announcement-composer-phase-2": "tsx ../../scripts/test-announcement-composer-phase-2.ts",
+    "test:announcements-phase-3": "tsx ../../scripts/test-announcements-phase-3.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],

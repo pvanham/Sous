@@ -1,11 +1,28 @@
 import { Megaphone } from "lucide-react";
+import { redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { getLocationContext } from "@/lib/auth/get-location-context";
+import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { AnnouncementComposer } from "./_components/AnnouncementComposer";
 
 /**
- * Phase 2 — Announcement Composer
- * TODO(Phase 3): Add explicit Manager/Admin role guard via auth()+redirect().
+ * Phase 3 — Announcement Composer access guard + audience bootstrap.
  */
-export default function CreateAnnouncementPage() {
+export default async function CreateAnnouncementPage() {
+  const { userId } = await auth();
+  if (!userId) return null;
+
+  const ctx = await getLocationContext(userId);
+  if (ctx.role !== "owner" && ctx.role !== "manager") {
+    redirect("/dashboard");
+  }
+
+  const configResult = await getKitchenConfig();
+  const availableRoles =
+    configResult.success && configResult.data ? configResult.data.roles : [];
+  const managerRoles =
+    configResult.success && configResult.data ? configResult.data.managerRoles : [];
+
   return (
     <div className="space-y-6">
       <div className="relative overflow-hidden rounded-2xl border border-border/50 bg-background/50 px-6 py-4 shadow-sm backdrop-blur-xl sm:px-8 sm:py-5">
@@ -25,7 +42,10 @@ export default function CreateAnnouncementPage() {
         </div>
       </div>
 
-      <AnnouncementComposer />
+      <AnnouncementComposer
+        initialAvailableRoles={availableRoles}
+        initialManagerRoles={managerRoles}
+      />
     </div>
   );
 }

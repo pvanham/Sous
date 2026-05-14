@@ -9,7 +9,7 @@ export function composerDefaultValues(): CreateAnnouncementInput {
     title: "",
     body: "",
     priority: "Standard",
-    targetAudience: ["Global"],
+    targetAudience: ["@everyone"],
     tags: [],
     publishDate: null,
     expirationDate: null,

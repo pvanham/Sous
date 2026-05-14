@@ -481,6 +481,7 @@ export interface AnnouncementAcknowledgmentDTO {
 }
 
 export {
+  ANNOUNCEMENT_AUDIENCE_TOKENS,
   announcementPriorityValues,
   createAnnouncementSchema,
   updateAnnouncementSchema,
