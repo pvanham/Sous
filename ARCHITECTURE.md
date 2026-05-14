@@ -14,8 +14,8 @@ Sous is a restaurant scheduling platform:
 
 - a **web dashboard** (`apps/web`) — Next.js 16 App Router,
   React 19, TypeScript, Tailwind v4, MongoDB/Mongoose, Clerk auth.
-- a **mobile companion** (`apps/mobile`) — Expo SDK 54, React Native
-  0.81, NativeWind, TanStack Query, Axios, Clerk Expo.
+- a **mobile companion** (`apps/mobile`) — Expo SDK 55, React Native
+  0.83, NativeWind, TanStack Query, Axios, Clerk Expo.
 - an **agentic AI assistant** that reads the dashboard state and
   proposes mutations for the user to confirm (Vercel AI SDK + OpenAI).
 - a **CP-SAT scheduling solver** (`solver/`) — Python FastAPI service

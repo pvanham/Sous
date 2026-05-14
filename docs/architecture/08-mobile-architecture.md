@@ -1,7 +1,7 @@
 # 08 — Mobile Architecture (Expo)
 
 > The staff-facing companion app. Different runtime (React Native,
-> Expo SDK 54), same auth (Clerk), same types (`@sous/types`), and a
+> Expo SDK 55), same auth (Clerk), same types (`@sous/types`), and a
 > thin HTTP client that talks to the web app's route handlers. For
 > the web app's internal architecture, see
 > [02-layer-patterns.md](./02-layer-patterns.md).
@@ -38,8 +38,8 @@ auth wiring, TanStack Query setup, and UI are real.
 
 | Concern | Choice |
 |---------|--------|
-| Runtime | React Native 0.81, React 19 |
-| SDK | Expo SDK 54 (`expo` ~54.0.33) |
+| Runtime | React Native 0.83, React 19 |
+| SDK | Expo SDK 55 (`expo` ~55.0.20) |
 | Router | `expo-router` v6 (file-based) |
 | Styling | NativeWind 5 (preview) + Tailwind v4 tokens |
 | Auth | `@clerk/clerk-expo` + `expo-secure-store` for token cache |
