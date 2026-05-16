@@ -130,6 +130,26 @@ export const AnnouncementAcknowledgmentService = {
     return doc ? toAnnouncementAcknowledgmentDTO(doc) : null;
   },
 
+  async getManyForUser(
+    orgId: string,
+    locationId: string,
+    announcementIds: string[],
+    userId: string
+  ): Promise<AnnouncementAcknowledgmentDTO[]> {
+    if (announcementIds.length === 0) return [];
+
+    const docs = await AnnouncementAcknowledgment.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      announcementId: {
+        $in: announcementIds.map((announcementId) => new Types.ObjectId(announcementId)),
+      },
+      userId,
+    }).lean();
+
+    return docs.map(toAnnouncementAcknowledgmentDTO);
+  },
+
   async deleteAllByLocation(orgId: string, locationId: string): Promise<number> {
     const result = await AnnouncementAcknowledgment.deleteMany({
       orgId: new Types.ObjectId(orgId),

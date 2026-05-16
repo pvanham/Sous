@@ -450,6 +450,13 @@ The DTO and Zod schemas live in `@sous/types`
 `apps/web/src/types/announcement.ts` adds the Mongoose-flavoured
 `IAnnouncement` interface and the `toAnnouncementDTO` converter.
 
+Mobile list/detail reads use the `AnnouncementListItemDTO` envelope
+(`announcement` + caller-scoped `acknowledgment`) so the client can
+render unread/ack badges without extra joins. The envelope is served by
+`GET /api/announcements` and `GET /api/announcements/[id]`; write-side
+state transitions are `POST /api/announcements/[id]/read` and
+`POST /api/announcements/[id]/acknowledge`.
+
 ### AnnouncementAcknowledgment (`AnnouncementAcknowledgment.ts`)
 
 Per-user read/ack tracking for an announcement. This intentionally uses

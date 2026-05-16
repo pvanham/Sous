@@ -68,11 +68,11 @@ const AnnouncementSchema = new Schema<IAnnouncementDocument>(
       minlength: 1,
       maxlength: 120,
     },
+    // Stored as a Tiptap-serialised JSON string (or a JSON object for older
+    // documents written directly). Mongoose Mixed accepts both.
     body: {
-      type: String,
+      type: Schema.Types.Mixed,
       required: true,
-      minlength: 1,
-      maxlength: 10000,
     },
     priority: {
       type: String,

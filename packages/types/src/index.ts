@@ -480,6 +480,15 @@ export interface AnnouncementAcknowledgmentDTO {
   updatedAt: Date;
 }
 
+/**
+ * Mobile announcement feed envelope. Includes the announcement itself
+ * plus the caller-scoped read/ack row when one exists.
+ */
+export interface AnnouncementListItemDTO {
+  announcement: AnnouncementDTO;
+  acknowledgment: AnnouncementAcknowledgmentDTO | null;
+}
+
 export {
   ANNOUNCEMENT_AUDIENCE_TOKENS,
   announcementPriorityValues,

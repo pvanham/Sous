@@ -28,18 +28,20 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 import { AttachmentDropzone } from "./AttachmentDropzone";
 import { AudienceSelector } from "./AudienceSelector";
 import { PriorityToggle } from "./PriorityToggle";
 import { PublishWindowFields } from "./PublishWindowFields";
-import { RichTextEditorPlaceholder } from "./RichTextEditorPlaceholder";
+import { TiptapEditor } from "./TiptapEditor";
 import { TagInput } from "./TagInput";
 
 export type AnnouncementComposerMode =
@@ -166,7 +168,7 @@ export function AnnouncementComposer({
                   <FormItem>
                     <FormLabel>Body</FormLabel>
                     <FormControl>
-                      <RichTextEditorPlaceholder
+                      <TiptapEditor
                         value={field.value}
                         onChange={field.onChange}
                         onBlur={field.onBlur}
@@ -247,6 +249,29 @@ export function AnnouncementComposer({
               <PublishWindowFields
                 control={form.control}
                 disabled={upsertMutation.isPending}
+              />
+
+              <FormField
+                control={form.control}
+                name="requiresAcknowledgment"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Require acknowledgment</FormLabel>
+                      <FormDescription className="text-xs">
+                        Staff must explicitly confirm they have read this announcement.
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        disabled={upsertMutation.isPending}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
               />
             </CardContent>
           </Card>

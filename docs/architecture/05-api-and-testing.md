@@ -36,7 +36,9 @@ Use `app/api/.../route.ts` **only** for:
      — conversation history.
 5. **The mobile app's public API** — endpoints consumed by the Expo
    app. Live today: `/api/me/membership`, `/api/shifts/next`,
-   `/api/announcements`, `/api/shifts`,
+   `/api/announcements`, `/api/announcements/[id]`,
+   `/api/announcements/[id]/read`,
+   `/api/announcements/[id]/acknowledge`, `/api/shifts`,
    `/api/shifts/[shiftId]/roster`,
    `/api/me/notifications/preferences`,
    `/api/me/notifications/devices`. Skeleton 501 routes for the

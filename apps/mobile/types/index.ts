@@ -11,6 +11,8 @@ export type {
   // client and the web service layer share a single canonical shape.
   AnnouncementDTO,
   AnnouncementPriority,
+  AnnouncementAcknowledgmentDTO,
+  AnnouncementListItemDTO,
   ExchangeShiftDTO,
   ExchangeShiftStatus,
 } from "@sous/types";
@@ -19,7 +21,9 @@ export type {
 // PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
 //
 // Announcement priority is `Standard` / `Urgent`, and date fields are
-// `publishDate` / `expirationDate`.
+// `publishDate` / `expirationDate`. Mobile list rows now use an
+// envelope (`AnnouncementListItemDTO`) that includes caller-scoped
+// acknowledgment state.
 // ─────────────────────────────────────────────────────────────
 
 export type { SubmitTimeOffRequestInput as CreateTimeOffRequestInput } from "@sous/types/validations/time-off-request.schema";

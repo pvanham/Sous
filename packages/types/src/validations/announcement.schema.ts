@@ -49,7 +49,9 @@ const baseAnnouncementMutationSchema = z
     body: z
       .string()
       .min(1, "Body is required")
-      .max(10000, "Body must be 10000 characters or less")
+      // Body is stored as a Tiptap-serialised JSON string. Allow enough
+      // headroom for JSON structural overhead on top of actual content.
+      .max(50000, "Body must be 50000 characters or less")
       .optional(),
     priority: z.enum(announcementPriorityValues).optional(),
     targetAudience: z

@@ -262,6 +262,14 @@ export default function RootLayout() {
                     name="settings"
                     options={{ presentation: "card" }}
                   />
+                  <Stack.Screen
+                    name="announcements/index"
+                    options={{ presentation: "card" }}
+                  />
+                  <Stack.Screen
+                    name="announcements/[id]"
+                    options={{ presentation: "card" }}
+                  />
                 </Stack>
               </AuthGate>
               <StatusBar style="auto" />

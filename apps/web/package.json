@@ -28,6 +28,7 @@
     "test:announcements-phase-3": "tsx ../../scripts/test-announcements-phase-3.ts",
     "test:announcements-phase-4": "tsx ../../scripts/test-announcements-phase-4.ts",
     "test:announcements-phase-5": "tsx ../../scripts/test-announcements-phase-5.ts",
+    "test:announcements-mobile": "tsx ../../scripts/test-announcements-mobile.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
@@ -58,6 +59,8 @@
     "@sous/types": "*",
     "@tanstack/react-query": "^5.90.19",
     "@tanstack/react-table": "^8.21.3",
+    "@tiptap/react": "^3.23.4",
+    "@tiptap/starter-kit": "^3.23.4",
     "ai": "^6.0.116",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

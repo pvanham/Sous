@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { Paperclip } from "lucide-react";
 
 import { describeAudience } from "@/lib/announcement/audience";
+import { tiptapBodyToPlainText } from "@/lib/announcement/composer-defaults";
 import type { AnnouncementDTO } from "@/types/announcement";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -50,7 +51,7 @@ export function AnnouncementCard({ announcement, lifecycle }: AnnouncementCardPr
         </div>
       </CardHeader>
       <CardContent className="space-y-2 text-sm text-muted-foreground">
-        <p className="line-clamp-2">{announcement.body}</p>
+        <p className="line-clamp-2">{tiptapBodyToPlainText(announcement.body)}</p>
         <p>
           Audience:
           {" "}

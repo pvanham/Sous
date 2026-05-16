@@ -37,7 +37,8 @@ export interface IAnnouncement {
   authorId: string;
   authorName: string;
   title: string;
-  body: string;
+  /** Tiptap-serialised JSON string, or a raw JSON object for legacy rows. */
+  body: string | Record<string, unknown>;
   priority: AnnouncementPriority;
   targetAudience: string[];
   tags: string[];
@@ -77,7 +78,10 @@ export function toAnnouncementDTO(
     authorId: doc.authorId,
     authorName: doc.authorName,
     title: doc.title,
-    body: doc.body,
+    // Normalise: older documents may have been stored as a plain object via
+    // Mongoose Mixed. Always emit a string on the wire so consumers are
+    // consistent — the Tiptap editor will JSON.parse it on mount.
+    body: typeof doc.body === "string" ? doc.body : JSON.stringify(doc.body),
     priority: doc.priority,
     targetAudience: doc.targetAudience,
     tags: doc.tags,
