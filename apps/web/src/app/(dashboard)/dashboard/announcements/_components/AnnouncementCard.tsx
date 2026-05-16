@@ -15,16 +15,6 @@ type AnnouncementCardProps = {
   lifecycle: "draft" | "scheduled" | "active" | "expired";
 };
 
-const lifecycleBadgeLabel: Record<
-  "draft" | "scheduled" | "active" | "expired",
-  string
-> = {
-  draft: "Draft",
-  scheduled: "Scheduled",
-  active: "Active",
-  expired: "Expired",
-};
-
 export function AnnouncementCard({ announcement, lifecycle }: AnnouncementCardProps) {
   return (
     <Card>
@@ -41,7 +31,11 @@ export function AnnouncementCard({ announcement, lifecycle }: AnnouncementCardPr
           <Badge variant={announcement.priority === "Urgent" ? "destructive" : "outline"}>
             {announcement.priority}
           </Badge>
-          <Badge variant="outline">{lifecycleBadgeLabel[lifecycle]}</Badge>
+          {announcement.tags.map((tag) => (
+            <Badge key={tag} variant="secondary">
+              {tag}
+            </Badge>
+          ))}
           {announcement.attachments.length > 0 && (
             <Badge variant="outline" className="gap-1">
               <Paperclip className="h-3 w-3" />

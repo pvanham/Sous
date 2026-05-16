@@ -13,6 +13,7 @@ import {
   markAnnouncementRead,
 } from "../api";
 import { AnnouncementEmptyState } from "../components/announcement-empty-state";
+import { TiptapRenderer } from "../components/tiptap-renderer";
 
 interface AnnouncementDetailScreenProps {
   announcementId: string;
@@ -113,9 +114,9 @@ export function AnnouncementDetailScreen({
             Posted by {announcement.authorName} · {getRelativeTime(announcement.createdAt)}
           </StyledText>
 
-          <StyledText variant="body" className="text-foreground mb-4">
-            {announcement.body}
-          </StyledText>
+          <View className="mb-4">
+            <TiptapRenderer body={announcement.body} />
+          </View>
 
           {announcement.tags.length > 0 ? (
             <View className="flex-row flex-wrap gap-2 mb-4">

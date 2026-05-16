@@ -3,6 +3,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { AnnouncementPriority } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
 import type { AnnouncementListItem } from "../api";
+import { tiptapBodyToPlainText } from "../utils";
 
 interface AnnouncementCardProps {
   item: AnnouncementListItem;
@@ -80,7 +81,7 @@ export function AnnouncementCard({
         </View>
 
         <StyledText variant="body" className="text-muted-foreground text-sm">
-          {announcement.body}
+          {tiptapBodyToPlainText(announcement.body)}
         </StyledText>
 
         <View className="flex-row items-center justify-between mt-2">
