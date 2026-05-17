@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, View } from "react-native";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useAuth } from "@clerk/clerk-expo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -111,7 +111,7 @@ export function AnnouncementDetailScreen({
           </View>
 
           <StyledText variant="caption" className="mb-3">
-            Posted by {announcement.authorName} · {getRelativeTime(announcement.createdAt)}
+            Posted by {announcement.authorName} · {getRelativeTime(announcement.publishDate ?? announcement.createdAt)}
           </StyledText>
 
           <View className="mb-4">
@@ -145,15 +145,32 @@ export function AnnouncementDetailScreen({
               <StyledText variant="label" className="mb-2">
                 Attachments
               </StyledText>
-              {announcement.attachments.map((attachment) => (
-                <StyledText
-                  key={attachment}
-                  variant="caption"
-                  className="text-primary mb-1"
-                >
-                  {attachment}
-                </StyledText>
-              ))}
+              {announcement.attachments.map((attachment) =>
+                isImageUrl(attachment) ? (
+                  <Pressable
+                    key={attachment}
+                    onPress={() => Linking.openURL(attachment)}
+                    className="mb-3 active:opacity-80"
+                  >
+                    <Image
+                      source={{ uri: attachment }}
+                      className="w-full rounded-md"
+                      style={{ aspectRatio: 16 / 9 }}
+                      resizeMode="contain"
+                    />
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    key={attachment}
+                    onPress={() => Linking.openURL(attachment)}
+                    className="active:opacity-60"
+                  >
+                    <StyledText variant="caption" className="text-primary mb-1 underline">
+                      {getAttachmentFilename(attachment)}
+                    </StyledText>
+                  </Pressable>
+                )
+              )}
             </View>
           ) : null}
 
@@ -170,6 +187,26 @@ export function AnnouncementDetailScreen({
       </ScrollView>
     </ScreenWrapper>
   );
+}
+
+const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|avif|heic)(\?.*)?$/i;
+
+function isImageUrl(url: string): boolean {
+  try {
+    const { pathname } = new URL(url);
+    return IMAGE_EXTENSIONS.test(pathname);
+  } catch {
+    return false;
+  }
+}
+
+function getAttachmentFilename(url: string): string {
+  try {
+    const { pathname } = new URL(url);
+    return decodeURIComponent(pathname.split("/").pop() ?? url);
+  } catch {
+    return url;
+  }
 }
 
 function getRelativeTime(date: Date): string {

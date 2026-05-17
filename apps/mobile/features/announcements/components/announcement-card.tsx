@@ -77,7 +77,7 @@ export function AnnouncementCard({
             </View>
           ) : null}
 
-          <StyledText variant="caption">{getRelativeTime(announcement.createdAt)}</StyledText>
+          <StyledText variant="caption">{getRelativeTime(announcement.publishDate ?? announcement.createdAt)}</StyledText>
         </View>
 
         <StyledText variant="body" className="text-muted-foreground text-sm">
