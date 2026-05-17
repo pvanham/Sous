@@ -429,7 +429,7 @@ roles in `announcement.actions.ts`.
   tags: string[],
   publishDate: Date | null,            // null = Draft
   expirationDate: Date | null,         // must be strictly > publishDate when both exist
-  attachments: string[],               // file URLs
+  attachments: string[],               // public Cloudflare R2 URLs
   requiresAcknowledgment: boolean,     // Phase-2+ mandatory "I Agree" flow
   createdAt, updatedAt: Date,
 }
@@ -456,6 +456,13 @@ render unread/ack badges without extra joins. The envelope is served by
 `GET /api/announcements` and `GET /api/announcements/[id]`; write-side
 state transitions are `POST /api/announcements/[id]/read` and
 `POST /api/announcements/[id]/acknowledge`.
+
+Attachment uploads are direct-to-storage: the dashboard composer requests
+`POST /api/attachments/upload-url`, receives a short-lived presigned PUT
+URL plus a public URL, uploads the file body to Cloudflare R2, then sends
+the public URL in `attachments[]` on `createAnnouncement` / `updateAnnouncement`.
+Stored keys follow `announcements/<orgId>/<uuid>/<filename>` for tenant scoping
+and collision resistance.
 
 ### AnnouncementAcknowledgment (`AnnouncementAcknowledgment.ts`)
 

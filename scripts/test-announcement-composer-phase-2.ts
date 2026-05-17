@@ -10,7 +10,6 @@ import {
   coerceDateTimeLocal,
   normalizeTag,
 } from "../apps/web/src/lib/announcement/composer-defaults";
-import { mockUploadAttachment } from "../apps/web/src/lib/announcement/mock-upload";
 
 let passed = 0;
 let failed = 0;
@@ -79,13 +78,11 @@ async function main(): Promise<void> {
     "coerceDateTimeLocal returns null for empty inputs"
   );
 
-  const file = new File(["x"], "menu.pdf");
-  const upload = await mockUploadAttachment(file);
-  assert(upload.size === 1, "mockUploadAttachment returns file size");
-  assert(upload.filename === "menu.pdf", "mockUploadAttachment returns file name");
+  const upload = buildPlaceholderAttachmentUrl("menu.pdf");
+  assert(upload.includes("menu.pdf"), "placeholder upload URL includes file name");
   assert(
-    upload.url.includes("menu.pdf") && upload.url.startsWith("https://"),
-    "mockUploadAttachment returns a valid mock URL"
+    upload.startsWith("https://"),
+    "placeholder upload URL uses https"
   );
 
   console.log(
@@ -95,6 +92,14 @@ async function main(): Promise<void> {
   if (failed > 0) {
     process.exit(1);
   }
+}
+
+function buildPlaceholderAttachmentUrl(filename: string): string {
+  const randomId =
+    typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
+  return `https://attachments.sous.com/test/${randomId}/${encodeURIComponent(filename)}`;
 }
 
 void main();

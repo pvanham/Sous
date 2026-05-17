@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 import { Loader2, Paperclip, Upload, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { mockUploadAttachment } from "@/lib/announcement/mock-upload";
+import { ALLOWED_ATTACHMENT_MIME_TYPES } from "@/lib/storage/keys";
 
 type AttachmentDropzoneProps = {
   value: string[];
@@ -15,6 +16,11 @@ type AttachmentDropzoneProps = {
 type PendingUpload = {
   id: string;
   name: string;
+};
+
+type UploadUrlResponse = {
+  uploadUrl: string;
+  publicUrl: string;
 };
 
 const MAX_ATTACHMENTS = 10;
@@ -34,19 +40,67 @@ export function AttachmentDropzone({
     onChange(value.filter((existing) => existing !== url));
   };
 
+  const uploadAttachment = async (file: File): Promise<UploadUrlResponse> => {
+    if (!ALLOWED_ATTACHMENT_MIME_TYPES.includes(file.type as (typeof ALLOWED_ATTACHMENT_MIME_TYPES)[number])) {
+      throw new Error("Unsupported file type. Upload an image or PDF.");
+    }
+
+    const uploadUrlResponse = await fetch("/api/attachments/upload-url", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      }),
+    });
+
+    if (!uploadUrlResponse.ok) {
+      const errorPayload = (await uploadUrlResponse.json().catch(() => null)) as
+        | { error?: string }
+        | null;
+      throw new Error(errorPayload?.error ?? "Failed to prepare upload.");
+    }
+
+    const payload = (await uploadUrlResponse.json()) as UploadUrlResponse;
+
+    const putResponse = await fetch(payload.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type,
+      },
+      body: file,
+    });
+
+    if (!putResponse.ok) {
+      throw new Error("Upload failed. Please try again.");
+    }
+
+    return payload;
+  };
+
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0 || disabled) return;
 
     for (const file of Array.from(files)) {
       if (value.length + pendingUploads.length >= MAX_ATTACHMENTS) break;
-      if (file.size > MAX_FILE_SIZE_BYTES) continue;
+      if (file.size > MAX_FILE_SIZE_BYTES) {
+        toast.error(`${file.name} exceeds 10MB and was skipped.`);
+        continue;
+      }
 
       const uploadId = `${file.name}-${file.lastModified}-${Math.random()}`;
       setPendingUploads((prev) => [...prev, { id: uploadId, name: file.name }]);
 
       try {
-        const uploaded = await mockUploadAttachment(file);
-        onChange([...value, uploaded.url]);
+        const uploaded = await uploadAttachment(file);
+        onChange([...value, uploaded.publicUrl]);
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Failed to upload attachment.";
+        toast.error(message);
       } finally {
         setPendingUploads((prev) => prev.filter((entry) => entry.id !== uploadId));
       }
@@ -66,7 +120,7 @@ export function AttachmentDropzone({
         <Upload className="mb-2 h-5 w-5 text-muted-foreground" />
         <p className="text-sm font-medium">Drag files here or browse</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Up to 10 files, 10MB max each (mock upload in Phase 2)
+          Up to 10 files, 10MB max each (images and PDFs)
         </p>
         <Button
           type="button"
