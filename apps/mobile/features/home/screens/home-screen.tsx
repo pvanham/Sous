@@ -62,8 +62,8 @@ export function HomeScreen() {
   });
 
   const announcementsQuery = useQuery({
-    queryKey: ["home", userId, "announcements"],
-    queryFn: fetchAnnouncements,
+    queryKey: ["announcements", userId, "list", "active"],
+    queryFn: () => fetchAnnouncements({ lifecycle: "active" }),
     enabled: Boolean(userId),
   });
 
@@ -124,7 +124,7 @@ export function HomeScreen() {
         <UpcomingShifts shifts={upcomingShifts} />
 
         <AnnouncementFeed
-          announcements={announcementsQuery.data ?? []}
+          items={announcementsQuery.data ?? []}
           loading={announcementsQuery.isLoading}
           error={announcementsQuery.isError}
         />

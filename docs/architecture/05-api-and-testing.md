@@ -36,7 +36,9 @@ Use `app/api/.../route.ts` **only** for:
      — conversation history.
 5. **The mobile app's public API** — endpoints consumed by the Expo
    app. Live today: `/api/me/membership`, `/api/shifts/next`,
-   `/api/announcements`, `/api/shifts`,
+   `/api/announcements`, `/api/announcements/[id]`,
+   `/api/announcements/[id]/read`,
+   `/api/announcements/[id]/acknowledge`, `/api/shifts`,
    `/api/shifts/[shiftId]/roster`,
    `/api/me/notifications/preferences`,
    `/api/me/notifications/devices`. Skeleton 501 routes for the
@@ -44,6 +46,10 @@ Use `app/api/.../route.ts` **only** for:
    [08-mobile-architecture.md §10](./08-mobile-architecture.md) for
    the canonical mapping. The wire shapes are part of the cross-app
    contract, so any change must keep `@sous/types` in lock-step.
+6. **Authenticated upload bootstrap endpoints** that issue short-lived
+   object-storage URLs for direct browser upload.
+   - `/api/attachments/upload-url` — validates attachment metadata, scopes
+     object keys by tenant, returns `{ uploadUrl, publicUrl }` for R2 PUT.
 
 **Rule of thumb:** if you're tempted to add a `POST /api/users` for
 "simplicity", stop. Use a Server Action. Route handlers exist for the

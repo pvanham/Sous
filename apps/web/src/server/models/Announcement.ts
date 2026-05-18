@@ -1,8 +1,21 @@
 import mongoose, { Schema, Document, Model, Types } from "mongoose";
 import type { IAnnouncement } from "@/types/announcement";
-import type { AnnouncementPriority } from "@sous/types";
+import {
+  ANNOUNCEMENT_AUDIENCE_TOKENS,
+  type AnnouncementPriority,
+} from "@sous/types";
 
 /**
+ * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+ *
+ * Legacy fields intentionally removed:
+ * - `authorClerkUserId` → replaced by `authorId`
+ * - legacy expiry field → replaced by `expirationDate`
+ * - priority enum `urgent|high|normal|low` → `Standard|Urgent`
+ *
+ * Future phases build on this shape. Do not map this model back to
+ * legacy names.
+ *
  * Mongoose document for an announcement.
  *
  * `IAnnouncement` declares `orgId` and `locationId` as `unknown` so it
@@ -17,10 +30,8 @@ export interface IAnnouncementDocument
 }
 
 const PRIORITY_VALUES: AnnouncementPriority[] = [
-  "urgent",
-  "high",
-  "normal",
-  "low",
+  "Standard",
+  "Urgent",
 ];
 
 const AnnouncementSchema = new Schema<IAnnouncementDocument>(
@@ -41,7 +52,7 @@ const AnnouncementSchema = new Schema<IAnnouncementDocument>(
     // a deleted membership row does not orphan the audit field. The
     // human-readable `authorName` snapshot is what we render in the UI
     // so deletions on the staff list never break old announcements.
-    authorClerkUserId: {
+    authorId: {
       type: String,
       required: true,
     },
@@ -57,26 +68,57 @@ const AnnouncementSchema = new Schema<IAnnouncementDocument>(
       minlength: 1,
       maxlength: 120,
     },
+    // Stored as a Tiptap-serialised JSON string (or a JSON object for older
+    // documents written directly). Mongoose Mixed accepts both.
     body: {
-      type: String,
+      type: Schema.Types.Mixed,
       required: true,
-      trim: true,
-      minlength: 1,
-      maxlength: 2000,
     },
     priority: {
       type: String,
       required: true,
-      default: "normal",
+      default: "Standard",
       enum: {
         values: PRIORITY_VALUES,
-        message:
-          "Priority must be one of: urgent, high, normal, low",
+        message: "Priority must be one of: Standard, Urgent",
       },
     },
-    expiresAt: {
+    targetAudience: {
+      type: [String],
+      required: true,
+      validate: {
+        validator: (entries: string[]) => entries.length > 0 && entries.length <= 20,
+        message:
+          "Target audience must include between 1 and 20 entries",
+      },
+    },
+    tags: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (entries: string[]) => entries.length <= 20,
+        message: "Tags can include at most 20 entries",
+      },
+    },
+    publishDate: {
       type: Date,
       default: null,
+    },
+    expirationDate: {
+      type: Date,
+      default: null,
+    },
+    attachments: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (entries: string[]) => entries.length <= 10,
+        message: "Attachments can include at most 10 files",
+      },
+    },
+    requiresAcknowledgment: {
+      type: Boolean,
+      default: false,
     },
   },
   {
@@ -85,14 +127,51 @@ const AnnouncementSchema = new Schema<IAnnouncementDocument>(
   }
 );
 
+AnnouncementSchema.pre("validate", function () {
+  if (
+    this.publishDate instanceof Date &&
+    this.expirationDate instanceof Date &&
+    this.expirationDate.getTime() <= this.publishDate.getTime()
+  ) {
+    this.invalidate(
+      "expirationDate",
+      "Expiration date must be strictly after publish date"
+    );
+  }
+
+  if (Array.isArray(this.tags)) {
+    this.tags = this.tags.map((tag) => tag.trim().toLowerCase());
+  }
+
+  if (Array.isArray(this.targetAudience)) {
+    this.targetAudience = this.targetAudience.map((entry) => entry.trim());
+
+    for (const entry of this.targetAudience) {
+      if (
+        entry.startsWith("@") &&
+        entry !== ANNOUNCEMENT_AUDIENCE_TOKENS.everyone &&
+        entry !== ANNOUNCEMENT_AUDIENCE_TOKENS.managers
+      ) {
+        this.invalidate(
+          "targetAudience",
+          "Audience entries prefixed with @ are reserved for @everyone and @managers"
+        );
+        break;
+      }
+    }
+  }
+
+  if (Array.isArray(this.attachments)) {
+    this.attachments = this.attachments.map((url) => url.trim());
+  }
+});
+
 // Tenancy index — every list query filters by (orgId, locationId).
 AnnouncementSchema.index({ orgId: 1, locationId: 1, createdAt: -1 });
 
-// Sparse-style index for "still-active" feed filtering. We keep it as
-// a plain compound rather than a TTL because Mongo's TTL reaper would
-// hard-delete the document, and we want the manager-side history to
-// outlive the staff-facing visibility window.
-AnnouncementSchema.index({ orgId: 1, locationId: 1, expiresAt: 1 });
+AnnouncementSchema.index({ orgId: 1, locationId: 1, publishDate: 1 });
+AnnouncementSchema.index({ orgId: 1, locationId: 1, expirationDate: 1 });
+AnnouncementSchema.index({ orgId: 1, locationId: 1, tags: 1 });
 
 // Singleton pattern for Next.js HMR compatibility (re-importing the
 // module would otherwise call `model("Announcement", …)` a second

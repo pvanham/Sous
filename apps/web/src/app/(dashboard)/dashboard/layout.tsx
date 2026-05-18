@@ -1,6 +1,14 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Home, Calendar, Users, ClipboardList, CalendarOff, ArrowLeftRight } from "lucide-react";
+import {
+  Home,
+  Calendar,
+  Users,
+  ClipboardList,
+  CalendarOff,
+  ArrowLeftRight,
+  Megaphone,
+} from "lucide-react";
 import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
@@ -15,6 +23,7 @@ const navItems = [
   { href: "/dashboard/labor", label: "Shift Slots", icon: ClipboardList },
   { href: "/dashboard/time-off", label: "Time Off", icon: CalendarOff },
   { href: "/dashboard/exchange", label: "Exchange", icon: ArrowLeftRight },
+  { href: "/dashboard/announcements", label: "Announcements", icon: Megaphone },
 ];
 
 export default async function DashboardLayout({

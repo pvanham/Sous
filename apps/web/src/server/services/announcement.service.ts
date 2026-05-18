@@ -2,6 +2,7 @@ import { Types } from "mongoose";
 import Announcement from "@/server/models/Announcement";
 import {
   AnnouncementDTO,
+  computeAnnouncementLifecycle,
   toAnnouncementDTO,
 } from "@/types/announcement";
 import type {
@@ -10,6 +11,17 @@ import type {
 } from "@/lib/validations/announcement.schema";
 
 /**
+ * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+ *
+ * This service is a migration shim for the clean-break schema rewrite.
+ * Do not reintroduce pre-Phase-1 field names, `authorClerkUserId`, or
+ * the 4-tier priority enum in this layer.
+ *
+ * Phase 3 audience sentinel contract:
+ * - `@everyone` means broadcast to all staff in location.
+ * - `@managers` means every role listed in KitchenConfig.managerRoles.
+ * - legacy `Global` sentinel must not be reintroduced.
+ *
  * Internal create payload — what the service actually consumes.
  *
  * We split this from the Zod-derived `CreateAnnouncementInput` because
@@ -21,7 +33,7 @@ export interface CreateAnnouncementServiceInput
   extends CreateAnnouncementInput {
   orgId: string;
   locationId: string;
-  authorClerkUserId: string;
+  authorId: string;
   authorName: string;
 }
 
@@ -39,8 +51,8 @@ export const AnnouncementService = {
    * List announcements for a location, newest first.
    *
    * `includeExpired = false` (the staff-facing default) hides any row
-   * whose `expiresAt` is in the past. `null` expiry rows are always
-   * included.
+   * whose expiration date is in the past. Rows with null expiration are
+   * always included.
    *
    * @param orgId - Organization ID (tenancy scope)
    * @param locationId - Location ID (tenancy scope)
@@ -50,22 +62,42 @@ export const AnnouncementService = {
   async list(
     orgId: string,
     locationId: string,
-    options: { limit?: number; includeExpired?: boolean } = {}
+    options: {
+      limit?: number;
+      includeExpired?: boolean;
+      includeDrafts?: boolean;
+      includeScheduled?: boolean;
+    } = {}
   ): Promise<AnnouncementDTO[]> {
     const limit = options.limit ?? 20;
     const includeExpired = options.includeExpired ?? false;
+    const includeDrafts = options.includeDrafts ?? false;
+    const includeScheduled = options.includeScheduled ?? false;
 
     const query: Record<string, unknown> = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
     };
 
+    const now = new Date();
+    const andFilters: Record<string, unknown>[] = [];
+
+    if (!includeDrafts) {
+      andFilters.push({ publishDate: { $ne: null } });
+    }
+
+    if (!includeScheduled) {
+      andFilters.push({ $or: [{ publishDate: null }, { publishDate: { $lte: now } }] });
+    }
+
     if (!includeExpired) {
-      // `expiresAt` is either null (no expiry) or in the future.
-      query.$or = [
-        { expiresAt: null },
-        { expiresAt: { $gt: new Date() } },
-      ];
+      andFilters.push({
+        $or: [{ expirationDate: null }, { expirationDate: { $gt: now } }],
+      });
+    }
+
+    if (andFilters.length > 0) {
+      query.$and = andFilters;
     }
 
     const docs = await Announcement.find(query)
@@ -109,12 +141,17 @@ export const AnnouncementService = {
     const doc = await Announcement.create({
       orgId: new Types.ObjectId(data.orgId),
       locationId: new Types.ObjectId(data.locationId),
-      authorClerkUserId: data.authorClerkUserId,
+      authorId: data.authorId,
       authorName: data.authorName,
       title: data.title,
       body: data.body,
-      priority: data.priority ?? "normal",
-      expiresAt: data.expiresAt ?? null,
+      priority: data.priority ?? "Standard",
+      targetAudience: data.targetAudience,
+      tags: data.tags ?? [],
+      publishDate: data.publishDate ?? null,
+      expirationDate: data.expirationDate ?? null,
+      attachments: data.attachments ?? [],
+      requiresAcknowledgment: data.requiresAcknowledgment ?? false,
     });
 
     return toAnnouncementDTO(doc.toObject());
@@ -122,8 +159,8 @@ export const AnnouncementService = {
 
   /**
    * Partial update on an announcement. Only the fields present in
-   * `patch` are mutated; passing `expiresAt: null` explicitly clears
-   * the expiry.
+   * `patch` are mutated; passing `expirationDate: null` explicitly
+   * clears expiration.
    *
    * @returns Updated DTO or `null` if the row was not found in this
    *          tenant.
@@ -137,7 +174,16 @@ export const AnnouncementService = {
     if (patch.title !== undefined) updateData.title = patch.title;
     if (patch.body !== undefined) updateData.body = patch.body;
     if (patch.priority !== undefined) updateData.priority = patch.priority;
-    if (patch.expiresAt !== undefined) updateData.expiresAt = patch.expiresAt;
+    if (patch.targetAudience !== undefined) updateData.targetAudience = patch.targetAudience;
+    if (patch.tags !== undefined) updateData.tags = patch.tags;
+    if (patch.publishDate !== undefined) updateData.publishDate = patch.publishDate;
+    if (patch.expirationDate !== undefined) {
+      updateData.expirationDate = patch.expirationDate;
+    }
+    if (patch.attachments !== undefined) updateData.attachments = patch.attachments;
+    if (patch.requiresAcknowledgment !== undefined) {
+      updateData.requiresAcknowledgment = patch.requiresAcknowledgment;
+    }
 
     const doc = await Announcement.findOneAndUpdate(
       {
@@ -155,7 +201,7 @@ export const AnnouncementService = {
   /**
    * Hard-delete an announcement. There is no soft-delete column —
    * if a manager wants to roll an announcement off the staff feed
-   * without losing the audit trail, they should set `expiresAt`.
+   * without losing the audit trail, they should set `expirationDate`.
    *
    * @returns `true` if a row was deleted, `false` if the announcement
    *          did not exist in this tenant.
@@ -179,11 +225,39 @@ export const AnnouncementService = {
    * badge logic.
    */
   async countActive(orgId: string, locationId: string): Promise<number> {
+    const now = new Date();
     return Announcement.countDocuments({
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
-      $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }],
+      publishDate: { $ne: null, $lte: now },
+      $or: [{ expirationDate: null }, { expirationDate: { $gt: now } }],
     });
+  },
+
+  async listByLifecycle(
+    orgId: string,
+    locationId: string
+  ): Promise<
+    Record<"draft" | "scheduled" | "active" | "expired", AnnouncementDTO[]>
+  > {
+    const announcements = await this.list(orgId, locationId, {
+      limit: 200,
+      includeExpired: true,
+      includeDrafts: true,
+      includeScheduled: true,
+    });
+
+    return announcements.reduce<
+      Record<"draft" | "scheduled" | "active" | "expired", AnnouncementDTO[]>
+    >(
+      (acc, announcement) => {
+        const status = computeAnnouncementLifecycle(announcement);
+        acc[status] = acc[status] ?? [];
+        acc[status].push(announcement);
+        return acc;
+      },
+      { draft: [], scheduled: [], active: [], expired: [] }
+    );
   },
 
   /**

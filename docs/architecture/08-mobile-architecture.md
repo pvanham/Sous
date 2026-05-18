@@ -1,7 +1,7 @@
 # 08 — Mobile Architecture (Expo)
 
 > The staff-facing companion app. Different runtime (React Native,
-> Expo SDK 54), same auth (Clerk), same types (`@sous/types`), and a
+> Expo SDK 55), same auth (Clerk), same types (`@sous/types`), and a
 > thin HTTP client that talks to the web app's route handlers. For
 > the web app's internal architecture, see
 > [02-layer-patterns.md](./02-layer-patterns.md).
@@ -38,8 +38,8 @@ auth wiring, TanStack Query setup, and UI are real.
 
 | Concern | Choice |
 |---------|--------|
-| Runtime | React Native 0.81, React 19 |
-| SDK | Expo SDK 54 (`expo` ~54.0.33) |
+| Runtime | React Native 0.83, React 19 |
+| SDK | Expo SDK 55 (`expo` ~55.0.20) |
 | Router | `expo-router` v6 (file-based) |
 | Styling | NativeWind 5 (preview) + Tailwind v4 tokens |
 | Auth | `@clerk/clerk-expo` + `expo-secure-store` for token cache |
@@ -64,15 +64,19 @@ apps/mobile/
 │   │   ├── _layout.tsx
 │   │   ├── sign-in.tsx
 │   │   └── forgot-password.tsx
-│   └── (tabs)/                 — group: authenticated tab bar
+│   ├── (tabs)/                 — group: authenticated tab bar
 │       ├── _layout.tsx
 │       ├── index.tsx           — Home tab
 │       ├── schedule.tsx
 │       ├── exchange.tsx
 │       └── time-off.tsx
+│   └── announcements/          — stack routes opened from Home
+│       ├── index.tsx
+│       └── [id].tsx
 ├── features/                   — domain-sliced UI + data-access
 │   ├── auth/                   — membership fetch, auth store
 │   ├── home/                   — next shift, announcements
+│   ├── announcements/          — list/detail + read/ack actions
 │   ├── schedule/               — weekly roster, shift detail
 │   ├── exchange/               — drop/pickup board
 │   └── time-off/               — request list + submit form
@@ -116,6 +120,8 @@ nav tree:
   default, `forgot-password.tsx` is linked from it.
 - `app/(tabs)/*` — authenticated tab bar. `index.tsx` is the Home
   tab; the others are one-per-tab screen files.
+- `app/announcements/*` — authenticated stack screens opened from the
+  Home announcement feed (`/announcements`, `/announcements/[id]`).
 
 The top-level `<Stack>` in `app/_layout.tsx` switches between the two
 groups based on auth state. The tab bar (`app/(tabs)/_layout.tsx`)
@@ -290,6 +296,8 @@ new QueryClient({
 ```ts
 ["auth", "membership"]
 ["schedule", "week", weekStart.toISOString()]
+["announcements", userId, "list", "active" | "expired"]
+["announcements", userId, "detail", announcementId]
 ["exchange", "available"]
 ["time-off", "requests", staffId]
 ```
@@ -341,7 +349,9 @@ Rules:
 Every feature `api.ts` file now hits real endpoints — there is no
 remaining mock data on the mobile data layer:
 
-- `features/home/api.ts` — **live** (next shift, announcements)
+- `features/home/api.ts` — **live** (next shift; announcement fetch
+  delegated to announcements feature API)
+- `features/announcements/api.ts` — **live** (list, detail, read, acknowledge)
 - `features/schedule/api.ts` — **live** (week shifts, shift roster)
 - `features/time-off/api.ts` — **live** (requests list,
   submitTimeOffRequest)
@@ -366,7 +376,10 @@ documents auth, request/response shape, and the implementation plan.
 | Mobile call                               | Verb | Web route handler                                                | Status |
 |-------------------------------------------|------|------------------------------------------------------------------|--------|
 | `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      | live   |
-| `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    | live   |
+| `fetchAnnouncements({ lifecycle })`       | GET  | `/api/announcements/route.ts`                                    | live   |
+| `fetchAnnouncementById(id)`               | GET  | `/api/announcements/[id]/route.ts`                               | live   |
+| `markAnnouncementRead(id)`                | POST | `/api/announcements/[id]/read/route.ts`                          | live   |
+| `acknowledgeAnnouncement(id)`             | POST | `/api/announcements/[id]/acknowledge/route.ts`                   | live   |
 | `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | live   |
 | `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
 | `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | live   |
@@ -382,12 +395,17 @@ documents auth, request/response shape, and the implementation plan.
 | `registerDeviceToken(input)`              | POST | `/api/me/notifications/devices/route.ts`                         | live   |
 | `revokeDeviceToken(token)`                | DELETE | `/api/me/notifications/devices/route.ts`                       | live   |
 
-The Home tab is fully wired (SHI-7). `/api/shifts/next` resolves the
-caller's `staffId` server-side via `StaffService.getByClerkUserId`
-and delegates to `ShiftService.getNextForStaff`;
-`/api/announcements` delegates straight to
-`AnnouncementService.list`. Both routes follow the same
-`auth() → getLocationContext(userId)` pattern as the rest of the
+The Home + Announcements surfaces are fully wired. `/api/shifts/next`
+resolves the caller's `staffId` server-side via
+`StaffService.getByClerkUserId` and delegates to
+`ShiftService.getNextForStaff`. Announcement list/detail routes
+delegate to `AnnouncementService` plus
+`AnnouncementAcknowledgmentService` so the mobile client receives an
+`AnnouncementListItemDTO` envelope (announcement payload +
+caller-scoped read/ack row). Read and acknowledge mutations are exposed
+as `POST /api/announcements/[id]/read` and
+`POST /api/announcements/[id]/acknowledge`. All four routes follow the
+same `auth() → getLocationContext(userId)` pattern as the rest of the
 mobile API surface.
 
 The Schedule tab is fully wired (SHI-10). `/api/shifts` accepts a

@@ -30,7 +30,7 @@ English into reviewed, confirm-before-you-commit changes.
 ```
 apps/
 ├── web/       — Next.js 16 dashboard (App Router, Clerk, Mongo)
-└── mobile/    — Expo SDK 54 companion (React Native, NativeWind)
+└── mobile/    — Expo SDK 55 companion (React Native, NativeWind)
 
 packages/
 ├── types/     — Zod schemas + DTOs (@sous/types)
@@ -51,11 +51,11 @@ docs/
 
 | Layer | Web | Mobile |
 |-------|-----|--------|
-| Framework | Next.js 16 (App Router), React 19 | Expo SDK 54, React Native 0.81, React 19 |
+| Framework | Next.js 16 (App Router), React 19 | Expo SDK 55, React Native 0.83, React 19 |
 | Styling | Tailwind v4, shadcn/ui, Radix, Framer Motion | NativeWind 5, shared Tailwind tokens |
 | Data | MongoDB Atlas + Mongoose 9 | Axios + TanStack Query 5 |
 | State | TanStack Query 5 + Server Actions | TanStack Query 5 + Zustand 5 |
-| Auth | `@clerk/nextjs` 6 | `@clerk/clerk-expo` 2 + `expo-secure-store` |
+| Auth | `@clerk/nextjs` 7 | `@clerk/clerk-expo` 2 + `expo-secure-store` |
 | AI | Vercel AI SDK (`ai`) for chat; `openai` for one-shot calls | — |
 | Billing | Stripe 21 | — |
 | Solver | Python FastAPI + OR-Tools (via Docker) | — |
@@ -64,7 +64,8 @@ The monorepo is managed with **npm workspaces** and **Turborepo**.
 
 ## Prerequisites
 
-- **Node.js** 20+
+- **Node.js** 24+ (the repo pins `24.15.0` via `.node-version` and the
+  root `engines.node` field requires `>=24.3.0 <25`)
 - **MongoDB** (Atlas or local)
 - **Clerk** account — [clerk.com](https://clerk.com)
 - **OpenAI** API key (for the AI assistant and CP-SAT objective
