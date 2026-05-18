@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   Home,
@@ -14,8 +15,10 @@ import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { ensureRole, getSubscriptionStatus } from "@/lib/auth/guards";
 import { listLocations } from "@/server/actions/location.actions";
 import { ProvisioningScreen } from "./_components/ProvisioningScreen";
+import { SubscriptionExpiredScreen } from "./_components/SubscriptionExpiredScreen";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -47,8 +50,14 @@ export default async function DashboardLayout({
     return <ProvisioningScreen />;
   }
 
-  if (ctx.role === "staff") {
-    redirect("/staff-blocked");
+  ensureRole(ctx, ["owner", "manager", "shift_lead"], "/staff-blocked");
+
+  const headerList = await headers();
+  const pathname = headerList.get("x-pathname") ?? "";
+  const isBillingRoute = pathname.startsWith("/dashboard/settings/billing");
+  const subscriptionStatus = await getSubscriptionStatus(ctx.orgId);
+  if (subscriptionStatus === "expired" && (ctx.role !== "owner" || !isBillingRoute)) {
+    return <SubscriptionExpiredScreen role={ctx.role} />;
   }
 
   const result = await listLocations();

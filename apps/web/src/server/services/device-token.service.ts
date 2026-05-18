@@ -94,4 +94,13 @@ export const DeviceTokenService = {
       { $set: { revokedAt: new Date() } },
     );
   },
+
+  /**
+   * Hard-delete all device token rows for a Clerk user.
+   * Used during owner account deletion to remove user-scoped data.
+   */
+  async deleteAllByClerkUserId(clerkUserId: string): Promise<number> {
+    const result = await DeviceToken.deleteMany({ clerkUserId });
+    return result.deletedCount;
+  },
 };

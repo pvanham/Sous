@@ -126,6 +126,15 @@ export const NotificationPreferenceService = {
 
     return toNotificationPreferenceDTO(updated);
   },
+
+  /**
+   * Hard-delete all notification preference rows for a Clerk user.
+   * Used during owner account deletion to remove user-scoped data.
+   */
+  async deleteAllByClerkUserId(clerkUserId: string): Promise<number> {
+    const result = await NotificationPreference.deleteMany({ clerkUserId });
+    return result.deletedCount;
+  },
 };
 
 /**

@@ -6,6 +6,8 @@ import { OrganizationService } from "@/server/services/organization.service";
 import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
+import { DeviceTokenService } from "@/server/services/device-token.service";
+import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
 
@@ -187,40 +189,21 @@ export async function POST(req: Request) {
 
           // 1. Delete all manager clerk accounts for this org
           const allMembers = await OrganizationMemberService.listByOrgId(orgId);
-          await Promise.all(
+          const client = await clerkClient();
+          await Promise.allSettled(
             allMembers
-              .filter(m => m.clerkUserId !== userId)
-              .map(m => (async () => {
-                const client = await clerkClient();
-                return client.users.deleteUser(m.clerkUserId).catch(e => {
-                   console.error(`Failed to delete clerk user ${m.clerkUserId}:`, e)
-                });
-              })())
+              .filter((m) => m.clerkUserId !== userId)
+              .map((m) => client.users.deleteUser(m.clerkUserId)),
           );
 
-          // 2. Delete all MongoDB data for this org
-          await OrganizationMemberService.deleteAllByOrgId(orgId);
-          await LocationService.deleteAllByOrgId(orgId);
-          await OrganizationService.delete(orgId);
-          
-          // Staff, Schedule, Shifts, etc. to be deleted here as well
-          const Staff = (await import("@/server/models/Staff")).default;
-          await Staff.deleteMany({ orgId });
-          
-          const Schedule = (await import("@/server/models/Schedule")).default;
-          await Schedule.deleteMany({ orgId });
-          
-          const Shift = (await import("@/server/models/Shift")).default;
-          await Shift.deleteMany({ orgId });
-          
-          const LaborRequirement = (await import("@/server/models/LaborRequirement")).default;
-          await LaborRequirement.deleteMany({ orgId });
-          
-          const TimeOffRequest = (await import("@/server/models/TimeOffRequest")).default;
-          await TimeOffRequest.deleteMany({ orgId });
-          
-          const StaffAvailability = (await import("@/server/models/StaffAvailability")).default;
-          await StaffAvailability.deleteMany({ orgId });
+          // 2. Delete user-scoped rows tied to the owner account.
+          await Promise.all([
+            DeviceTokenService.deleteAllByClerkUserId(userId),
+            NotificationPreferenceService.deleteAllByClerkUserId(userId),
+          ]);
+
+          // 3. Delete all org-scoped data via service-layer cascade.
+          await OrganizationService.cascadeDelete(orgId);
 
           console.log(`Completed cascading delete for org ${orgId}`);
         } else if (membership.role === "staff") {

@@ -1,4 +1,20 @@
 import Organization from "@/server/models/Organization";
+import { getStripe } from "@/lib/stripe";
+import { AnnouncementAcknowledgmentService } from "@/server/services/announcement-acknowledgment.service";
+import { AnnouncementService } from "@/server/services/announcement.service";
+import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
+import { ShiftService } from "@/server/services/shift.service";
+import { ScheduleService } from "@/server/services/schedule.service";
+import { LaborRequirementService } from "@/server/services/labor-requirement.service";
+import { TimeOffRequestService } from "@/server/services/time-off-request.service";
+import { StaffAvailabilityService } from "@/server/services/staff-availability.service";
+import { StaffService } from "@/server/services/staff.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { AsyncTaskService } from "@/server/services/async-task.service";
+import { AIUsageService } from "@/server/services/ai-usage.service";
+import { ConversationService } from "@/server/services/conversation.service";
+import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { LocationService } from "@/server/services/location.service";
 import type { CreateOrganizationInput } from "@/lib/validations/organization.schema";
 import {
   OrganizationDTO,
@@ -127,5 +143,44 @@ export const OrganizationService = {
   async delete(orgId: string): Promise<boolean> {
     const result = await Organization.deleteOne({ _id: orgId });
     return result.deletedCount > 0;
+  },
+
+  /**
+   * Cascade-delete all organization-scoped data and then the organization itself.
+   * Used when an owner account is deleted from Clerk.
+   */
+  async cascadeDelete(orgId: string): Promise<void> {
+    const org = await this.getById(orgId);
+    if (!org) return;
+
+    if (org.stripeSubscriptionId) {
+      try {
+        const stripe = getStripe();
+        await stripe.subscriptions.cancel(org.stripeSubscriptionId);
+      } catch (err) {
+        // Non-fatal: data cleanup should still continue even if Stripe is unavailable.
+        console.error("Failed to cancel Stripe subscription during cascade delete:", err);
+      }
+    }
+
+    await Promise.all([
+      AnnouncementAcknowledgmentService.deleteAllByOrgId(orgId),
+      AnnouncementService.deleteAllByOrgId(orgId),
+      ExchangeShiftService.deleteAllByOrgId(orgId),
+      ShiftService.deleteAllByOrgId(orgId),
+      ScheduleService.deleteAllByOrgId(orgId),
+      LaborRequirementService.deleteAllByOrgId(orgId),
+      TimeOffRequestService.deleteAllByOrgId(orgId),
+      StaffAvailabilityService.deleteAllByOrgId(orgId),
+      StaffService.deleteAllByOrgId(orgId),
+      KitchenConfigService.deleteAllByOrgId(orgId),
+      AsyncTaskService.deleteAllByOrgId(orgId),
+      AIUsageService.deleteAllByOrgId(orgId),
+      ConversationService.deleteAllByOrgId(orgId),
+      OrganizationMemberService.deleteAllByOrgId(orgId),
+      LocationService.deleteAllByOrgId(orgId),
+    ]);
+
+    await this.delete(orgId);
   },
 };
