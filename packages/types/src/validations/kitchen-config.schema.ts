@@ -31,6 +31,48 @@ export const DAYS_OF_WEEK = [
 
 export type DayOfWeek = (typeof DAYS_OF_WEEK)[number];
 
+// Zod enum mirror — used by `weekStartsOn` and any future field that
+// stores a single day-of-week value.
+export const dayOfWeekSchema = z.enum(DAYS_OF_WEEK);
+
+// `Date.prototype.getDay()` returns 0=Sunday..6=Saturday — the date-fns
+// `weekStartsOn` option uses the same convention. We store the day as a
+// human-readable string and convert at the boundary so date-fns stays the
+// only place that cares about the numeric encoding.
+const DAY_OF_WEEK_TO_INDEX: Record<DayOfWeek, 0 | 1 | 2 | 3 | 4 | 5 | 6> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+const INDEX_TO_DAY_OF_WEEK: Record<number, DayOfWeek> = {
+  0: "sunday",
+  1: "monday",
+  2: "tuesday",
+  3: "wednesday",
+  4: "thursday",
+  5: "friday",
+  6: "saturday",
+};
+
+export function dayOfWeekToIndex(day: DayOfWeek): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  return DAY_OF_WEEK_TO_INDEX[day];
+}
+
+export function indexToDayOfWeek(index: number): DayOfWeek {
+  const day = INDEX_TO_DAY_OF_WEEK[index];
+  if (!day) {
+    throw new Error(
+      `Invalid day-of-week index ${index} — expected 0..6 (Sun..Sat).`,
+    );
+  }
+  return day;
+}
+
 // Operating hours for all days
 export const weeklyOperatingHoursSchema = z.object({
   monday: operatingHoursSchema,
@@ -97,6 +139,10 @@ export const kitchenConfigSchema = z.object({
   operatingHours: weeklyOperatingHoursSchema,
   minTimeOffAdvanceDays: z.number().int().min(0),
   aiSettings: aiSettingsSchema,
+  // Calendar day each new weekly schedule starts on. Owner-only edit at
+  // the action layer; existing schedules keep their stored weekStartDate
+  // when this flips, so changing it only affects future generations.
+  weekStartsOn: dayOfWeekSchema,
 });
 
 // Type inferred from the schema - used for form input
@@ -132,4 +178,5 @@ export const defaultKitchenConfigValues: KitchenConfigInput = {
     monthlyGenerationLimit: 50,
     subscriptionTier: "free",
   },
+  weekStartsOn: "monday",
 };

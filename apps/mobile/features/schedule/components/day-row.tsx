@@ -1,5 +1,5 @@
 import { View } from "react-native";
-import type { ShiftDTO } from "@sous/types";
+import type { ShiftDTO, TimeOffRequestDTO } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
 import { ShiftCard } from "./shift-card";
 
@@ -8,6 +8,13 @@ interface DayRowProps {
   shifts: ShiftDTO[];
   isToday: boolean;
   onShiftPress: (shift: ShiftDTO) => void;
+  /**
+   * Approved or pending time-off requests overlapping this day. The
+   * row picks the most relevant one (approved > pending) and renders
+   * it as a status pill on otherwise-empty days, so a staff member's
+   * planned vacation reads clearly even before any shifts are removed.
+   */
+  timeOff?: TimeOffRequestDTO[];
 }
 
 const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -19,10 +26,19 @@ const DAY_LABELS_SHORT = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
  * that fall on this day stacked vertically. When there are no shifts
  * we still render the row so the week reads as a continuous timeline
  * — empty days show a quiet "Off" placeholder rather than disappearing.
+ * If the staff member has an approved or pending time-off request
+ * overlapping the day, the placeholder upgrades to a status pill.
  */
-export function DayRow({ date, shifts, isToday, onShiftPress }: DayRowProps) {
+export function DayRow({
+  date,
+  shifts,
+  isToday,
+  onShiftPress,
+  timeOff,
+}: DayRowProps) {
   const dow = date.getDay();
   const hasShifts = shifts.length > 0;
+  const overlay = pickRelevantTimeOff(timeOff);
 
   return (
     <View className="flex-row">
@@ -66,6 +82,8 @@ export function DayRow({ date, shifts, isToday, onShiftPress }: DayRowProps) {
               <ShiftCard key={shift.id} shift={shift} onPress={onShiftPress} />
             ))}
           </View>
+        ) : overlay ? (
+          <TimeOffPlaceholder dayLabel={DAY_LABELS[dow]} request={overlay} />
         ) : (
           <View className="flex-1 justify-center min-h-[60px] bg-muted/40 rounded-md px-4 border border-border/60">
             <View className="flex-row items-center">
@@ -76,6 +94,55 @@ export function DayRow({ date, shifts, isToday, onShiftPress }: DayRowProps) {
             </View>
           </View>
         )}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Pick the most authoritative overlay for the day: an approved request
+ * outranks a pending one. If multiple requests have the same status,
+ * the first match wins — date-range overlap is the only relevance
+ * signal we care about here.
+ */
+function pickRelevantTimeOff(
+  requests: TimeOffRequestDTO[] | undefined,
+): TimeOffRequestDTO | null {
+  if (!requests || requests.length === 0) return null;
+  const approved = requests.find((r) => r.status === "approved");
+  if (approved) return approved;
+  const pending = requests.find((r) => r.status === "pending");
+  return pending ?? null;
+}
+
+interface TimeOffPlaceholderProps {
+  dayLabel: string;
+  request: TimeOffRequestDTO;
+}
+
+function TimeOffPlaceholder({ dayLabel, request }: TimeOffPlaceholderProps) {
+  const approved = request.status === "approved";
+  const label = approved ? "Time off" : "Pending time off";
+  return (
+    <View
+      className={`flex-1 justify-center min-h-[60px] rounded-md px-4 ${
+        approved
+          ? "bg-primary/10 border border-primary/40"
+          : "bg-muted/40 border border-dashed border-primary/40"
+      }`}
+    >
+      <View className="flex-row items-center">
+        <View
+          className={`w-1 h-4 rounded-full mr-2 ${
+            approved ? "bg-primary" : "bg-primary/60"
+          }`}
+        />
+        <StyledText
+          variant="caption"
+          className={approved ? "text-primary" : "text-muted-foreground"}
+        >
+          {dayLabel} · {label}
+        </StyledText>
       </View>
     </View>
   );

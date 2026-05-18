@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @plugin "tailwindcss-animate";
+@plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -203,4 +204,10 @@
   100% {
     transform: translateX(100%);
   }
+}
+
+/* Remove the browser default blue focus ring on the ProseMirror editable
+   area — focus state is handled at the container level via focus-within. */
+.ProseMirror:focus {
+  outline: none;
 }

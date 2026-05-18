@@ -9,7 +9,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { formatDayLabel, formatFullDayLabel, formatTimeRange, formatShiftDuration } from "@/lib/utils/date";
+import { formatFullDayLabel, formatTimeRange, formatShiftDuration } from "@/lib/utils/date";
 import { getStationClasses } from "@/lib/utils/station-colors";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
@@ -47,6 +47,7 @@ export function ScheduleListView({
     if (activeMode === "edit" && activeShift) {
       const stillExists = shifts.find((s) => s.id === activeShift.id);
       if (!stillExists) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         closeForm();
       }
     }
@@ -108,7 +109,7 @@ export function ScheduleListView({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-[160px]">
-                <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+                <DropdownMenuRadioGroup value={sortBy} onValueChange={(v) => setSortBy(v as "time" | "station" | "role")}>
                   <DropdownMenuRadioItem value="time">Start Time</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="station">Station</DropdownMenuRadioItem>
                   <DropdownMenuRadioItem value="role">Role</DropdownMenuRadioItem>

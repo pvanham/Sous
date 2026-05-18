@@ -4,7 +4,7 @@
  * Validates the two service methods that back the mobile Schedule tab
  * route handlers (`/api/shifts` and `/api/shifts/[shiftId]/roster`):
  *   - ShiftService.getByStaffAndWeek
- *   - ShiftService.getRoster
+ *   - ShiftService.getRosterByOverlap
  *   - StaffService.getByIds
  *
  * Runs against an in-memory MongoDB so no Atlas access is required.
@@ -243,12 +243,11 @@ async function main(): Promise<void> {
       `got ${noShiftsStaff.length}`,
     );
 
-    console.log("\n--- ShiftService.getRoster ---");
+    console.log("\n--- ShiftService.getRosterByOverlap ---");
 
-    const roster = await ShiftService.getRoster(
+    const roster = await ShiftService.getRosterByOverlap(
       String(orgId),
       String(locationId),
-      String(scheduleId),
       callerInWeek.start,
       callerInWeek.end,
     );

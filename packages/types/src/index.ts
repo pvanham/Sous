@@ -307,6 +307,16 @@ export interface LaborRequirementDTO {
 
 // ── Kitchen Config ───────────────────────────────────────────
 
+// Re-export the day-of-week primitive plus the numeric-conversion helpers
+// so consumers can `import { DayOfWeek, dayOfWeekToIndex } from "@sous/types"`
+// without reaching into the validations subpath.
+export type { DayOfWeek } from "./validations/kitchen-config.schema";
+export {
+  DAYS_OF_WEEK,
+  dayOfWeekToIndex,
+  indexToDayOfWeek,
+} from "./validations/kitchen-config.schema";
+
 export interface AISettingsDTO {
   monthlyGenerationLimit: number;
   subscriptionTier: "free" | "pro" | "enterprise";
@@ -351,6 +361,13 @@ export interface KitchenConfigDTO {
   minTimeOffAdvanceDays: number;
   aiSettings: AISettingsDTO;
   scheduleGenerationSettings: ScheduleGenerationSettingsDTO;
+  /**
+   * Calendar day each new weekly schedule starts on. Persisted as a
+   * lowercase day name (`"monday"` … `"sunday"`); helpers in
+   * `@sous/types/validations/kitchen-config.schema` convert to/from the
+   * date-fns numeric (`0=Sun..6=Sat`) representation.
+   */
+  weekStartsOn: import("./validations/kitchen-config.schema").DayOfWeek;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -385,6 +402,17 @@ export interface ConfigChangeImpact {
   };
   requiresRoleReplacement: boolean;
   availableReplacementRoles: string[];
+  /**
+   * Present only when the submitted form changes `weekStartsOn`. The
+   * dialog uses this to warn the owner that any future-dated schedules
+   * already on disk keep their existing `weekStartDate` (the new value
+   * applies to schedules created after the save).
+   */
+  weekStartChange?: {
+    from: import("./validations/kitchen-config.schema").DayOfWeek;
+    to: import("./validations/kitchen-config.schema").DayOfWeek;
+    affectedFutureSchedules: number;
+  };
 }
 
 export interface SaveKitchenConfigOptions {
@@ -397,11 +425,19 @@ export interface SaveKitchenConfigOptions {
 // ── Announcement ─────────────────────────────────────────────
 
 /**
- * Priority bucket for an announcement. Drives presentation on the
- * mobile home tab (urgent → red banner, high → amber, etc.) and
- * sorting (urgent / high pin to the top within the recency window).
+ * PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+ *
+ * The old values (`urgent` / `high` / `normal` / `low`) and old
+ * `expiresAt` field are intentionally removed. Future work should use
+ * this canonical 2-tier enum and the publish/expiration lifecycle.
  */
-export type AnnouncementPriority = "urgent" | "high" | "normal" | "low";
+export type AnnouncementPriority = "Standard" | "Urgent";
+
+export type AnnouncementLifecycleStatus =
+  | "draft"
+  | "scheduled"
+  | "active"
+  | "expired";
 
 /**
  * Manager-authored announcement scoped to a single location.
@@ -415,17 +451,59 @@ export interface AnnouncementDTO {
   orgId: string;
   locationId: string;
   /** Clerk user id of the manager / owner who authored the post. */
-  authorClerkUserId: string;
+  authorId: string;
   /** Display name captured at write time so deletions don't break the feed. */
   authorName: string;
   title: string;
   body: string;
   priority: AnnouncementPriority;
-  /** Optional expiry — when set, expired announcements are filtered out. */
-  expiresAt?: Date | null;
+  /** Role-targeting values and/or the `Global` sentinel. */
+  targetAudience: string[];
+  tags: string[];
+  publishDate: Date | null;
+  expirationDate: Date | null;
+  attachments: string[];
+  requiresAcknowledgment: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface AnnouncementAcknowledgmentDTO {
+  id: string;
+  orgId: string;
+  locationId: string;
+  announcementId: string;
+  userId: string;
+  readAt: Date | null;
+  acknowledgedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Mobile announcement feed envelope. Includes the announcement itself
+ * plus the caller-scoped read/ack row when one exists.
+ */
+export interface AnnouncementListItemDTO {
+  announcement: AnnouncementDTO;
+  acknowledgment: AnnouncementAcknowledgmentDTO | null;
+}
+
+export {
+  ANNOUNCEMENT_AUDIENCE_TOKENS,
+  announcementPriorityValues,
+  createAnnouncementSchema,
+  updateAnnouncementSchema,
+  listAnnouncementsSchema,
+  acknowledgeAnnouncementSchema,
+} from "./validations/announcement.schema";
+
+export type {
+  CreateAnnouncementInput,
+  UpdateAnnouncementInput,
+  ListAnnouncementsInput,
+  AcknowledgeAnnouncementInput,
+} from "./validations/announcement.schema";
 
 // ── Exchange Shift ───────────────────────────────────────────
 

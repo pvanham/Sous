@@ -66,7 +66,7 @@ export default function PricingPage() {
           </p>
         </div>
         <p className="mx-auto mt-6 max-w-2xl text-center text-lg leading-8 text-stone-600 dark:text-stone-300">
-          Choose an affordable plan that's packed with the best scheduling tools for your operation, whether you're a single cafe or a national franchise.
+          Choose an affordable plan that&apos;s packed with the best scheduling tools for your operation, whether you&apos;re a single cafe or a national franchise.
         </p>
         <div className="isolate mx-auto mt-16 grid max-w-md grid-cols-1 gap-y-8 sm:mt-20 lg:mx-0 lg:max-w-none lg:grid-cols-3 lg:gap-x-8 lg:items-stretch h-full">
           {tiers.map((tier) => (

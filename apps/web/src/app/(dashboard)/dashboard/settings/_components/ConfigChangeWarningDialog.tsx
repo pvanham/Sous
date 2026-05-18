@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Users, Clock, ChevronDown, ChevronUp, ClipboardList, UserCircle } from "lucide-react";
+import { AlertTriangle, Users, Clock, ChevronDown, ChevronUp, ClipboardList, UserCircle, CalendarDays } from "lucide-react";
 
 import {
   AlertDialog,
@@ -59,11 +59,15 @@ export function ConfigChangeWarningDialog({
       impact.stationImpact.preferredStationStaffCount > 0);
   const hasRoleImpact = impact.removedRoles.length > 0 && impact.roleImpact.affectedStaffCount > 0;
   const requiresReplacement = impact.requiresRoleReplacement;
+  const weekStartChange = impact.weekStartChange;
+  const hasWeekStartChange = Boolean(weekStartChange);
 
   // Determine dialog type
-  const isStationOnlyRemoval = hasStationImpact && !hasRoleImpact;
-  const isRoleOnlyRemoval = hasRoleImpact && !hasStationImpact;
-  const isMixedRemoval = hasStationImpact && hasRoleImpact;
+  const isStationOnlyRemoval = hasStationImpact && !hasRoleImpact && !hasWeekStartChange;
+  const isRoleOnlyRemoval = hasRoleImpact && !hasStationImpact && !hasWeekStartChange;
+  const isWeekStartOnly = hasWeekStartChange && !hasStationImpact && !hasRoleImpact;
+  const isMixedChange =
+    [hasStationImpact, hasRoleImpact, hasWeekStartChange].filter(Boolean).length > 1;
 
   const handleConfirm = () => {
     if (requiresReplacement && selectedReplacementRole) {
@@ -80,9 +84,9 @@ export function ConfigChangeWarningDialog({
 
   const canConfirm = !requiresReplacement || selectedReplacementRole !== "";
 
-  // Title based on what's being removed
+  // Title based on what's being changed
   const getTitle = () => {
-    if (isMixedRemoval) {
+    if (isMixedChange) {
       return "Confirm Configuration Changes";
     }
     if (isStationOnlyRemoval) {
@@ -91,8 +95,13 @@ export function ConfigChangeWarningDialog({
     if (isRoleOnlyRemoval) {
       return `Removing Role: ${impact.removedRoles[0]}`;
     }
+    if (isWeekStartOnly && weekStartChange) {
+      return "Change Week Start";
+    }
     return "Confirm Changes";
   };
+
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -305,6 +314,42 @@ export function ConfigChangeWarningDialog({
                   )}
                 </div>
               )}
+
+              {/* Week start change section. Existing schedules keep their
+                  current weekStartDate; only future generations switch to
+                  the new anchor. */}
+              {weekStartChange && (
+                <div className="rounded border border-stone-200 dark:border-stone-700 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <CalendarDays className="h-4 w-4 text-stone-500" />
+                      <span className="font-medium text-stone-900 dark:text-stone-100">
+                        Week Start Change
+                      </span>
+                    </div>
+                    <Badge variant="secondary">
+                      {capitalize(weekStartChange.from)} →{" "}
+                      {capitalize(weekStartChange.to)}
+                    </Badge>
+                  </div>
+                  <p className="text-sm">
+                    New schedules will start on{" "}
+                    <strong>{capitalize(weekStartChange.to)}</strong>. Existing
+                    schedules at this location keep their current week
+                    boundaries.
+                  </p>
+                  {weekStartChange.affectedFutureSchedules > 0 && (
+                    <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-stone-400 bg-stone-50 dark:bg-stone-800/50 p-2 rounded">
+                      <Clock className="h-4 w-4" />
+                      <span>
+                        {weekStartChange.affectedFutureSchedules} future
+                        schedule(s) already exist and will keep starting on{" "}
+                        {capitalize(weekStartChange.from)}.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -320,11 +365,13 @@ export function ConfigChangeWarningDialog({
               ? "Saving..."
               : requiresReplacement
                 ? "Remove & Replace Role"
-                : hasStationImpact && hasRoleImpact
+                : isMixedChange
                   ? "Confirm Changes"
-                  : hasStationImpact
-                    ? "Remove Station"
-                    : "Remove Role"}
+                  : isWeekStartOnly
+                    ? "Save Week Start"
+                    : hasStationImpact
+                      ? "Remove Station"
+                      : "Remove Role"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogContent>

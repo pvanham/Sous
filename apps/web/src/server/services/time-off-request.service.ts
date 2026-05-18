@@ -106,6 +106,45 @@ export const TimeOffRequestService = {
   },
 
   /**
+   * Get time-off requests overlapping a date range, limited to a
+   * specific set of statuses. Backs the manager grid + mobile schedule
+   * tab overlays where the surface wants approved AND pending pills
+   * (so a freshly-submitted request previews the conflict before a
+   * manager has decided).
+   *
+   * Uses the same overlap logic as `getByDateRange`:
+   * `doc.startDate <= queryEndDate AND doc.endDate >= queryStartDate`.
+   *
+   * @param orgId      Organization ID (tenancy filter).
+   * @param locationId Location ID (tenancy filter).
+   * @param startDate  Query range start (inclusive).
+   * @param endDate    Query range end (inclusive).
+   * @param statuses   Non-empty list of statuses to include.
+   * @returns Array of overlapping TimeOffRequestDTOs sorted by start
+   *          date descending; empty if `statuses` is empty.
+   */
+  async getByDateRangeAndStatuses(
+    orgId: string,
+    locationId: string,
+    startDate: Date,
+    endDate: Date,
+    statuses: TimeOffRequestStatus[],
+  ): Promise<TimeOffRequestDTO[]> {
+    if (statuses.length === 0) return [];
+
+    const docs = await TimeOffRequest.find({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      status: { $in: statuses },
+      startDate: { $lte: endDate },
+      endDate: { $gte: startDate },
+    })
+      .sort({ startDate: -1 })
+      .lean();
+    return docs.map(toTimeOffRequestDTO);
+  },
+
+  /**
    * Get approved time-off requests for a staff member overlapping a date range.
    * This is a KEY METHOD used by CandidateService (Sprint 3.5) to exclude staff
    * from shift assignments on dates they have approved time off.

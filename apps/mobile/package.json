@@ -14,7 +14,8 @@
     "build:ios:dev": "npx eas-cli build --platform ios --profile development",
     "build:ios:sim": "npx eas-cli build --platform ios --profile development-simulator",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.36",

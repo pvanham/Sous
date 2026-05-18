@@ -165,6 +165,10 @@ listener reads `data.url` (e.g. `sous://schedule`) from the push
 payload and hands it to `Linking.openURL`, which Expo Router
 resolves to a `router.push(...)`.
 
+Announcement push payloads may set `data.url =
+sous://announcements/<announcementId>` so a tap opens the dedicated
+mobile detail screen (`app/announcements/[id].tsx`) directly.
+
 ---
 
 ## 5. Mobile UI

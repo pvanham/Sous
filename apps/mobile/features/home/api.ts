@@ -1,6 +1,13 @@
 import type { ShiftDTO } from "@sous/types";
 import { apiClient } from "@/lib/api-client";
-import type { Announcement } from "@/types";
+export { fetchAnnouncements } from "@/features/announcements/api";
+
+// ─────────────────────────────────────────────────────────────
+// PHASE-1 ANNOUNCEMENT REWRITE — DO NOT REVERT TO OLD SHAPE
+//
+// Keep this shim aligned with shared `AnnouncementDTO` while web-only
+// manager flows are implemented in later phases.
+// ─────────────────────────────────────────────────────────────
 
 // Re-export `fetchWeekShifts` from the schedule feature so the home
 // tab can surface the rest of the current week without duplicating
@@ -25,18 +32,17 @@ export { fetchWeekShifts } from "@/features/schedule/api";
 //             caller has no Staff linkage at this location)
 //     • 401 → { error } when the JWT is missing/invalid
 //
-//   GET /announcements?limit=20
+//   GET /announcements?limit=20&lifecycle=active|expired
 //     • Auth: Clerk JWT.
-//     • Returns announcements for the caller's location, newest first.
-//     • 200 → AnnouncementDTO[]
+//     • Returns announcement rows for the caller's location, newest
+//       first, including caller-scoped read/ack state.
+//     • 200 → AnnouncementListItemDTO[]
 //     • 401 → { error } when the JWT is missing/invalid
 //
 // Wire format
-//   Both responses arrive as JSON. `start`, `end`, `expiresAt`,
-//   `createdAt`, `updatedAt` come back as ISO strings — the DTOs
-//   declare them as `Date`, so we revive them here before returning
-//   to the UI. Components rely on real `Date` objects for relative
-//   time formatting.
+//   `GET /shifts/next` arrives as JSON with ISO date fields and is
+//   revived below. Announcement wire-date revival now lives in
+//   `features/announcements/api.ts`.
 //
 // Query keys (see docs/architecture/08-mobile-architecture.md §8)
 //   - `["home", "nextShift"]`
@@ -56,30 +62,11 @@ export async function fetchNextShift(): Promise<ShiftDTO | null> {
   return response.data ? reviveShift(response.data) : null;
 }
 
-/**
- * Returns recent announcements for the caller's location, newest
- * first. Server defaults to 20 entries.
- */
-export async function fetchAnnouncements(): Promise<Announcement[]> {
-  const response =
-    await apiClient.get<SerializedAnnouncement[]>("/announcements");
-  return response.data.map(reviveAnnouncement);
-}
-
-// ── Wire shapes (Date fields arrive as ISO strings) ─────────
+// ── Wire shape (Date fields arrive as ISO strings) ───────────
 
 type SerializedShift = Omit<ShiftDTO, "start" | "end" | "createdAt" | "updatedAt"> & {
   start: string;
   end: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type SerializedAnnouncement = Omit<
-  Announcement,
-  "expiresAt" | "createdAt" | "updatedAt"
-> & {
-  expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -89,15 +76,6 @@ function reviveShift(raw: SerializedShift): ShiftDTO {
     ...raw,
     start: new Date(raw.start),
     end: new Date(raw.end),
-    createdAt: new Date(raw.createdAt),
-    updatedAt: new Date(raw.updatedAt),
-  };
-}
-
-function reviveAnnouncement(raw: SerializedAnnouncement): Announcement {
-  return {
-    ...raw,
-    expiresAt: raw.expiresAt ? new Date(raw.expiresAt) : null,
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
   };

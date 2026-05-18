@@ -73,8 +73,11 @@ the role enum must be reflected there.
 
 ### KitchenConfig (`KitchenConfig.ts`)
 
-Per-location restaurant settings — stations, roles, operating hours.
-`stations` is the canonical list that every `Shift` validates against.
+Per-location restaurant settings — stations, roles, operating hours,
+and the calendar day each new weekly schedule starts on. `stations` is
+the canonical list that every `Shift` validates against; `weekStartsOn`
+is the single source of truth for week boundaries on both the web and
+mobile apps (default `"monday"`, owner-only edit).
 
 ```ts
 {
@@ -83,6 +86,7 @@ Per-location restaurant settings — stations, roles, operating hours.
   name: string,
   stations: string[],                  // e.g. ["Sauté", "Grill", "Prep", "Dish"]
   roles: string[],                     // e.g. ["Cook", "Shift Lead", "Manager"]
+  weekStartsOn: "monday" | ... | "sunday", // default "monday"; only owners can change
   operatingHours: {
     [day in "monday"..."sunday"]: {
       isOpen: boolean,
@@ -123,18 +127,62 @@ mobile app.
 
 ### Schedule (`Schedule.ts`)
 
-Week container. `weekStartDate` is **always a Monday** (00:00 local).
+Week container. `weekStartDate` matches the location's configured
+`KitchenConfig.weekStartsOn` (default Monday) and is interpreted as
+midnight **in the location's IANA timezone**, not server-local or UTC.
+The Mongoose validator only guards the basic "valid Date" invariant;
+the per-location weekday alignment lives in
+`ScheduleService.assertWeekStartAligned` so it can read the live
+config and the location TZ at the same time (a sync validator can't do
+either). Existing schedules keep their stored `weekStartDate` if
+`weekStartsOn` is changed later — only newly generated schedules
+switch to the new anchor.
 
 ```ts
 {
   orgId: ObjectId(Organization),
   locationId: ObjectId(Location),
-  weekStartDate: Date,                 // Monday 00:00 (location TZ)
+  weekStartDate: Date,                 // midnight in Location.timezone on the configured weekStartsOn
   status: "DRAFT" | "PUBLISHED",
   notes: string,
   createdAt, updatedAt: Date,
 }
 ```
+
+#### Schedule vs Shift visibility
+
+Staff-facing read endpoints (`/api/shifts`, `/api/shifts/next`,
+`/api/shifts/[shiftId]/roster`) always filter on
+`Schedule.status === "PUBLISHED"` via the `publishedOnly` service
+option (`ShiftService.getByStaffAndWeek`, `getNextForStaff`,
+`getRosterByOverlap`). A DRAFT shift must never leak to a staff phone.
+
+Manager-facing reads (the web grid + dashboard, via
+`listShiftsForLocationWeek` and `ShiftService.getByLocationAndDateRange`)
+deliberately surface both DRAFT and PUBLISHED so an in-progress week
+is editable before publish.
+
+Publishing from the manager grid is a consolidating write: before the
+target Schedule flips to `PUBLISHED`, every shift whose `start` is in
+that visible 7-day window is reassigned to the target schedule. This
+prevents duplicate published windows after a `weekStartsOn` flip and
+keeps web/mobile in sync on which shifts are canonical for that week.
+
+#### Optical-window queries
+
+Every "what's on this week" read sources shifts by date range against
+`Shift.start` — never by `scheduleId`. After an owner flips
+`weekStartsOn`, two co-workers on the same Saturday can be attached to
+Schedule docs with different `weekStartDate` anchors; a `scheduleId`-
+scoped query would hide one of them. Helpers that follow this rule:
+`getByLocationAndDateRange`, `getByStaffAndWeek`, `getRosterByOverlap`.
+`getBySchedule` remains a write-path internal — adding a new read
+consumer requires this same optical-window pattern.
+
+The schedule badge on the web grid also follows this optical-window
+rule: "effective status" is derived from the owner schedules of visible
+shifts in the week window, not from a single schedule doc's stored
+status.
 
 ### Shift (`Shift.ts`)
 
@@ -292,7 +340,7 @@ this is only `schedule_generation`, but the shape is generic.
   clerkUserId: string,
   inputPayload: unknown,               // solver input snapshot
   scheduleId: string,
-  weekStartDate: string,               // ISO date (Monday)
+  weekStartDate: string,               // ISO date (matches the location's weekStartsOn; default Monday)
   result?: {
     solverStatus: string,
     objectiveValue: number,
@@ -372,19 +420,26 @@ roles in `announcement.actions.ts`.
 {
   orgId: ObjectId(Organization),
   locationId: ObjectId(Location),
-  authorClerkUserId: string,           // who posted (Clerk user ID)
+  authorId: string,                    // who posted (Clerk user ID)
   authorName: string,                  // snapshot at write time
   title: string,                       // 1..120 chars
-  body: string,                        // 1..2000 chars
-  priority: "urgent" | "high" | "normal" | "low",   // default "normal"
-  expiresAt?: Date | null,             // when set, must be in the future
+  body: string,                        // 1..10000 chars (rich text / HTML)
+  priority: "Standard" | "Urgent",     // default "Standard"
+  targetAudience: string[],            // one or more role names or "Global"
+  tags: string[],
+  publishDate: Date | null,            // null = Draft
+  expirationDate: Date | null,         // must be strictly > publishDate when both exist
+  attachments: string[],               // public Cloudflare R2 URLs
+  requiresAcknowledgment: boolean,     // Phase-2+ mandatory "I Agree" flow
   createdAt, updatedAt: Date,
 }
 ```
 
 Indexes: `(orgId, locationId, createdAt)` for the newest-first feed
-and `(orgId, locationId, expiresAt)` for the still-active filter.
-We deliberately do **not** use a TTL index — `expiresAt` controls
+plus `(orgId, locationId, publishDate)` and
+`(orgId, locationId, expirationDate)` for lifecycle bucketing/filtering.
+Tag filtering uses `(orgId, locationId, tags)` (multikey). We
+deliberately do **not** use a TTL index — `expirationDate` controls
 visibility, not deletion, so the manager-side history outlives the
 staff-facing window.
 
@@ -394,6 +449,45 @@ The DTO and Zod schemas live in `@sous/types`
 `listAnnouncementsSchema`). The web wrapper at
 `apps/web/src/types/announcement.ts` adds the Mongoose-flavoured
 `IAnnouncement` interface and the `toAnnouncementDTO` converter.
+
+Mobile list/detail reads use the `AnnouncementListItemDTO` envelope
+(`announcement` + caller-scoped `acknowledgment`) so the client can
+render unread/ack badges without extra joins. The envelope is served by
+`GET /api/announcements` and `GET /api/announcements/[id]`; write-side
+state transitions are `POST /api/announcements/[id]/read` and
+`POST /api/announcements/[id]/acknowledge`.
+
+Attachment uploads are direct-to-storage: the dashboard composer requests
+`POST /api/attachments/upload-url`, receives a short-lived presigned PUT
+URL plus a public URL, uploads the file body to Cloudflare R2, then sends
+the public URL in `attachments[]` on `createAnnouncement` / `updateAnnouncement`.
+Stored keys follow `announcements/<orgId>/<uuid>/<filename>` for tenant scoping
+and collision resistance.
+
+### AnnouncementAcknowledgment (`AnnouncementAcknowledgment.ts`)
+
+Per-user read/ack tracking for an announcement. This intentionally uses
+its own collection (instead of an embedded `Announcement[]` subdocument
+array) to keep high-read mobile queries cheap and enforce one row per
+`announcementId + userId`.
+
+```ts
+{
+  orgId: ObjectId(Organization),         // denormalized for tenancy filters
+  locationId: ObjectId(Location),
+  announcementId: ObjectId(Announcement),
+  userId: string,                        // Clerk user ID
+  readAt: Date | null,
+  acknowledgedAt: Date | null,           // requires readAt
+  createdAt, updatedAt: Date,
+}
+```
+
+Indexes:
+
+- Unique `(announcementId, userId)` — one tracking row per user per post.
+- `(orgId, locationId, userId, readAt)` — supports unread/read counters.
+- `(announcementId, acknowledgedAt)` — supports Phase 5 ack roster splits.
 
 ### ExchangeShift (`ExchangeShift.ts`)
 

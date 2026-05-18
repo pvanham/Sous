@@ -7,18 +7,24 @@ import { ArrowRight } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card";
 import { type ShiftDTO } from "@/types/shift";
 import { getWeekStart } from "@/lib/utils/date";
+import type { DayOfWeek } from "@sous/types";
 
 interface WeeklyScheduleOverviewProps {
   shifts: ShiftDTO[];
   weekStart: Date;
+  weekStartsOn: DayOfWeek;
 }
 
-export function WeeklyScheduleOverview({ shifts, weekStart }: WeeklyScheduleOverviewProps) {
+export function WeeklyScheduleOverview({
+  shifts,
+  weekStart,
+  weekStartsOn,
+}: WeeklyScheduleOverviewProps) {
   const weekDays = useMemo(() => {
-    const start = getWeekStart(weekStart || new Date());
+    const start = getWeekStart(weekStart || new Date(), weekStartsOn);
     const end = addDays(start, 6);
     return eachDayOfInterval({ start, end });
-  }, [weekStart]);
+  }, [weekStart, weekStartsOn]);
 
   const shiftsPerDay = useMemo(() => {
     const counts = new Array(7).fill(0);

@@ -58,12 +58,27 @@ optimistic mutations:
 ```tsx
 // page.tsx (Server Component)
 import { listShiftsByWeek } from "@/server/actions/shift.actions";
+import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
+import { getWeekStart } from "@/lib/utils/date";
 import { ScheduleGrid } from "./_components/ScheduleGrid";
 
 export default async function SchedulePage({ searchParams }: …) {
-  const weekStart = resolveWeekStart(searchParams);
+  // Resolve the location's configured first day of the week server-side
+  // so the very first paint lines up with the configured value before
+  // the kitchen-config TanStack query lands. The client component falls
+  // back to its cached query for subsequent renders.
+  const config = await getKitchenConfig();
+  const weekStartsOn =
+    config.success && config.data ? config.data.weekStartsOn : "monday";
+  const weekStart = getWeekStart(resolveWeekDate(searchParams), weekStartsOn);
   const initial = await listShiftsByWeek({ weekStart });
-  return <ScheduleGrid initial={initial.success ? initial.data : []} weekStart={weekStart} />;
+  return (
+    <ScheduleGrid
+      initial={initial.success ? initial.data : []}
+      weekStart={weekStart}
+      initialWeekStartsOn={weekStartsOn}
+    />
+  );
 }
 ```
 

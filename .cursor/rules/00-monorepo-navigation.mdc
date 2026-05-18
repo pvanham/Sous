@@ -14,7 +14,7 @@ distinct boundaries.
 / (repo root)
 ├── apps/
 │   ├── web/       Next.js 16 dashboard  (managers / owners)
-│   └── mobile/    Expo SDK 54 app       (staff / shift leads)
+│   └── mobile/    Expo SDK 55 app       (staff / shift leads)
 ├── packages/
 │   ├── config/    Shared Tailwind preset (web + mobile)
 │   └── types/     Shared Zod schemas and DTO types (@sous/types)
@@ -114,7 +114,7 @@ ask the user to disambiguate.
 - `src/lib/validations/` – web-local Zod schemas (prefer `@sous/types` when shared)
 - `src/proxy.ts` – Clerk middleware (non-standard filename; see `web-nextjs` rule)
 
-**`apps/mobile/` (Expo SDK 54, React Native 0.81):**
+**`apps/mobile/` (Expo SDK 55, React Native 0.83):**
 - `app/` – Expo Router routes (`(auth)/`, `(tabs)/`)
 - `features/` – feature modules (`auth/`, `home/`, `schedule/`, `time-off/`, `exchange/`)
   - each contains `screens/`, `components/`, `api.ts`, sometimes `store.ts`

@@ -2,8 +2,10 @@ import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
+import type { DayOfWeek } from "@sous/types";
 
 const VALID_INVITED_ROLES: MemberRole[] = [
   "manager",
@@ -39,19 +41,29 @@ export async function GET() {
 
   const existing = await OrganizationMemberService.getFirstByUserId(userId);
   if (existing) {
+    const weekStartsOn = await resolveWeekStartsOn(
+      existing.orgId,
+      existing.locationId,
+    );
     return NextResponse.json({
       role: existing.role,
       orgId: existing.orgId,
       locationId: existing.locationId,
+      weekStartsOn,
     });
   }
 
   const healed = await tryHealMembership(userId);
   if (healed) {
+    const weekStartsOn = await resolveWeekStartsOn(
+      healed.orgId,
+      healed.locationId,
+    );
     return NextResponse.json({
       role: healed.role,
       orgId: healed.orgId,
       locationId: healed.locationId,
+      weekStartsOn,
     });
   }
 
@@ -59,6 +71,21 @@ export async function GET() {
     { error: "No organization membership found for this user." },
     { status: 404 },
   );
+}
+
+/**
+ * Look up the configured week-start day for the membership's location.
+ * Org-wide memberships (no `locationId`) and brand-new tenants without a
+ * KitchenConfig row both fall back to Monday — the same default the
+ * Mongoose schema uses, so the mobile UI never has to special-case the
+ * absence of a value.
+ */
+async function resolveWeekStartsOn(
+  orgId: string,
+  locationId: string | null,
+): Promise<DayOfWeek> {
+  if (!locationId) return "monday";
+  return KitchenConfigService.getWeekStartsOn(orgId, locationId);
 }
 
 type HealedMembership = {

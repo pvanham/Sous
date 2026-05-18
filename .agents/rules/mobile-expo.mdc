@@ -1,5 +1,5 @@
 ---
-description: Expo SDK 54 + React Native 0.81 + NativeWind patterns for the mobile app. Attached automatically when editing apps/mobile.
+description: Expo SDK 55 + React Native 0.83 + NativeWind patterns for the mobile app. Attached automatically when editing apps/mobile.
 globs: apps/mobile/**/*.{ts,tsx,css}
 ---
 
@@ -16,8 +16,8 @@ management lives in the web dashboard** and stays gated server-side.
 
 | Aspect | Value | Notes |
 |--------|-------|-------|
-| Expo SDK | **54** (`expo@~54.0`) | New Architecture (`newArchEnabled: true`) |
-| React Native | **0.81** | React 19.1 |
+| Expo SDK | **55** (`expo@~55.0`) | New Architecture (`newArchEnabled: true`) |
+| React Native | **0.83** | React 19.2 |
 | Router | **Expo Router** (file-based) | Stack + Tabs under `app/` |
 | Auth | `@clerk/clerk-expo` | `ClerkProvider` with `tokenCache` |
 | Secure storage | `expo-secure-store` | Backs `tokenCache` |

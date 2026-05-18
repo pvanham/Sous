@@ -191,7 +191,7 @@ export default function LandingPage() {
                 Synchronized across all your locations.
               </h2>
               <p className="text-lg text-stone-600 dark:text-stone-400 mb-8">
-                Designed for franchises and rapid-growth restaurant groups, our B2B architecture lets you invite managers and restrict their access purely to their own kitchen, while giving owners a bird's-eye view of everything from a single pane of glass.
+                Designed for franchises and rapid-growth restaurant groups, our B2B architecture lets you invite managers and restrict their access purely to their own kitchen, while giving owners a bird&apos;s-eye view of everything from a single pane of glass.
               </p>
               <Button variant="link" className="p-0 h-auto text-stone-900 dark:text-white font-semibold" asChild>
                 <Link href="/features" className="flex items-center gap-1 group">

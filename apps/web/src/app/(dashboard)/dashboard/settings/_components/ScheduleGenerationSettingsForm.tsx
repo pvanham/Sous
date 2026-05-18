@@ -278,7 +278,7 @@ export function ScheduleGenerationSettingsForm({
               <div className="flex flex-col">
                 <span className="font-medium">Unsaved Changes</span>
                 <span className="text-sm text-muted-foreground">
-                  Don't forget to save your settings
+                  Don&apos;t forget to save your settings
                 </span>
               </div>
               <div className="flex items-center gap-3">

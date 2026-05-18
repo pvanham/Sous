@@ -3,6 +3,7 @@ import { combineDateTime, getWeekStart, parseDateString } from "@/lib/utils/date
 import { buildOCCFilter, getStaleReason } from "./occ";
 import type { AcceptSchedulePayload } from "@/lib/ai/tools/definitions/propose-accept-generated-schedule.schema";
 import { AsyncTaskService } from "@/server/services/async-task.service";
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
 import type { CreateShiftInput } from "@/types/shift";
@@ -241,7 +242,11 @@ async function executeScheduleGeneration(
       errorCode: "malformed_payload",
     };
   }
-  const weekStart = getWeekStart(parsed);
+  const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+    orgId,
+    locationId,
+  );
+  const weekStart = getWeekStart(parsed, weekStartsOn);
 
   const rawTemplate = proposal.payload.templateScheduleId;
   let templateScheduleId: string | undefined;

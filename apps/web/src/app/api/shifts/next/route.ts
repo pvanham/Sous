@@ -24,6 +24,10 @@ import { StaffService } from "@/server/services/staff.service";
 //     location) we return `null` instead of erroring — they simply
 //     have no upcoming shifts to show.
 //
+// Visibility
+//   - DRAFT shifts are filtered out (`publishedOnly: true`) so the
+//     home card never previews an unpublished assignment.
+//
 // Response
 //   - 200 → `ShiftDTO | null` (the next future shift, or `null` if
 //           none / the caller has no Staff linkage).
@@ -61,6 +65,7 @@ export async function GET(): Promise<Response> {
       ctx.orgId,
       ctx.locationId,
       staff.id,
+      { publishedOnly: true },
     );
 
     return NextResponse.json(nextShift);

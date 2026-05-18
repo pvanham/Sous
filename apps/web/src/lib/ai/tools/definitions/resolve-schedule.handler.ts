@@ -5,22 +5,8 @@ import type {
 import type { ToolExecutionContext } from "../tool-registry.types";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { ShiftService } from "@/server/services/shift.service";
-
-/**
- * Compute the Monday (start-of-week) for a given date.
- *
- * Uses the server-local timezone for all arithmetic, matching the convention
- * used by date-fns startOfWeek() and ScheduleService.getByWeek() which both
- * store/query weekStartDate as midnight in the server's local timezone.
- */
-function toMonday(date: Date): Date {
-  const jsDay = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const daysSinceMonday = (jsDay + 6) % 7; // Convert to 0=Mon..6=Sun
-  const monday = new Date(date);
-  monday.setDate(monday.getDate() - daysSinceMonday);
-  monday.setHours(0, 0, 0, 0);
-  return monday;
-}
+import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { getWeekStart } from "@/lib/utils/date";
 
 /**
  * Parse a date-only ISO string (e.g. "2026-03-31") as a local-timezone Date
@@ -51,20 +37,24 @@ export async function executeResolveSchedule(
     };
   }
 
-  const monday = toMonday(parsed);
+  const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
+    context.orgId,
+    context.locationId,
+  );
+  const weekStart = getWeekStart(parsed, weekStartsOn);
 
   const weekLabel = new Intl.DateTimeFormat("en-US", {
     month: "long",
     day: "numeric",
     year: "numeric",
-  }).format(monday);
+  }).format(weekStart);
 
-  const weekStartDate = monday.toISOString();
+  const weekStartDate = weekStart.toISOString();
 
   const schedule = await ScheduleService.getByWeek(
     context.orgId,
     context.locationId,
-    monday,
+    weekStart,
   );
 
   if (!schedule) {

@@ -15,8 +15,6 @@ import {
   ChevronUp,
   XCircle,
   Star,
-  DollarSign,
-  Info,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";

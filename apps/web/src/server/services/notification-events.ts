@@ -2,6 +2,8 @@ import { createElement } from "react";
 
 import { NotificationService } from "@/server/services/notification.service";
 import { NotificationEmail } from "@/lib/email/templates/NotificationEmail";
+import { AnnouncementEmail } from "@/lib/email/templates/AnnouncementEmail";
+import { tiptapBodyToPlainText } from "@/lib/announcement/composer-defaults";
 import type {
   AnnouncementDTO,
   ExchangeShiftDTO,
@@ -461,7 +463,8 @@ export const NotificationEvents = {
     locationId: string;
   }): Promise<void> {
     const title = announcement.title;
-    const body = announcement.body.slice(0, 140);
+    // Extract plain text for push — the body is Tiptap JSON, not a string.
+    const pushBody = tiptapBodyToPlainText(announcement.body).slice(0, 140);
     return NotificationService.notify({
       recipients: { allStaffOf: { orgId, locationId } },
       category: "announcements",
@@ -469,7 +472,7 @@ export const NotificationEvents = {
       locationId,
       payload: {
         title,
-        body,
+        body: pushBody,
         data: {
           url: "sous://home",
           announcementId: announcement.id,
@@ -477,13 +480,11 @@ export const NotificationEvents = {
         },
         email: {
           subject: `New announcement: ${announcement.title}`,
-          react: createElement(NotificationEmail, {
-            preview: body,
-            heading: title,
-            paragraphs: [
-              `${announcement.authorName} posted an announcement at your location:`,
-              announcement.body,
-            ],
+          react: createElement(AnnouncementEmail, {
+            title,
+            authorName: announcement.authorName,
+            body: announcement.body,
+            preview: pushBody,
           }),
         },
       },

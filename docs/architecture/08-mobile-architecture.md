@@ -1,7 +1,7 @@
 # 08 — Mobile Architecture (Expo)
 
 > The staff-facing companion app. Different runtime (React Native,
-> Expo SDK 54), same auth (Clerk), same types (`@sous/types`), and a
+> Expo SDK 55), same auth (Clerk), same types (`@sous/types`), and a
 > thin HTTP client that talks to the web app's route handlers. For
 > the web app's internal architecture, see
 > [02-layer-patterns.md](./02-layer-patterns.md).
@@ -38,8 +38,8 @@ auth wiring, TanStack Query setup, and UI are real.
 
 | Concern | Choice |
 |---------|--------|
-| Runtime | React Native 0.81, React 19 |
-| SDK | Expo SDK 54 (`expo` ~54.0.33) |
+| Runtime | React Native 0.83, React 19 |
+| SDK | Expo SDK 55 (`expo` ~55.0.20) |
 | Router | `expo-router` v6 (file-based) |
 | Styling | NativeWind 5 (preview) + Tailwind v4 tokens |
 | Auth | `@clerk/clerk-expo` + `expo-secure-store` for token cache |
@@ -64,15 +64,19 @@ apps/mobile/
 │   │   ├── _layout.tsx
 │   │   ├── sign-in.tsx
 │   │   └── forgot-password.tsx
-│   └── (tabs)/                 — group: authenticated tab bar
+│   ├── (tabs)/                 — group: authenticated tab bar
 │       ├── _layout.tsx
 │       ├── index.tsx           — Home tab
 │       ├── schedule.tsx
 │       ├── exchange.tsx
 │       └── time-off.tsx
+│   └── announcements/          — stack routes opened from Home
+│       ├── index.tsx
+│       └── [id].tsx
 ├── features/                   — domain-sliced UI + data-access
 │   ├── auth/                   — membership fetch, auth store
 │   ├── home/                   — next shift, announcements
+│   ├── announcements/          — list/detail + read/ack actions
 │   ├── schedule/               — weekly roster, shift detail
 │   ├── exchange/               — drop/pickup board
 │   └── time-off/               — request list + submit form
@@ -116,6 +120,8 @@ nav tree:
   default, `forgot-password.tsx` is linked from it.
 - `app/(tabs)/*` — authenticated tab bar. `index.tsx` is the Home
   tab; the others are one-per-tab screen files.
+- `app/announcements/*` — authenticated stack screens opened from the
+  Home announcement feed (`/announcements`, `/announcements/[id]`).
 
 The top-level `<Stack>` in `app/_layout.tsx` switches between the two
 groups based on auth state. The tab bar (`app/(tabs)/_layout.tsx`)
@@ -290,6 +296,8 @@ new QueryClient({
 ```ts
 ["auth", "membership"]
 ["schedule", "week", weekStart.toISOString()]
+["announcements", userId, "list", "active" | "expired"]
+["announcements", userId, "detail", announcementId]
 ["exchange", "available"]
 ["time-off", "requests", staffId]
 ```
@@ -341,7 +349,9 @@ Rules:
 Every feature `api.ts` file now hits real endpoints — there is no
 remaining mock data on the mobile data layer:
 
-- `features/home/api.ts` — **live** (next shift, announcements)
+- `features/home/api.ts` — **live** (next shift; announcement fetch
+  delegated to announcements feature API)
+- `features/announcements/api.ts` — **live** (list, detail, read, acknowledge)
 - `features/schedule/api.ts` — **live** (week shifts, shift roster)
 - `features/time-off/api.ts` — **live** (requests list,
   submitTimeOffRequest)
@@ -366,10 +376,14 @@ documents auth, request/response shape, and the implementation plan.
 | Mobile call                               | Verb | Web route handler                                                | Status |
 |-------------------------------------------|------|------------------------------------------------------------------|--------|
 | `fetchNextShift()`                        | GET  | `/api/shifts/next/route.ts`                                      | live   |
-| `fetchAnnouncements()`                    | GET  | `/api/announcements/route.ts`                                    | live   |
+| `fetchAnnouncements({ lifecycle })`       | GET  | `/api/announcements/route.ts`                                    | live   |
+| `fetchAnnouncementById(id)`               | GET  | `/api/announcements/[id]/route.ts`                               | live   |
+| `markAnnouncementRead(id)`                | POST | `/api/announcements/[id]/read/route.ts`                          | live   |
+| `acknowledgeAnnouncement(id)`             | POST | `/api/announcements/[id]/acknowledge/route.ts`                   | live   |
 | `fetchWeekShifts(weekStart)`              | GET  | `/api/shifts/route.ts`                                           | live   |
 | `fetchShiftRoster(shiftId)`               | GET  | `/api/shifts/[shiftId]/roster/route.ts`                          | live   |
 | `fetchTimeOffRequests()`                  | GET  | `/api/time-off/route.ts`                                         | live   |
+| `fetchTimeOffForWeek(weekStart)`          | GET  | `/api/time-off/route.ts?weekStart=...`                            | live   |
 | `submitTimeOffRequest(input)`             | POST | `/api/time-off/route.ts`                                         | live   |
 | `fetchAvailableShifts()`                  | GET  | `/api/exchange/available/route.ts`                               | live   |
 | `fetchMyDroppedShifts()`                  | GET  | `/api/exchange/mine/route.ts`                                    | live   |
@@ -381,40 +395,72 @@ documents auth, request/response shape, and the implementation plan.
 | `registerDeviceToken(input)`              | POST | `/api/me/notifications/devices/route.ts`                         | live   |
 | `revokeDeviceToken(token)`                | DELETE | `/api/me/notifications/devices/route.ts`                       | live   |
 
-The Home tab is fully wired (SHI-7). `/api/shifts/next` resolves the
-caller's `staffId` server-side via `StaffService.getByClerkUserId`
-and delegates to `ShiftService.getNextForStaff`;
-`/api/announcements` delegates straight to
-`AnnouncementService.list`. Both routes follow the same
-`auth() → getLocationContext(userId)` pattern as the rest of the
+The Home + Announcements surfaces are fully wired. `/api/shifts/next`
+resolves the caller's `staffId` server-side via
+`StaffService.getByClerkUserId` and delegates to
+`ShiftService.getNextForStaff`. Announcement list/detail routes
+delegate to `AnnouncementService` plus
+`AnnouncementAcknowledgmentService` so the mobile client receives an
+`AnnouncementListItemDTO` envelope (announcement payload +
+caller-scoped read/ack row). Read and acknowledge mutations are exposed
+as `POST /api/announcements/[id]/read` and
+`POST /api/announcements/[id]/acknowledge`. All four routes follow the
+same `auth() → getLocationContext(userId)` pattern as the rest of the
 mobile API surface.
 
 The Schedule tab is fully wired (SHI-10). `/api/shifts` accepts a
 `weekStart` (`YYYY-MM-DD`) query parameter, resolves the caller's
 `staffId` server-side, and delegates to
-`ShiftService.getByStaffAndWeek` to return shifts whose `start` falls
-inside `[weekStart, weekStart + 7d)`. Manager / owner callers with no
-Staff row at the active location get an empty array (mirroring the
-graceful-empty pattern from `/api/shifts/next`) so the schedule
-screen renders its empty state instead of erroring.
+`ShiftService.getByStaffAndWeek` with `publishedOnly: true` to return
+shifts whose `start` falls inside `[weekStart, weekStart + 7d)` AND
+whose parent `Schedule.status` is `"PUBLISHED"`. DRAFT shifts never
+reach a staff phone. The window boundary is computed via
+`weekStartInLocationTz(weekStart, Location.timezone)` so the same
+calendar date resolves to the correct UTC instant regardless of
+where the production server runs. The mobile app computes `weekStart`
+against the location's configured first day of the week (see
+`apps/mobile/lib/date.ts`, sourced from `Membership.weekStartsOn` on
+the auth store). Manager / owner callers with no Staff row at the
+active location get an empty array (mirroring the graceful-empty
+pattern from `/api/shifts/next`) so the schedule screen renders its
+empty state instead of erroring.
 
-`/api/shifts/[shiftId]/roster` resolves the target shift, calls
-`ShiftService.getRoster(scheduleId, start, end)` to find every shift
-in the same `Schedule` whose time window overlaps the target's
-`[start, end)`, then materialises the staff IDs via
-`StaffService.getByIds`. RBAC is enforced server-side: `staff` and
-`shift_lead` callers must appear on the roster (403 otherwise);
-`manager` and `owner` may view any roster within the active tenant.
-The roster includes the caller themselves so the UI can mark "(you)"
-without an extra round-trip.
+`GET /api/me/membership` returns `{ role, orgId, locationId,
+weekStartsOn }`. The auth store caches `weekStartsOn` for ~5 minutes
+and screens read it via `useWeekStartsOn()` so Home, Schedule, and
+Exchange all anchor their week boundaries to the same value.
+
+`/api/shifts/[shiftId]/roster` resolves the target shift, then calls
+`ShiftService.getRosterByOverlap(start, end, { publishedOnly: true })`
+to find every shift at the same location whose time window overlaps
+the target's `[start, end)`, regardless of which `Schedule` doc owns
+it. The previous `scheduleId`-scoped variant hid co-workers whose
+shifts had migrated to a new Schedule doc after a `weekStartsOn`
+flip. RBAC is enforced server-side: `staff` and `shift_lead` callers
+must appear on the roster (403 otherwise); `manager` and `owner` may
+view any roster within the active tenant. The roster includes the
+caller themselves so the UI can mark "(you)" without an extra
+round-trip. Staff IDs are materialised via `StaffService.getByIds`.
 
 The Time-off tab is fully wired (SHI-9). `/api/time-off` is a thin
 adapter over `TimeOffRequestService`. `GET` resolves the caller's
-`staffId` server-side (`StaffService.getByClerkUserId`) and delegates
-to `TimeOffRequestService.getByStaffId`; manager / owner callers with
-no Staff row at the active location get an empty array, matching the
-graceful-empty pattern used by `/api/shifts`. `POST` validates the
-body against `submitTimeOffRequestSchema` (a mobile-only variant of
+`staffId` server-side (`StaffService.getByClerkUserId`) and has two
+modes:
+
+- No `weekStart` query param → `TimeOffRequestService.getByStaffId`
+  (full history; used by the Time-off tab).
+- `weekStart=YYYY-MM-DD` →
+  `TimeOffRequestService.getByDateRangeAndStatuses` restricted to the
+  caller's approved + pending requests overlapping `[weekStart,
+  weekStart + 7d)`. The window is computed via
+  `weekStartInLocationTz` so it lines up exactly with the
+  `/api/shifts` window. Backs the schedule tab's "off day" overlay
+  (`fetchTimeOffForWeek` in `apps/mobile/features/time-off/api.ts`).
+
+Manager / owner callers with no Staff row at the active location get
+an empty array in both modes, matching the graceful-empty pattern
+used by `/api/shifts`. `POST` validates the body against
+`submitTimeOffRequestSchema` (a mobile-only variant of
 `createTimeOffRequestSchema` that omits `staffId` and requires
 `type`), enforces the per-location `KitchenConfig.minTimeOffAdvanceDays`
 rule (mirroring the manager Server Action), and delegates to

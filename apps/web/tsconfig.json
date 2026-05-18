@@ -23,6 +23,7 @@
       "@sous/types/*": ["../../packages/types/src/*"],
       "@sous/config/*": ["../../packages/config/*"]
     },
+    "composite": false,
     "plugins": [
       {
         "name": "next"

@@ -36,7 +36,9 @@ Use `app/api/.../route.ts` **only** for:
      — conversation history.
 5. **The mobile app's public API** — endpoints consumed by the Expo
    app. Live today: `/api/me/membership`, `/api/shifts/next`,
-   `/api/announcements`, `/api/shifts`,
+   `/api/announcements`, `/api/announcements/[id]`,
+   `/api/announcements/[id]/read`,
+   `/api/announcements/[id]/acknowledge`, `/api/shifts`,
    `/api/shifts/[shiftId]/roster`,
    `/api/me/notifications/preferences`,
    `/api/me/notifications/devices`. Skeleton 501 routes for the
@@ -44,6 +46,10 @@ Use `app/api/.../route.ts` **only** for:
    [08-mobile-architecture.md §10](./08-mobile-architecture.md) for
    the canonical mapping. The wire shapes are part of the cross-app
    contract, so any change must keep `@sous/types` in lock-step.
+6. **Authenticated upload bootstrap endpoints** that issue short-lived
+   object-storage URLs for direct browser upload.
+   - `/api/attachments/upload-url` — validates attachment metadata, scopes
+     object keys by tenant, returns `{ uploadUrl, publicUrl }` for R2 PUT.
 
 **Rule of thumb:** if you're tempted to add a `POST /api/users` for
 "simplicity", stop. Use a Server Action. Route handlers exist for the
@@ -121,6 +127,30 @@ The polling endpoints (`/api/ai/tasks/[taskId]/status`,
 service. They are the one exception to the "reads go through a Server
 Action" guidance because the client is a `setInterval` poll that
 benefits from browser caching semantics.
+
+---
+
+## 3.5 Optical-window queries
+
+Any read that says "shifts inside this week" must source by date range
+against `Shift.start`, never by `scheduleId`. Same rule for weekly
+time-off lookups (`TimeOffRequestService.getByDateRangeAndStatuses`)
+and shift rosters (`ShiftService.getRosterByOverlap`). The
+`weekStartsOn` setting is per-location and can flip at any time, so
+two shifts on the same calendar day may legitimately belong to
+different Schedule docs; only date-range sourcing keeps them visible
+together.
+
+Boundary conventions for these reads:
+
+- `weekStart` arrives as a `YYYY-MM-DD` calendar date.
+- The API resolves it to a UTC instant via
+  `weekStartInLocationTz(weekStart, Location.timezone)` so the same
+  query returns the same wall-clock week on a UTC production server
+  and on a developer laptop in any TZ.
+- The window is always half-open: `[weekStart, weekStart + 7d)`.
+- Staff endpoints additionally filter by
+  `Schedule.status === "PUBLISHED"`. Manager endpoints don't.
 
 ---
 
