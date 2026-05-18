@@ -342,6 +342,7 @@ export default function SignUpPage() {
               required
             />
           </div>
+          <div id="clerk-captcha" />
           {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
           <Button 
             type="submit" 

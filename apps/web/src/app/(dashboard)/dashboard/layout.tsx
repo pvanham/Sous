@@ -15,6 +15,7 @@ import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { listLocations } from "@/server/actions/location.actions";
+import { ProvisioningScreen } from "./_components/ProvisioningScreen";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -32,7 +33,19 @@ export default async function DashboardLayout({
   const { userId } = await auth();
   if (!userId) return null;
 
-  const ctx = await getLocationContext(userId);
+  const ctx = await getLocationContext(userId).catch((err: unknown) => {
+    if (
+      err instanceof Error &&
+      err.message.includes("Your account is being provisioned")
+    ) {
+      return null;
+    }
+    throw err;
+  });
+
+  if (!ctx) {
+    return <ProvisioningScreen />;
+  }
 
   if (ctx.role === "staff") {
     redirect("/staff-blocked");
