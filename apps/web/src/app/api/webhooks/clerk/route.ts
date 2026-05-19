@@ -3,7 +3,6 @@ import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
-import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
 import { DeviceTokenService } from "@/server/services/device-token.service";
@@ -67,9 +66,6 @@ export async function POST(req: Request) {
     const userId = evt.data.id;
     const publicMetadata = evt.data.public_metadata;
     const email = evt.data.email_addresses[0]?.email_address || "";
-    
-    // Default org name derived from email if available
-    const defaultName = email ? `${email.split('@')[0]}'s Restaurant` : "My Restaurant";
 
     const metadataRole = publicMetadata?.role as string | undefined;
     const isInvitedMember = metadataRole && publicMetadata?.orgId;
@@ -111,30 +107,6 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error("Failed to create membership:", error);
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    } else {
-      // PHASE 1: Normal signup as an Owner
-      try {
-        const newOrg = await OrganizationService.create(userId, {
-          name: defaultName,
-        });
-
-        await LocationService.create(newOrg.id, {
-          name: "Main Kitchen",
-          timezone: "America/New_York",
-        });
-
-        await OrganizationMemberService.create({
-          orgId: newOrg.id,
-          locationId: null, // Org-wide access for owner
-          clerkUserId: userId,
-          role: "owner",
-        });
-        
-        console.log(`Successfully provisioned new owner ${userId} with org ${newOrg.id}`);
-      } catch (error) {
-        console.error("Failed to provision new organization:", error);
         return new Response("Internal Server Error", { status: 500 });
       }
     }

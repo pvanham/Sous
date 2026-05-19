@@ -74,7 +74,6 @@ export function RichTextEditorPlaceholder({
     const { selectionStart: start, selectionEnd: end } = textareaRef.current;
     const selected = value.slice(start, end);
 
-    // eslint-disable-next-line no-alert
     const url = window.prompt("Enter URL", "https://");
     if (!url) return;
 

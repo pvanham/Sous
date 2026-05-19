@@ -72,6 +72,7 @@ export const OrganizationService = {
     const doc = await Organization.create({
       ownerId,
       name: data.name,
+      businessType: data.businessType,
     });
 
     return toOrganizationDTO(doc.toObject());
@@ -90,6 +91,7 @@ export const OrganizationService = {
     const updateData: Record<string, unknown> = {};
 
     if (data.name !== undefined) updateData.name = data.name;
+    if (data.businessType !== undefined) updateData.businessType = data.businessType;
 
     const doc = await Organization.findByIdAndUpdate(
       orgId,

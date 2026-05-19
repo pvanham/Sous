@@ -14,9 +14,12 @@ docs, scripts.
 
 ## 1. Before you touch anything
 
-- **Bootstrap first.** A fresh cloud agent session must run the
-  `bootstrap-env` skill (see `.cursor/skills/bootstrap-env/SKILL.md`) before
-  any dev server, typecheck, or install. Do not improvise.
+- **Bootstrap first (cloud agents only).** A fresh **cloud** agent session
+  must run the `bootstrap-env` skill (see
+  `.agents/skills/bootstrap-env/SKILL.md`) before any dev server, typecheck,
+  or install. **Local agents running inside Cursor IDE already have
+  `.env.local` and `.env` on disk — skip this step entirely and proceed
+  directly to the task.**
 - **Read before write.** Open the file you intend to edit, and at least one
   neighbouring file (sibling component, sibling action, the service it
   calls). Match the local style: indent width, quote style, import order,
@@ -114,7 +117,8 @@ up on inspection, etc.).
 
 ## TL;DR for a fresh session
 
-1. Run `bootstrap-env` skill.
+1. **Cloud agents only:** run the `bootstrap-env` skill. Local Cursor agents
+   skip this — env files already exist on disk.
 2. Open the rule(s) attached to the file(s) you'll edit — they're glob-
    scoped, so the IDE will surface them automatically; on a pure CLI
    agent, open them manually from `.cursor/rules/` or `.agents/rules/`.

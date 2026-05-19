@@ -68,10 +68,16 @@ export async function createOrganization(
     // 3. DB connect
     await dbConnect();
 
-    // 4. Service call
+    // 4. Enforce one-owner-org onboarding path
+    const existing = await OrganizationService.getByOwnerId(userId);
+    if (existing) {
+      return { success: false, error: "Organization already exists for this owner" };
+    }
+
+    // 5. Service call
     const org = await OrganizationService.create(userId, data);
 
-    // 5. Return response
+    // 6. Return response
     return { success: true, data: org };
   } catch (error) {
     const message =

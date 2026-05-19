@@ -5,6 +5,13 @@ import { OrganizationMemberService } from "@/server/services/organization-member
 import { clerkClient } from "@clerk/nextjs/server";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
+export class NoMembershipError extends Error {
+  constructor() {
+    super("NO_MEMBERSHIP");
+    this.name = "NoMembershipError";
+  }
+}
+
 /**
  * Location context returned by getLocationContext.
  * Used by all server actions for multi-location scoping.
@@ -18,15 +25,15 @@ export interface LocationContext {
 /**
  * Resolves the organization and location context for a Clerk user.
  *
- * MVP behavior:
- * - If user has no organization, auto-create one with a default location
- * - Returns the first (default) location for single-location MVP
- *
- * Future: Support location switcher UI, multiple locations per user
+ * Current behavior:
+ * - Requires an existing OrganizationMember row for the Clerk user
+ * - For org-wide memberships (`locationId = null`), uses Clerk
+ *   `publicMetadata.activeLocationId` and falls back to the default location
  *
  * @param clerkUserId - Clerk user ID from auth()
  * @returns LocationContext with orgId, locationId, and role
- * @throws Error if context cannot be resolved
+ * @throws NoMembershipError if user has no membership yet
+ * @throws Error if membership exists but no location can be resolved
  */
 export async function getLocationContext(
   clerkUserId: string
@@ -69,10 +76,7 @@ export async function getLocationContext(
     };
   }
 
-  // 2. No membership found - the webhook might still be processing, or user is not invited.
-  throw new Error(
-    "Your account is being provisioned or you do not have access to any kitchens. Please wait a moment and refresh."
-  );
+  throw new NoMembershipError();
 }
 
 /**

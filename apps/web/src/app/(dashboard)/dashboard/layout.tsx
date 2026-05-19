@@ -14,10 +14,9 @@ import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
-import { getLocationContext } from "@/lib/auth/get-location-context";
+import { getLocationContext, NoMembershipError } from "@/lib/auth/get-location-context";
 import { ensureRole, getSubscriptionStatus } from "@/lib/auth/guards";
 import { listLocations } from "@/server/actions/location.actions";
-import { ProvisioningScreen } from "./_components/ProvisioningScreen";
 import { SubscriptionExpiredScreen } from "./_components/SubscriptionExpiredScreen";
 
 const navItems = [
@@ -37,17 +36,14 @@ export default async function DashboardLayout({
   if (!userId) return null;
 
   const ctx = await getLocationContext(userId).catch((err: unknown) => {
-    if (
-      err instanceof Error &&
-      err.message.includes("Your account is being provisioned")
-    ) {
+    if (err instanceof NoMembershipError) {
       return null;
     }
     throw err;
   });
 
   if (!ctx) {
-    return <ProvisioningScreen />;
+    redirect("/onboarding");
   }
 
   ensureRole(ctx, ["owner", "manager", "shift_lead"], "/staff-blocked");

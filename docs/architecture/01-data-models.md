@@ -21,6 +21,7 @@ Stripe billing relationship for the tenant.
 {
   ownerId: string,                     // Clerk user ID of the founding owner
   name: string,                        // 2–100 chars
+  businessType?: "qsr" | "fast_casual" | "fine_dining" | "catering" | "bar" | "cafe" | "other",
   subscriptionTier: "free" | "pro" | "enterprise",   // default "free"
   stripeCustomerId?: string,           // sparse index
   stripeSubscriptionId?: string,       // sparse index
