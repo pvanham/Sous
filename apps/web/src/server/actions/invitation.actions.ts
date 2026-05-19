@@ -9,6 +9,9 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import { StaffService } from "@/server/services/staff.service";
 import type { ActionResponse } from "@/lib/safe-action";
 
+// TODO: replace with NEXT_PUBLIC_APP_URL before deploying to production
+const DEV_ORIGIN = "http://10.0.0.27:3000";
+
 export async function inviteManager(
   input: unknown
 ): Promise<ActionResponse<{ id: string; emailAddress: string }>> {
@@ -41,6 +44,7 @@ export async function inviteManager(
     const invitation = await client.invitations.createInvitation({
       emailAddress: data.email,
       ignoreExisting: true,
+      redirectUrl: `${DEV_ORIGIN}/sign-up`,
       publicMetadata: {
         role: "manager",
         orgId: ctx.orgId,
@@ -113,15 +117,11 @@ export async function inviteStaffToApp(
     }
 
     // 6. Send invitation via Clerk with staff-specific metadata
-    const redirectUrl = process.env.NEXT_PUBLIC_APP_URL
-      ? `${process.env.NEXT_PUBLIC_APP_URL}/sign-up`
-      : undefined;
-
     const client = await clerkClient();
     const invitation = await client.invitations.createInvitation({
       emailAddress: staffMember.email,
       ignoreExisting: true,
-      redirectUrl,
+      redirectUrl: `${DEV_ORIGIN}/sign-up`,
       publicMetadata: {
         role: "staff",
         orgId: ctx.orgId,

@@ -218,4 +218,15 @@ export const AsyncTaskService = {
       doc as unknown as Parameters<typeof toAsyncTaskDTO>[0],
     );
   },
+
+  /**
+   * Delete all async task rows for an organization.
+   * Used for owner-level cascading account deletion.
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await AsyncTask.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
+    return result.deletedCount;
+  },
 };

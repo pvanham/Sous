@@ -9,6 +9,7 @@ import type { ShiftDTO } from "@/types/shift";
 import type { ScheduleDTO } from "@/types/schedule";
 
 import { DashboardMetrics } from "./_components/DashboardMetrics";
+import { OnboardingCompleteBanner } from "./_components/OnboardingCompleteBanner";
 import { TodayScheduleWidget } from "./_components/TodayScheduleWidget";
 import { WeeklyScheduleOverview } from "./_components/WeeklyScheduleOverview";
 import { QuickActionsWidget } from "./_components/QuickActionsWidget";
@@ -47,6 +48,8 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <OnboardingCompleteBanner />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
         <div className="flex flex-col gap-1">

@@ -33,8 +33,8 @@ const TimePicker = React.forwardRef<HTMLInputElement, TimePickerProps>(
           "bg-stone-200 dark:bg-stone-800",
           // Inner shadow for recessed feel
           "shadow-[inset_0_2px_4px_0_rgb(0_0_0/0.05)]",
-          // Border - transparent until focused
-          "border border-transparent",
+          // Border - always visible so the control reads against any surface
+          "border border-border",
           // Placeholder
           "placeholder:text-stone-500 dark:placeholder:text-stone-400",
           // Focus state - sharp 1px Rust ring

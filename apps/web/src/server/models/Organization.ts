@@ -1,9 +1,11 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
+import { BUSINESS_TYPES, type BusinessType } from "@sous/types";
 
 // Organization interface
 export interface IOrganization {
   ownerId: string; // Clerk userId of the owner
   name: string;
+  businessType?: BusinessType;
   subscriptionTier: "free" | "pro" | "enterprise";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -29,6 +31,11 @@ const OrganizationSchema = new Schema<IOrganizationDocument>(
       required: true,
       minlength: 2,
       maxlength: 100,
+    },
+    businessType: {
+      type: String,
+      enum: BUSINESS_TYPES,
+      required: false,
     },
     subscriptionTier: {
       type: String,

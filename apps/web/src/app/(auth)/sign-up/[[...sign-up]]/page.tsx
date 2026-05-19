@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useSignUp } from "@clerk/nextjs/legacy";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -39,6 +40,7 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
 
 export default function SignUpPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -48,6 +50,15 @@ export default function SignUpPage() {
   // its publicMetadata (role/orgId/locationId/staffId) onto the new user.
   const invitationTicket = searchParams.get("__clerk_ticket");
   const isInvitationFlow = Boolean(invitationTicket);
+
+  // If a Clerk session is already active (e.g., the user reached this page
+  // after a partial sign-up that nevertheless created a session), route them
+  // through onboarding. Without this the next `signUp.create` call throws
+  // "session already exists" and the user is stuck on the form.
+  useEffect(() => {
+    if (!authLoaded || !isSignedIn) return;
+    router.replace(isInvitationFlow ? "/dashboard" : "/onboarding");
+  }, [authLoaded, isSignedIn, isInvitationFlow, router]);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
@@ -84,18 +95,28 @@ export default function SignUpPage() {
     }
 
     try {
+      // Clerk keeps a SignUp resource alive on the client after any partial
+      // failure (e.g., a pwned-password rejection from prepare_verification).
+      // Re-calling `signUp.create` against that resource is rejected with a
+      // 400 ("session already exists"); the documented workaround is to call
+      // `signUp.update` on the existing resource until it reaches `complete`.
+      const hasInProgressSignUp =
+        Boolean(signUp.id) && signUp.status !== "complete";
+
       if (isInvitationFlow && invitationTicket) {
         // Accept the invitation: Clerk verifies the email via the ticket,
         // so no OTP step is needed. The server webhook will then see the
         // invitation's publicMetadata on the new user and provision their
         // OrganizationMember row.
-        const result = await signUp.create({
-          strategy: "ticket",
-          ticket: invitationTicket,
-          firstName,
-          lastName,
-          password,
-        });
+        const result = hasInProgressSignUp
+          ? await signUp.update({ firstName, lastName, password })
+          : await signUp.create({
+              strategy: "ticket",
+              ticket: invitationTicket,
+              firstName,
+              lastName,
+              password,
+            });
 
         if (result.status === "complete") {
           await setActive({ session: result.createdSessionId });
@@ -111,13 +132,30 @@ export default function SignUpPage() {
         return;
       }
 
-      // Standard (non-invited) sign-up: create the user, then verify email.
-      await signUp.create({
-        firstName,
-        lastName,
-        emailAddress: email,
-        password,
-      });
+      // Standard (non-invited) sign-up: create or resume the SignUp, then
+      // send the verification code.
+      const result = hasInProgressSignUp
+        ? await signUp.update({
+            firstName,
+            lastName,
+            emailAddress: email,
+            password,
+          })
+        : await signUp.create({
+            firstName,
+            lastName,
+            emailAddress: email,
+            password,
+          });
+
+      // Dev instances with email verification disabled can complete the
+      // SignUp on `create`/`update` directly. Activate the session and let
+      // the middleware route the user through onboarding.
+      if (result.status === "complete" && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        router.push("/onboarding");
+        return;
+      }
 
       await signUp.prepareEmailAddressVerification({
         strategy: "email_code",
@@ -144,7 +182,7 @@ export default function SignUpPage() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.push("/dashboard");
+        router.push("/onboarding");
       } else {
         setError("Verification was not complete. Please try again.");
       }
@@ -160,7 +198,7 @@ export default function SignUpPage() {
     signUp.authenticateWithRedirect({
       strategy: "oauth_google",
       redirectUrl: "/sso-callback",
-      redirectUrlComplete: "/dashboard",
+      redirectUrlComplete: "/onboarding",
     });
   };
 
@@ -342,6 +380,7 @@ export default function SignUpPage() {
               required
             />
           </div>
+          <div id="clerk-captcha" />
           {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
           <Button 
             type="submit" 

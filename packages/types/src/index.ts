@@ -234,6 +234,14 @@ export interface OrganizationDTO {
   id: string;
   ownerId: string;
   name: string;
+  businessType?:
+    | "qsr"
+    | "fast_casual"
+    | "fine_dining"
+    | "catering"
+    | "bar"
+    | "cafe"
+    | "other";
   subscriptionTier: "free" | "pro" | "enterprise";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -246,10 +254,26 @@ export interface OrganizationDTO {
 export interface CreateOrganizationInput {
   ownerId: string;
   name: string;
+  businessType?:
+    | "qsr"
+    | "fast_casual"
+    | "fine_dining"
+    | "catering"
+    | "bar"
+    | "cafe"
+    | "other";
 }
 
 export interface UpdateOrganizationInput {
   name?: string;
+  businessType?:
+    | "qsr"
+    | "fast_casual"
+    | "fine_dining"
+    | "catering"
+    | "bar"
+    | "cafe"
+    | "other";
 }
 
 // ── Organization Member ──────────────────────────────────────
@@ -504,6 +528,11 @@ export type {
   ListAnnouncementsInput,
   AcknowledgeAnnouncementInput,
 } from "./validations/announcement.schema";
+export {
+  BUSINESS_TYPES,
+  businessTypeSchema,
+} from "./validations/organization.schema";
+export type { BusinessType } from "./validations/organization.schema";
 
 // ── Exchange Shift ───────────────────────────────────────────
 

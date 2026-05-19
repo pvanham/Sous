@@ -1,9 +1,17 @@
+// `react-native-gesture-handler` must be imported for its side effects
+// before any other gesture-handler symbols are referenced — see
+// https://docs.swmansion.com/react-native-gesture-handler/docs/installation.
+// The dedicated `GestureHandlerRootView` import on line 7 intentionally
+// follows this side-effect import, so the duplicate-import warning is
+// expected here.
+// eslint-disable-next-line import/no-duplicates
 import "react-native-gesture-handler";
 import "../global.css";
 import "@/lib/query-focus";
 
 import { useEffect, useRef } from "react";
 import { Appearance, View, ActivityIndicator, Linking } from "react-native";
+// eslint-disable-next-line import/no-duplicates
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
