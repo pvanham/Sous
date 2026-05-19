@@ -2,19 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   ScrollView,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
 } from "react-native";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { HoursStepper } from "@/components/ui/hours-stepper";
 import { SettingsHeader } from "../components/settings-header";
 import { useMyStaff, useUpdateMyStaff } from "@/features/profile/hooks";
 
-const ICON_COLOR = "#78716c";
 const MIN_HOURS = 0;
 const MAX_HOURS = 80;
 
@@ -122,7 +120,7 @@ export function HoursScreen() {
           <StyledText variant="caption" className="uppercase tracking-wider mb-2">
             Minimum
           </StyledText>
-          <Stepper
+          <HoursStepper
             value={minHours}
             onChange={(next) => setMinHours(clamp(next))}
             subtitle="Hours per week I'd like to work at least"
@@ -135,7 +133,7 @@ export function HoursScreen() {
           >
             Maximum
           </StyledText>
-          <Stepper
+          <HoursStepper
             value={maxHours}
             onChange={(next) => setMaxHours(clamp(next))}
             subtitle="Hours per week I don't want to exceed"
@@ -179,67 +177,3 @@ export function HoursScreen() {
   );
 }
 
-interface StepperProps {
-  value: number;
-  onChange: (next: number) => void;
-  subtitle: string;
-  color: "muted" | "primary";
-}
-
-function Stepper({ value, onChange, subtitle, color }: StepperProps) {
-  const tint = color === "primary" ? "text-primary" : "text-foreground";
-  return (
-    <View className="bg-card border border-border rounded-md px-4 py-4">
-      <View className="flex-row items-center justify-between">
-        <StepperButton
-          icon="remove"
-          onPress={() => onChange(value - 1)}
-          onLongPress={() => onChange(value - 5)}
-          accessibilityLabel="Decrease"
-        />
-        <View className="items-center flex-1">
-          <StyledText variant="title" className={`${tint} text-4xl`}>
-            {value}
-          </StyledText>
-          <StyledText variant="caption">hours / week</StyledText>
-        </View>
-        <StepperButton
-          icon="add"
-          onPress={() => onChange(value + 1)}
-          onLongPress={() => onChange(value + 5)}
-          accessibilityLabel="Increase"
-        />
-      </View>
-      <StyledText variant="caption" className="mt-2 text-center">
-        {subtitle}
-      </StyledText>
-    </View>
-  );
-}
-
-interface StepperButtonProps {
-  icon: React.ComponentProps<typeof MaterialIcons>["name"];
-  onPress: () => void;
-  onLongPress: () => void;
-  accessibilityLabel: string;
-}
-
-function StepperButton({
-  icon,
-  onPress,
-  onLongPress,
-  accessibilityLabel,
-}: StepperButtonProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
-      hitSlop={6}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      className="w-12 h-12 items-center justify-center rounded-full bg-muted active:opacity-60"
-    >
-      <MaterialIcons name={icon} size={22} color={ICON_COLOR} />
-    </Pressable>
-  );
-}

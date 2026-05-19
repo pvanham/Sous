@@ -79,7 +79,8 @@ apps/mobile/
 │   ├── announcements/          — list/detail + read/ack actions
 │   ├── schedule/               — weekly roster, shift detail
 │   ├── exchange/               — drop/pickup board
-│   └── time-off/               — request list + submit form
+│   ├── time-off/               — request list + submit form
+│   └── onboarding/             — staff first-run wizard (see §12 link below)
 ├── components/                 — cross-feature UI primitives
 │   ├── haptic-tab.tsx
 │   └── ui/                     — IconSymbol, buttons, etc.
@@ -109,27 +110,45 @@ Only `features/auth/` has a store. Other features pull server state
 directly with TanStack Query — do not add Zustand stores for
 server-owned data.
 
+The `features/onboarding/` module owns the first-run wizard shown
+after a staff invite is accepted. It reuses existing mutations
+(`useUpdateMyStaff`, `useSaveMyAvailability`,
+`useUpdateNotificationPreferencesMutation`) rather than maintaining
+its own client-side state machine, so a mid-flow crash never loses
+progress. The only onboarding-specific endpoint is
+`POST /api/me/onboarding/complete`, exposed via `useCompleteOnboarding`.
+See [12-mobile-onboarding.md](./12-mobile-onboarding.md) for the full
+flow including Universal Link configuration.
+
 ---
 
 ## 4. Routing (expo-router)
 
-Expo Router uses file-based routing. Two route groups drive the whole
-nav tree:
+Expo Router uses file-based routing. Three route groups plus a
+deep-link route drive the whole nav tree:
 
 - `app/(auth)/*` — unauthenticated screens. `sign-in.tsx` is the
   default, `forgot-password.tsx` is linked from it.
 - `app/(tabs)/*` — authenticated tab bar. `index.tsx` is the Home
   tab; the others are one-per-tab screen files.
+- `app/(onboarding)/*` — staff onboarding wizard mounted between
+  invite acceptance and the first `(tabs)` render. See
+  [12-mobile-onboarding.md](./12-mobile-onboarding.md).
+- `app/invite.tsx` — Universal Link landing route. Receives the
+  `__clerk_ticket` query parameter from the email link and hands
+  off to the `AcceptInviteScreen`. Exempt from `AuthGate`'s
+  sign-in redirect because invitees are pre-authentication.
 - `app/announcements/*` — authenticated stack screens opened from the
   Home announcement feed (`/announcements`, `/announcements/[id]`).
 
-The top-level `<Stack>` in `app/_layout.tsx` switches between the two
-groups based on auth state. The tab bar (`app/(tabs)/_layout.tsx`)
-uses `<Tabs>` with SF Symbols via `IconSymbol` and `HapticTab` for
-tactile feedback.
+The top-level `<Stack>` in `app/_layout.tsx` switches between
+groups based on auth + onboarding state. The tab bar
+(`app/(tabs)/_layout.tsx`) uses `<Tabs>` with SF Symbols via
+`IconSymbol` and `HapticTab` for tactile feedback.
 
 Do not add a bare `app/index.tsx` or `app/_layout.tsx` route outside
-these groups; every screen should live inside `(auth)` or `(tabs)`.
+these groups; every screen should live inside `(auth)`, `(tabs)`, or
+`(onboarding)`.
 
 ---
 
@@ -166,7 +185,16 @@ Runs inside `_layout.tsx`. Its responsibilities:
 - On 404 (no membership), call `signOut()` with an error that the
   sign-in screen surfaces via `consumePendingSignInError()`.
 - On network or Clerk errors, also sign out with a readable message.
-- Redirect between `(auth)` and `(tabs)` based on `segments[0]`.
+- Redirect between `(auth)`, `(onboarding)`, and `(tabs)` based on
+  `segments[0]`, the presence of a Staff row (`useMyStaff`), and
+  `Staff.onboardingCompletedAt`. Any user with a Staff row whose
+  `onboardingCompletedAt` is `null` is routed into
+  `/(onboarding)/welcome` — this includes managers and shift leads
+  who also take shifts (a supported configuration because the
+  scheduler enforces manager-level coverage). Users without a
+  Staff row (owners, non-scheduled managers) and already-onboarded
+  users land on `/(tabs)` directly. The `invite` route is exempt
+  from all redirects.
 
 If you need new cross-cutting setup (logging, Sentry, feature flags),
 add a new provider inside `_layout.tsx` rather than a per-tab wrapper.

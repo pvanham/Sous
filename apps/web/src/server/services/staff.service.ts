@@ -832,6 +832,44 @@ export const StaffService = {
   },
 
   /**
+   * Stamp `onboardingCompletedAt` the first time the staff member
+   * finishes the mobile onboarding wizard. Idempotent: re-runs after
+   * the field has been set return the existing record unchanged
+   * (`$setOnInsert`-style semantics via the `onboardingCompletedAt:
+   * null` filter clause).
+   *
+   * Tenancy is enforced inside the filter so a malicious caller
+   * can't flip the flag on a Staff row outside their own
+   * org/location even with a forged `staffId`.
+   */
+  async markOnboardingComplete(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<StaffDTO | null> {
+    const tenantFilter = {
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    };
+
+    const updated = await Staff.findOneAndUpdate(
+      { ...tenantFilter, onboardingCompletedAt: null },
+      { $set: { onboardingCompletedAt: new Date() } },
+      { new: true }
+    ).lean();
+
+    if (updated) return toStaffDTO(updated);
+
+    // Already completed — return the existing record so the caller
+    // still receives the canonical DTO (with the prior timestamp)
+    // rather than a misleading `null`.
+    const existing = await Staff.findOne(tenantFilter).lean();
+    if (!existing) return null;
+    return toStaffDTO(existing);
+  },
+
+  /**
    * Unlink a Clerk user from a staff record (e.g., when user is deleted).
    * Preserves the staff record for scheduling data but removes the auth link.
    * @param clerkUserId - Clerk user ID to unlink

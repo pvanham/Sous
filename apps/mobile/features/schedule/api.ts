@@ -92,9 +92,13 @@ type SerializedShift = Omit<
   updatedAt: string;
 };
 
-type SerializedStaff = Omit<StaffDTO, "createdAt" | "updatedAt"> & {
+type SerializedStaff = Omit<
+  StaffDTO,
+  "createdAt" | "updatedAt" | "onboardingCompletedAt"
+> & {
   createdAt: string;
   updatedAt: string;
+  onboardingCompletedAt: string | null;
 };
 
 function reviveShift(raw: SerializedShift): ShiftDTO {
@@ -112,5 +116,9 @@ function reviveStaff(raw: SerializedStaff): StaffDTO {
     ...raw,
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
+    onboardingCompletedAt:
+      raw.onboardingCompletedAt === null
+        ? null
+        : new Date(raw.onboardingCompletedAt),
   };
 }

@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "TEAMID.com.sous.mobile",
+        "paths": ["/invite", "/invite/*"]
+      }
+    ]
+  }
+}

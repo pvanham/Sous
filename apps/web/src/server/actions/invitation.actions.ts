@@ -9,8 +9,21 @@ import { getLocationContext } from "@/lib/auth/get-location-context";
 import { StaffService } from "@/server/services/staff.service";
 import type { ActionResponse } from "@/lib/safe-action";
 
-// TODO: replace with NEXT_PUBLIC_APP_URL before deploying to production
-const DEV_ORIGIN = "http://10.0.0.27:3000";
+/**
+ * Public origin used to build the invite redirect URL Clerk emails to
+ * the recipient. Always points at the new `/invite` landing page,
+ * which doubles as a Universal Link target (the mobile app intercepts
+ * matching URLs at the OS level) and a web fallback (desktop users
+ * are forwarded to the existing `/sign-up` ticket flow).
+ *
+ * Falls back to `http://localhost:3000` in local dev when the env
+ * var is missing — production deployments must set
+ * `NEXT_PUBLIC_APP_URL` to the canonical public hostname so the
+ * Universal Link association files at that host are reachable.
+ */
+const APP_ORIGIN =
+  process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+const INVITE_REDIRECT_URL = `${APP_ORIGIN}/invite`;
 
 export async function inviteManager(
   input: unknown
@@ -44,7 +57,7 @@ export async function inviteManager(
     const invitation = await client.invitations.createInvitation({
       emailAddress: data.email,
       ignoreExisting: true,
-      redirectUrl: `${DEV_ORIGIN}/sign-up`,
+      redirectUrl: INVITE_REDIRECT_URL,
       publicMetadata: {
         role: "manager",
         orgId: ctx.orgId,
@@ -121,7 +134,7 @@ export async function inviteStaffToApp(
     const invitation = await client.invitations.createInvitation({
       emailAddress: staffMember.email,
       ignoreExisting: true,
-      redirectUrl: `${DEV_ORIGIN}/sign-up`,
+      redirectUrl: INVITE_REDIRECT_URL,
       publicMetadata: {
         role: "staff",
         orgId: ctx.orgId,
