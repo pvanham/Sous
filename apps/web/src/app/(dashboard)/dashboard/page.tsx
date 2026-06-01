@@ -5,14 +5,22 @@ import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
 import { getScheduleByWeek } from "@/server/actions/schedule.actions";
 import { listShiftsForLocationWeek } from "@/server/actions/shift.actions";
 import { listStaff } from "@/server/actions/staff.actions";
+import { listAnnouncements } from "@/server/actions/announcement.actions";
+import { listExchangeShiftsForManager } from "@/server/actions/exchange-shift.actions";
+import { listTimeOffRequests } from "@/server/actions/time-off-request.actions";
 import type { ShiftDTO } from "@/types/shift";
 import type { ScheduleDTO } from "@/types/schedule";
+import type { AnnouncementDTO } from "@/types/announcement";
+import type { ExchangeShiftDTO } from "@/types/exchange-shift";
+import type { TimeOffRequestDTO } from "@/types/time-off-request";
 
 import { DashboardMetrics } from "./_components/DashboardMetrics";
 import { OnboardingCompleteBanner } from "./_components/OnboardingCompleteBanner";
 import { TodayScheduleWidget } from "./_components/TodayScheduleWidget";
 import { WeeklyScheduleOverview } from "./_components/WeeklyScheduleOverview";
-import { QuickActionsWidget } from "./_components/QuickActionsWidget";
+import { AnnouncementsWidget } from "./_components/AnnouncementsWidget";
+import { PendingExchangesWidget } from "./_components/PendingExchangesWidget";
+import { PendingTimeOffWidget } from "./_components/PendingTimeOffWidget";
 
 export default async function DashboardPage() {
   // Resolve the location's configured week start before computing the
@@ -30,11 +38,24 @@ export default async function DashboardPage() {
   // should never side-effect-create a Schedule doc, so we use
   // `getScheduleByWeek` (returns null when nothing exists yet) and
   // pull shifts by date range so legacy schedules' shifts still feed
-  // the widgets after a `weekStartsOn` flip.
-  const [scheduleResult, shiftsResult, staffResult, user] = await Promise.all([
+  // the widgets after a `weekStartsOn` flip. The action-item widgets
+  // (time-off, exchange) surface the buckets that need a manager's
+  // attention; announcements show the location's active feed.
+  const [
+    scheduleResult,
+    shiftsResult,
+    staffResult,
+    announcementsResult,
+    exchangesResult,
+    timeOffResult,
+    user,
+  ] = await Promise.all([
     getScheduleByWeek({ weekStartDate: weekStart }),
     listShiftsForLocationWeek({ weekStartDate: weekStart }),
     listStaff(),
+    listAnnouncements({ limit: 6 }),
+    listExchangeShiftsForManager({ status: "pending_coverage" }),
+    listTimeOffRequests(),
     currentUser(),
   ]);
 
@@ -43,6 +64,22 @@ export default async function DashboardPage() {
     : null;
   const staff = staffResult.success ? staffResult.data : [];
   const shifts: ShiftDTO[] = shiftsResult.success ? shiftsResult.data : [];
+  const announcements: AnnouncementDTO[] = announcementsResult.success
+    ? announcementsResult.data
+    : [];
+  const pendingExchanges: ExchangeShiftDTO[] = exchangesResult.success
+    ? exchangesResult.data
+    : [];
+  // The manager dashboard only cares about requests awaiting a decision;
+  // approved/denied rows live on the dedicated time-off page.
+  const pendingTimeOff: TimeOffRequestDTO[] = (
+    timeOffResult.success ? timeOffResult.data : []
+  )
+    .filter((request) => request.status === "pending")
+    .sort(
+      (a, b) =>
+        new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
+    );
 
   const firstName = user?.firstName ?? "there";
 
@@ -86,9 +123,8 @@ export default async function DashboardPage() {
         <DashboardMetrics shifts={shifts} staff={staff} />
       </div>
 
-      {/* Main grid — fixed-height row so both cards are equal */}
+      {/* Schedule row — weekly overview + today's shifts */}
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left: weekly overview (spans 2 cols) */}
         <div className="lg:col-span-2 h-[360px]">
           <WeeklyScheduleOverview
             shifts={shifts}
@@ -96,13 +132,21 @@ export default async function DashboardPage() {
             weekStartsOn={weekStartsOn}
           />
         </div>
-        {/* Right: today's shifts — scrollable within same height */}
         <div className="lg:col-span-1 h-[360px]">
           <TodayScheduleWidget shifts={shifts} staff={staff} />
         </div>
-        {/* Bottom: quick actions full-width */}
-        <div className="lg:col-span-3">
-          <QuickActionsWidget scheduleStatus={schedule?.status} />
+      </div>
+
+      {/* Action + activity row — what needs attention and what's new */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="h-[340px]">
+          <PendingTimeOffWidget requests={pendingTimeOff} staff={staff} />
+        </div>
+        <div className="h-[340px]">
+          <PendingExchangesWidget exchanges={pendingExchanges} />
+        </div>
+        <div className="h-[340px]">
+          <AnnouncementsWidget announcements={announcements} />
         </div>
       </div>
     </div>
