@@ -12,6 +12,8 @@ const isPublicRoute = createRouteMatcher([
   "/sso-callback(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
+  "/invite(.*)",
+  "/welcome",
   "/staff-blocked",
   "/api/webhooks/clerk(.*)",
   "/api/webhooks/twilio(.*)",

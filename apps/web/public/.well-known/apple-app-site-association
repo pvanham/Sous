@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "GZD3YP6V4M.com.sous.mobile",
+        "paths": [
+          "/invite",
+          "/invite/*"
+        ]
+      }
+    ]
+  }
+}

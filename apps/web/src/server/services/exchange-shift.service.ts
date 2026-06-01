@@ -1026,6 +1026,28 @@ export const ExchangeShiftService = {
   },
 
   /**
+   * Delete all exchange shifts where the given staff member is the dropper or picker.
+   * Called when a staff member is permanently deleted.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param staffId - Staff document ID
+   * @returns Number of deleted documents
+   */
+  async deleteByStaffId(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<number> {
+    const staffOid = new Types.ObjectId(staffId);
+    const result = await ExchangeShift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      $or: [{ staffId: staffOid }, { pickedUpByStaffId: staffOid }],
+    });
+    return result.deletedCount;
+  },
+
+  /**
    * Test/cleanup helper — drop every exchange row for a location.
    */
   async deleteAllByLocation(

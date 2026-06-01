@@ -2,6 +2,12 @@
 
 This document defines the canonical owner onboarding flow for the web app.
 
+> **See also:** [12-mobile-onboarding.md](./12-mobile-onboarding.md) for
+> the staff-side flow that runs in the Expo app. Staff and owners are
+> separate journeys — staff arrive via an invitation Universal Link
+> and complete a native wizard; owners self-serve through this web
+> `/onboarding` flow.
+
 ## Purpose
 
 Create tenant data synchronously for newly-signed-up owners, instead of relying
@@ -63,3 +69,14 @@ Business-type defaults come from
 `apps/web/src/app/api/webhooks/clerk/route.ts` keeps invited-member provisioning
 and profile-sync/delete logic only. Owner tenant creation is no longer part of
 `user.created`.
+
+## Staff onboarding lives elsewhere
+
+The web `/onboarding` wizard is owner-only. Staff onboarding now
+happens entirely in the mobile app — invitation acceptance + first-
+time setup are documented in
+[12-mobile-onboarding.md](./12-mobile-onboarding.md). The `/invite`
+landing page at `apps/web/src/app/invite/page.tsx` is the web
+fallback when the mobile Universal Link doesn't resolve (desktop UA
+or app not installed); it forwards to `/sign-up` with the Clerk
+ticket preserved.

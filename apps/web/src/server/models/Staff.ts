@@ -159,6 +159,16 @@ const StaffSchema = new Schema<IStaffDocument>(
       enum: ["not_invited", "pending", "accepted"],
       default: "not_invited",
     },
+    // Set the first time a staff member finishes the mobile onboarding
+    // wizard. `null` ⇒ wizard has not been completed yet; a `Date` ⇒
+    // completed (AuthGate routes such users straight to the tabs). The
+    // value is set server-side via `POST /api/me/onboarding/complete`
+    // and is intentionally separate from `invitationStatus`, which
+    // tracks the Clerk invitation lifecycle (not in-app setup).
+    onboardingCompletedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

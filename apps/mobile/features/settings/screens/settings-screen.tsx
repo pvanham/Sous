@@ -123,6 +123,7 @@ export function SettingsScreen() {
     user.emailAddresses[0]?.emailAddress ??
     "No email on file";
   const role = membership?.role ? formatRole(membership.role) : null;
+  const isOwner = membership?.role === "owner";
   const hasStaffRow = staffQuery.data != null;
   const themeLabel = theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light";
 
@@ -277,31 +278,39 @@ export function SettingsScreen() {
               Sign out
             </StyledText>
           </Pressable>
-          <Pressable
-            onPress={handleDeleteAccount}
-            accessibilityRole="button"
-            accessibilityLabel="Delete account"
-            disabled={deleteAccountMutation.isPending}
-            className={`flex-row items-center justify-center gap-2 bg-destructive rounded-md px-6 py-3.5 active:opacity-80 ${
-              deleteAccountMutation.isPending ? "opacity-50" : ""
-            }`}
-          >
-            {deleteAccountMutation.isPending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <MaterialIcons
-                name="delete-forever"
-                size={18}
-                color="#fff"
-              />
-            )}
-            <StyledText
-              variant="label"
-              className="text-destructive-foreground text-base font-semibold"
-            >
-              Delete account
+          {isOwner ? (
+            <StyledText variant="caption" className="px-1">
+              To delete your owner account, sign in to the web dashboard.
+              Deleting an owner removes the entire organization, so it can't
+              be done from the app.
             </StyledText>
-          </Pressable>
+          ) : (
+            <Pressable
+              onPress={handleDeleteAccount}
+              accessibilityRole="button"
+              accessibilityLabel="Delete account"
+              disabled={deleteAccountMutation.isPending}
+              className={`flex-row items-center justify-center gap-2 bg-destructive rounded-md px-6 py-3.5 active:opacity-80 ${
+                deleteAccountMutation.isPending ? "opacity-50" : ""
+              }`}
+            >
+              {deleteAccountMutation.isPending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <MaterialIcons
+                  name="delete-forever"
+                  size={18}
+                  color="#fff"
+                />
+              )}
+              <StyledText
+                variant="label"
+                className="text-destructive-foreground text-base font-semibold"
+              >
+                Delete account
+              </StyledText>
+            </Pressable>
+          )}
         </View>
       </ScrollView>
     </View>

@@ -159,32 +159,54 @@ export async function POST(req: Request) {
           // PHASE 4: Cascading delete for owners
           const orgId = membership.orgId;
 
-          // 1. Delete all manager clerk accounts for this org
+          // 1. Delete all other member clerk accounts for this org.
           const allMembers = await OrganizationMemberService.listByOrgId(orgId);
+          const otherMembers = allMembers.filter(
+            (m) => m.clerkUserId !== userId,
+          );
           const client = await clerkClient();
           await Promise.allSettled(
-            allMembers
-              .filter((m) => m.clerkUserId !== userId)
-              .map((m) => client.users.deleteUser(m.clerkUserId)),
+            otherMembers.map((m) => client.users.deleteUser(m.clerkUserId)),
           );
 
-          // 2. Delete user-scoped rows tied to the owner account.
-          await Promise.all([
-            DeviceTokenService.deleteAllByClerkUserId(userId),
-            NotificationPreferenceService.deleteAllByClerkUserId(userId),
-          ]);
+          // 2. Delete identity-scoped rows (DeviceToken / NotificationPreference)
+          //    for the owner AND every other member, inline. We cannot rely on
+          //    the async user.deleted webhooks fired by step 1 to handle this:
+          //    step 3 below wipes every OrganizationMember row, so by the time
+          //    those webhooks run, `listByUserId` returns empty and their
+          //    per-member cleanup branch never executes. Doing it here makes
+          //    the cleanup synchronous and independent of webhook delivery.
+          const clerkUserIdsToClean = [
+            userId,
+            ...otherMembers.map((m) => m.clerkUserId),
+          ];
+          await Promise.all(
+            clerkUserIdsToClean.flatMap((id) => [
+              DeviceTokenService.deleteAllByClerkUserId(id),
+              NotificationPreferenceService.deleteAllByClerkUserId(id),
+            ]),
+          );
 
           // 3. Delete all org-scoped data via service-layer cascade.
           await OrganizationService.cascadeDelete(orgId);
 
           console.log(`Completed cascading delete for org ${orgId}`);
         } else if (membership.role === "staff") {
-          // Unlink Clerk user from Staff record but preserve scheduling data
-          await StaffService.unlinkClerkUser(userId);
+          // Unlink Clerk user from Staff record but preserve scheduling data,
+          // then clean up identity-scoped rows and the membership itself.
+          await Promise.all([
+            StaffService.unlinkClerkUser(userId),
+            DeviceTokenService.deleteAllByClerkUserId(userId),
+            NotificationPreferenceService.deleteAllByClerkUserId(userId),
+          ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
         } else {
-          // Manager / shift_lead: only delete their membership
+          // Manager / shift_lead: clean up identity-scoped rows, then delete membership.
+          await Promise.all([
+            DeviceTokenService.deleteAllByClerkUserId(userId),
+            NotificationPreferenceService.deleteAllByClerkUserId(userId),
+          ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted ${membership.role} membership ${membership.id}`);
         }
