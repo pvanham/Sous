@@ -14,8 +14,16 @@
  * `Href` codegen lags behind newly-added route groups; the runtime
  * still resolves them correctly.
  */
+export type OnboardingStepId =
+  | "welcome"
+  | "profile"
+  | "stations"
+  | "availability"
+  | "notifications"
+  | "done";
+
 export interface OnboardingStep {
-  id: "welcome" | "profile" | "stations" | "availability" | "notifications" | "done";
+  id: OnboardingStepId;
   route: string;
   /**
    * 1-indexed position in the progress UI, or `null` if this step
@@ -37,3 +45,8 @@ export const ONBOARDING_STEPS: ReadonlyArray<OnboardingStep> = [
 export const ONBOARDING_STEP_COUNT = ONBOARDING_STEPS.filter(
   (s) => s.step !== null,
 ).length;
+
+/** Index of a step within `ONBOARDING_STEPS`, or -1 if unknown. */
+export function indexOfStepId(id: OnboardingStepId): number {
+  return ONBOARDING_STEPS.findIndex((s) => s.id === id);
+}

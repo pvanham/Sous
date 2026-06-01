@@ -10,6 +10,9 @@ import {
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { ShiftService } from "@/server/services/shift.service";
+import { TimeOffRequestService } from "@/server/services/time-off-request.service";
+import { StaffAvailabilityService } from "@/server/services/staff-availability.service";
+import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { ActionResponse } from "@/lib/safe-action";
@@ -464,7 +467,7 @@ export async function setStaffActive(
 }
 
 /**
- * Permanently delete a staff member and all their associated shifts.
+ * Permanently delete a staff member and all their associated data.
  * @param staffId - Staff document ID
  * @returns ActionResponse with deletion status and count of deleted shifts
  */
@@ -481,12 +484,14 @@ export async function deleteStaff(
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 3. Delete all shifts for this staff member first (cascade delete)
-    const shiftsDeleted = await ShiftService.deleteByStaffId(
-      ctx.orgId,
-      ctx.locationId,
-      staffId
-    );
+    // 3. Cascade-delete all staff-scoped data before removing the staff record.
+    //    Run in parallel — none of these depend on each other.
+    const [shiftsDeleted] = await Promise.all([
+      ShiftService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
+      TimeOffRequestService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
+      StaffAvailabilityService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
+      ExchangeShiftService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
+    ]);
 
     // 4. Delete the staff member
     const deleted = await StaffService.delete(
@@ -499,7 +504,6 @@ export async function deleteStaff(
       return { success: false, error: "Staff member not found" };
     }
 
-    // 5. Return response
     return { success: true, data: { deleted: true, shiftsDeleted } };
   } catch (error) {
     const message =

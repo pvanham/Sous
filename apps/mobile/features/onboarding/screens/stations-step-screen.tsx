@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, ScrollView, Pressable, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useMyStaff, useUpdateMyStaff } from "@/features/profile/hooks";
 import { OnboardingHeader } from "../components/onboarding-header";
-import { ONBOARDING_STEP_COUNT } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 const ICON_COLOR = "#78716c";
 
 /**
- * Step 3 — Station preferences.
+ * Station preferences (step 2/4).
  *
  * Staff cannot self-assign skills (managers control `Staff.skills`),
  * so the chip row mirrors the manager-approved list one-for-one.
@@ -25,7 +24,7 @@ const ICON_COLOR = "#78716c";
  * finishing onboarding.
  */
 export function StationsStepScreen() {
-  const router = useRouter();
+  const { goNext } = useOnboardingNav("stations");
   const myStaffQuery = useMyStaff();
   const updateMyStaff = useUpdateMyStaff();
 
@@ -73,7 +72,7 @@ export function StationsStepScreen() {
         await updateMyStaff.mutateAsync({
           preferredStations: Array.from(selected),
         });
-        router.replace("/(onboarding)/availability" as never);
+        goNext();
       } catch (err) {
         setError(
           err instanceof Error
@@ -85,13 +84,13 @@ export function StationsStepScreen() {
       }
       void label;
     },
-    [selected, updateMyStaff, router],
+    [selected, updateMyStaff, goNext],
   );
 
   if (myStaffQuery.isLoading) {
     return (
       <View className="flex-1 bg-background">
-        <OnboardingHeader step={2} totalSteps={ONBOARDING_STEP_COUNT} />
+        <OnboardingHeader currentStepId="stations" />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
         </View>
@@ -103,7 +102,7 @@ export function StationsStepScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <OnboardingHeader step={2} totalSteps={ONBOARDING_STEP_COUNT} />
+      <OnboardingHeader currentStepId="stations" />
       <ScrollView contentContainerClassName="px-4 pt-6 pb-10">
         <StyledText variant="title" className="text-2xl mb-1">
           Your stations

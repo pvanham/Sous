@@ -62,13 +62,18 @@ export function SignInScreen() {
         result.createdSessionId &&
         setActive
       ) {
+        // Activate the session only — don't navigate. AuthGate sees
+        // the new session, waits for the membership + Staff queries,
+        // and routes to `(tabs)` or `(onboarding)` once it knows
+        // where the user belongs. Pushing `/(tabs)` here raced that
+        // decision and briefly flashed the home tab before bouncing a
+        // new staff member into onboarding.
         await setActive({ session: result.createdSessionId });
-        router.replace("/(tabs)");
         return true;
       }
       return false;
     },
-    [setActive, router],
+    [setActive],
   );
 
   const handleSignIn = useCallback(async () => {

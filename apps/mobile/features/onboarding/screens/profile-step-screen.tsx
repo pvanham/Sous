@@ -8,7 +8,6 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useRouter } from "expo-router";
 import {
   useUser,
   isClerkAPIResponseError,
@@ -18,24 +17,16 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/features/auth/store";
 import { useMyStaff, useUpdateMyStaff } from "@/features/profile/hooks";
 import { useProfileImage } from "@/features/profile/use-profile-image";
 import { OnboardingHeader } from "../components/onboarding-header";
-import { ONBOARDING_STEP_COUNT } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 const PLACEHOLDER_COLOR = "#a8a29e";
 const ICON_COLOR = "#78716c";
 
-const MEMBER_ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  manager: "Manager",
-  shift_lead: "Shift lead",
-  staff: "Staff",
-};
-
 /**
- * Step 2 — Profile. The user confirms their basics (name, phone)
+ * Profile (step 1/4). The user confirms their basics (name, phone)
  * and optionally adds a profile picture before continuing.
  *
  * Why phone is mandatory — `StaffSchema` (web) marks `phone` as
@@ -48,14 +39,14 @@ const MEMBER_ROLE_LABELS: Record<string, string> = {
  * missing name surfaces as "Unnamed" in every roster view. We
  * pre-fill from Clerk and require the user to confirm.
  *
- * Role is read-only because the manager assigns it (see
- * `OrganizationMember.role`). Showing it as a chip avoids the
- * "I changed my role and now my schedule is wrong" failure mode.
+ * Role(s) are read-only and come from the Staff record
+ * (`Staff.roles`) — the kitchen-specific job titles the manager
+ * assigned at invite time (e.g. "Line Cook"), not the coarse
+ * `OrganizationMember.role` that only exists for auth gating.
  */
 export function ProfileStepScreen() {
-  const router = useRouter();
+  const { goNext } = useOnboardingNav("profile");
   const { user, isLoaded } = useUser();
-  const membership = useAuthStore((s) => s.membership);
   const myStaffQuery = useMyStaff();
   const updateMyStaff = useUpdateMyStaff();
   const profileImage = useProfileImage();
@@ -114,7 +105,7 @@ export function ProfileStepScreen() {
         updates.push(updateMyStaff.mutateAsync({ phone }));
       }
       await Promise.all(updates);
-      router.replace("/(onboarding)/stations" as never);
+      goNext();
     } catch (err) {
       setSubmitError(extractErrorMessage(err));
     } finally {
@@ -128,13 +119,13 @@ export function ProfileStepScreen() {
     phone,
     staff,
     updateMyStaff,
-    router,
+    goNext,
   ]);
 
   if (!isLoaded || !user || myStaffQuery.isLoading) {
     return (
       <View className="flex-1 bg-background">
-        <OnboardingHeader step={1} totalSteps={ONBOARDING_STEP_COUNT} />
+        <OnboardingHeader currentStepId="profile" />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
         </View>
@@ -150,13 +141,13 @@ export function ProfileStepScreen() {
   const initials =
     (trimmedFirst[0] ?? "") + (trimmedLast[0] ?? "");
 
-  const roleLabel = membership
-    ? MEMBER_ROLE_LABELS[membership.role] ?? membership.role
-    : null;
+  // Kitchen job titles assigned by the manager on the Staff record
+  // (e.g. "Line Cook"), not the coarse OrganizationMember auth role.
+  const staffRoles = staff?.roles ?? [];
 
   return (
     <View className="flex-1 bg-background">
-      <OnboardingHeader step={1} totalSteps={ONBOARDING_STEP_COUNT} />
+      <OnboardingHeader currentStepId="profile" />
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={{ flex: 1 }}
@@ -281,17 +272,22 @@ export function ProfileStepScreen() {
               ) : null}
             </View>
 
-            {roleLabel ? (
+            {staffRoles.length > 0 ? (
               <View>
                 <StyledText variant="label" className="mb-1.5">
-                  Role
+                  {staffRoles.length > 1 ? "Roles" : "Role"}
                 </StyledText>
-                <View className="flex-row">
-                  <View className="bg-muted border border-border rounded-full px-3 py-1.5">
-                    <StyledText variant="caption" className="text-foreground">
-                      {roleLabel}
-                    </StyledText>
-                  </View>
+                <View className="flex-row flex-wrap gap-2">
+                  {staffRoles.map((role) => (
+                    <View
+                      key={role}
+                      className="bg-muted border border-border rounded-full px-3 py-1.5"
+                    >
+                      <StyledText variant="caption" className="text-foreground">
+                        {role}
+                      </StyledText>
+                    </View>
+                  ))}
                 </View>
                 <StyledText variant="caption" className="mt-1 text-xs">
                   Your manager sets this — reach out if it looks wrong.

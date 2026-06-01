@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView } from "react-native";
-import { useRouter } from "expo-router";
 import * as Notifications from "expo-notifications";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -9,12 +8,12 @@ import { Button } from "@/components/ui/button";
 import { useUpdateNotificationPreferencesMutation } from "@/features/notifications/hooks";
 import { registerForPushNotifications } from "@/lib/notifications";
 import { OnboardingHeader } from "../components/onboarding-header";
-import { ONBOARDING_STEP_COUNT } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 const ICON_COLOR = "#78716c";
 
 /**
- * Step 5 — Notifications.
+ * Notifications (step 4/4).
  *
  * Single explicit ask for OS push permission. We deliberately
  * surface the prompt here (rather than relying on the silent
@@ -30,14 +29,14 @@ const ICON_COLOR = "#78716c";
  * the user enables it from Settings → Notifications.
  */
 export function NotificationsStepScreen() {
-  const router = useRouter();
+  const { goNext } = useOnboardingNav("notifications");
   const updatePrefs = useUpdateNotificationPreferencesMutation();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const goToDone = useCallback(() => {
-    router.replace("/(onboarding)/done" as never);
-  }, [router]);
+    goNext();
+  }, [goNext]);
 
   const handleEnable = useCallback(async () => {
     setError(null);
@@ -102,7 +101,7 @@ export function NotificationsStepScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <OnboardingHeader step={4} totalSteps={ONBOARDING_STEP_COUNT} />
+      <OnboardingHeader currentStepId="notifications" />
       <ScrollView contentContainerClassName="flex-grow px-4 pt-6 pb-10">
         <View className="items-center mb-6">
           <View className="w-20 h-20 rounded-3xl bg-primary items-center justify-center mb-4 shadow-sm">

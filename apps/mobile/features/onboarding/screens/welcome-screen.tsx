@@ -1,33 +1,27 @@
-import { useCallback } from "react";
 import { View, ScrollView } from "react-native";
-import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { OnboardingHeader } from "../components/onboarding-header";
-import { ONBOARDING_STEP_COUNT } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 /**
- * Step 1 — Welcome. Pure greeting screen, no inputs. We pull the
- * user's first name from Clerk so the headline feels personalised
- * even though we haven't asked them to confirm anything yet.
+ * Welcome — pure greeting screen, no inputs. We pull the user's first
+ * name from Clerk so the headline feels personalised even though we
+ * haven't asked them to confirm anything yet.
  */
 export function WelcomeScreen() {
-  const router = useRouter();
   const { user } = useUser();
-
-  const handleStart = useCallback(() => {
-    router.replace("/(onboarding)/profile" as never);
-  }, [router]);
+  const { goNext } = useOnboardingNav("welcome");
 
   const firstName = user?.firstName?.trim() ?? "";
   const greeting = firstName ? `Welcome, ${firstName}` : "Welcome to Sous";
 
   return (
     <View className="flex-1 bg-background">
-      <OnboardingHeader step={null} totalSteps={ONBOARDING_STEP_COUNT} canGoBack={false} />
+      <OnboardingHeader currentStepId="welcome" />
       <ScrollView contentContainerClassName="flex-grow justify-center px-6 pb-10">
         <View className="items-center mb-8">
           <View className="w-20 h-20 rounded-3xl bg-primary items-center justify-center mb-6 shadow-sm">
@@ -66,7 +60,7 @@ export function WelcomeScreen() {
           />
         </View>
 
-        <Button title="Get started" onPress={handleStart} size="lg" />
+        <Button title="Get started" onPress={goNext} size="lg" />
       </ScrollView>
     </View>
   );

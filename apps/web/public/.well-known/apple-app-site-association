@@ -3,8 +3,11 @@
     "apps": [],
     "details": [
       {
-        "appID": "TEAMID.com.sous.mobile",
-        "paths": ["/invite", "/invite/*"]
+        "appID": "GZD3YP6V4M.com.sous.mobile",
+        "paths": [
+          "/invite",
+          "/invite/*"
+        ]
       }
     ]
   }

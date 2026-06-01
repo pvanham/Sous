@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, ScrollView, ActivityIndicator } from "react-native";
-import { useRouter } from "expo-router";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -22,15 +21,16 @@ import {
   DEFAULT_TO,
   buildDayStates,
   daysToPayload,
+  isAvailabilityEmpty,
 } from "../lib/availability-state";
 import { OnboardingHeader } from "../components/onboarding-header";
-import { ONBOARDING_STEP_COUNT } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 const MIN_HOURS = 0;
 const MAX_HOURS = 80;
 
 /**
- * Step 4 — Availability + weekly hours.
+ * Availability + weekly hours (step 3/4).
  *
  * Combines two server fields onto a single screen because the user
  * is mentally defining "when I can work" and "how much I want to
@@ -45,7 +45,7 @@ const MAX_HOURS = 80;
  * partial network failure.
  */
 export function AvailabilityStepScreen() {
-  const router = useRouter();
+  const { goNext } = useOnboardingNav("availability");
   const myStaffQuery = useMyStaff();
   const availabilityQuery = useMyAvailability();
   const updateMyStaff = useUpdateMyStaff();
@@ -108,10 +108,19 @@ export function AvailabilityStepScreen() {
   }, []);
 
   const invalidHours = maxHours < minHours;
+  // The scheduler can't place a staff member who hasn't marked any day
+  // they can work, so at least one available day is required to advance
+  // (the server completion check enforces the same rule as a backstop).
+  const noAvailableDays = isAvailabilityEmpty(days);
+  const canAdvance = !invalidHours && !noAvailableDays && !submitting;
 
   const handleNext = useCallback(async () => {
     if (invalidHours) {
       setError("Maximum hours must be at least your minimum hours.");
+      return;
+    }
+    if (noAvailableDays) {
+      setError("Select at least one day you can work to continue.");
       return;
     }
     setError(null);
@@ -122,7 +131,7 @@ export function AvailabilityStepScreen() {
         maxHoursPerWeek: maxHours,
       });
       await saveAvailability.mutateAsync(daysToPayload(days));
-      router.replace("/(onboarding)/notifications" as never);
+      goNext();
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not save your availability.",
@@ -132,18 +141,19 @@ export function AvailabilityStepScreen() {
     }
   }, [
     invalidHours,
+    noAvailableDays,
     updateMyStaff,
     saveAvailability,
     minHours,
     maxHours,
     days,
-    router,
+    goNext,
   ]);
 
   if (myStaffQuery.isLoading || availabilityQuery.isLoading) {
     return (
       <View className="flex-1 bg-background">
-        <OnboardingHeader step={3} totalSteps={ONBOARDING_STEP_COUNT} />
+        <OnboardingHeader currentStepId="availability" />
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" />
         </View>
@@ -153,7 +163,7 @@ export function AvailabilityStepScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <OnboardingHeader step={3} totalSteps={ONBOARDING_STEP_COUNT} />
+      <OnboardingHeader currentStepId="availability" />
       <ScrollView contentContainerClassName="px-4 pt-6 pb-10">
         <StyledText variant="title" className="text-2xl mb-1">
           When can you work?
@@ -237,7 +247,7 @@ export function AvailabilityStepScreen() {
           title="Next"
           onPress={handleNext}
           loading={submitting}
-          disabled={submitting || invalidHours}
+          disabled={!canAdvance}
           size="lg"
           className="mt-4"
         />

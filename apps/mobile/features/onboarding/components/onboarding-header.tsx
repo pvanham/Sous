@@ -1,43 +1,37 @@
 import { View, Pressable } from "react-native";
-import { useRouter } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { StyledText } from "@/components/ui/text";
+import { ONBOARDING_STEPS, type OnboardingStepId } from "../lib/steps";
+import { useOnboardingNav } from "../use-onboarding-nav";
 
 const ICON_COLOR = "#78716c";
 
+/** Data-entry steps (welcome / done excluded) paired with their list index. */
+const DATA_STEPS = ONBOARDING_STEPS.map((s, index) => ({ ...s, index })).filter(
+  (s) => s.step !== null,
+);
+
 interface OnboardingHeaderProps {
-  /** 1-indexed step number (`null` to hide the dots, e.g. on the welcome screen). */
-  step: number | null;
-  /** Total number of steps in the wizard. */
-  totalSteps: number;
-  /** When false, the back chevron isn't rendered (e.g. on welcome / done). */
-  canGoBack?: boolean;
+  /** The step this header is rendered on. Drives the dots + back button. */
+  currentStepId: OnboardingStepId;
 }
 
 /**
  * Shared header for every wizard step. Renders a back chevron on the
- * left (when allowed) and a row of progress dots on the right so the
- * user always sees how far through they are.
+ * left (on data steps after the first) and a row of tappable progress
+ * dots: the user can jump to any step they've already reached, which —
+ * combined with the back chevron and each step's "Next" CTA — lets
+ * them move freely backward and forward through the flow.
  *
- * Lives in the onboarding feature rather than `components/ui/`
- * because it bakes in `expo-router` navigation — moving it into the
- * shared UI directory would couple `components/ui/` to navigation.
+ * Lives in the onboarding feature rather than `components/ui/` because
+ * it bakes in wizard navigation.
  */
-export function OnboardingHeader({
-  step,
-  totalSteps,
-  canGoBack = true,
-}: OnboardingHeaderProps) {
-  const router = useRouter();
+export function OnboardingHeader({ currentStepId }: OnboardingHeaderProps) {
   const insets = useSafeAreaInsets();
-
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    }
-  };
+  const { step, totalSteps, canGoBack, furthestIndex, goBack, goToIndex } =
+    useOnboardingNav(currentStepId);
 
   return (
     <View
@@ -46,9 +40,9 @@ export function OnboardingHeader({
     >
       <View className="flex-row items-center justify-between px-4 py-2 min-h-[44px]">
         <View className="w-10">
-          {canGoBack && router.canGoBack() ? (
+          {canGoBack ? (
             <Pressable
-              onPress={handleBack}
+              onPress={goBack}
               hitSlop={8}
               accessibilityRole="button"
               accessibilityLabel="Back"
@@ -61,14 +55,32 @@ export function OnboardingHeader({
 
         {step !== null ? (
           <View className="flex-row gap-1.5">
-            {Array.from({ length: totalSteps }, (_, i) => (
-              <View
-                key={i}
-                className={`h-1.5 w-6 rounded-full ${
-                  i < step ? "bg-primary" : "bg-border"
-                }`}
-              />
-            ))}
+            {DATA_STEPS.map((dataStep) => {
+              const unlocked = dataStep.index <= furthestIndex;
+              const filled = (dataStep.step ?? 0) <= step;
+              const isCurrent = dataStep.step === step;
+              return (
+                <Pressable
+                  key={dataStep.id}
+                  onPress={() => goToIndex(dataStep.index)}
+                  disabled={!unlocked || isCurrent}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Go to step ${dataStep.step}`}
+                  accessibilityState={{
+                    disabled: !unlocked,
+                    selected: isCurrent,
+                  }}
+                  className="py-2"
+                >
+                  <View
+                    className={`h-1.5 w-6 rounded-full ${
+                      filled ? "bg-primary" : "bg-border"
+                    } ${isCurrent ? "opacity-100" : unlocked ? "opacity-100" : "opacity-60"}`}
+                  />
+                </Pressable>
+              );
+            })}
           </View>
         ) : (
           <View />

@@ -10,7 +10,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sous.mobile",
-      "associatedDomains": ["applinks:sous.example.com"],
+      "associatedDomains": ["applinks:localhost:3000"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -31,7 +31,7 @@
           "data": [
             {
               "scheme": "https",
-              "host": "sous.example.com",
+              "host": "localhost:3000",
               "pathPrefix": "/invite"
             }
           ],

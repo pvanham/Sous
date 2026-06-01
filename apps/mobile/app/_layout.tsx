@@ -274,22 +274,56 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     signOut,
   ]);
 
-  const showMembershipSpinner =
-    isLoaded &&
-    isSignedIn &&
-    (membershipQuery.isLoading ||
-      // Wait for the Staff query in every role's path: the gate
-      // logic above looks at `myStaffQuery.data` regardless of
-      // role, so showing the tab bar before it settles would
-      // cause a flash-then-redirect for managers who work shifts.
-      myStaffQuery.isLoading);
+  // Whether the post-sign-in destination has been fully resolved AND
+  // we're already on it. Mirrors the redirect effect above so the
+  // loading overlay stays up until the user is actually on the right
+  // route — without this, the moment both queries settle there's a
+  // frame where `(tabs)` paints (mounting home queries / empty cards)
+  // before the redirect effect runs, which read as a "blank home
+  // flash" on a fresh staff login.
+  const routingSettled = (() => {
+    if (!isLoaded) return false;
+    const top = segments[0] as string | undefined;
+    // The invite screen owns its own routing pre-authentication.
+    if (top === "invite") return true;
+    if (!isSignedIn) return true;
+    if (membershipQuery.isLoading) return false;
+    // Error / no-membership both lead to a forced sign-out; keep the
+    // overlay up through that brief transition.
+    if (membershipQuery.isError) return false;
+    if (membershipQuery.isSuccess && !membershipQuery.data) return false;
+    if (membershipQuery.isSuccess && membershipQuery.data) {
+      if (myStaffQuery.isLoading) return false;
+      const needsOnboarding =
+        myStaffQuery.isSuccess &&
+        myStaffQuery.data !== null &&
+        myStaffQuery.data.onboardingCompletedAt === null;
+      if (needsOnboarding) {
+        // Settled only once we're inside the wizard group.
+        return top === "(onboarding)";
+      }
+      // Onboarded users (and users with no Staff row) are only
+      // bounced out of the auth / onboarding groups. Anywhere else
+      // (tabs, settings, profile, announcements) is a legitimate
+      // destination and should not be covered by the overlay.
+      return top !== "(auth)" && top !== "(onboarding)";
+    }
+    return false;
+  })();
+
+  const showLoadingOverlay = isLoaded && isSignedIn && !routingSettled;
 
   return (
     <>
       {children}
-      {showMembershipSpinner ? (
+      {showLoadingOverlay ? (
+        // Opaque (not translucent): fully hides whatever group Expo
+        // Router mounted underneath while we settle the destination,
+        // so the user sees a clean loading screen instead of a
+        // half-rendered home tab.
         <View
           pointerEvents="auto"
+          className="bg-background"
           style={{
             position: "absolute",
             top: 0,
@@ -298,7 +332,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             bottom: 0,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.25)",
           }}
         >
           <ActivityIndicator size="large" />

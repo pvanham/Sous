@@ -61,8 +61,8 @@ export function daysEqual(a: DayState, b: DayState): boolean {
 
 /**
  * `true` when every day in the map is `unavailable` — used by the
- * onboarding resume logic to detect whether the user already
- * entered availability in a prior session.
+ * onboarding availability step to block advancing until the user has
+ * marked at least one day they can work.
  */
 export function isAvailabilityEmpty(
   days: Record<number, DayState>,
