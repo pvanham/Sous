@@ -88,26 +88,24 @@ export default async function DashboardPage() {
       <OnboardingCompleteBanner />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-extrabold tracking-tight">
-            Good{getGreeting()},{" "}
-            <span className="bg-gradient-to-br from-primary via-primary/80 to-primary/50 bg-clip-text text-transparent">
-              {firstName}
-            </span>
-          </h1>
-          <p className="text-muted-foreground text-sm font-medium">
-            {format(new Date(), "EEEE, MMMM do, yyyy")}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+            {format(new Date(), "EEEE, MMMM d, yyyy")}
           </p>
+          <h1 className="text-2xl font-bold tracking-tight">
+            Good{getGreeting()},{" "}
+            <span className="text-primary">{firstName}</span>
+          </h1>
         </div>
         {schedule && (
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">This week&apos;s schedule:</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Week&apos;s schedule</span>
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold border ${
+              className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold border ${
                 schedule.status === "PUBLISHED"
-                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400"
-                  : "bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400"
+                  ? "bg-emerald-500/10 text-emerald-700 border-emerald-500/25 dark:text-emerald-400 dark:border-emerald-500/30"
+                  : "bg-amber-500/10 text-amber-700 border-amber-500/25 dark:text-amber-400 dark:border-amber-500/30"
               }`}
             >
               <span className={`h-1.5 w-1.5 rounded-full ${schedule.status === "PUBLISHED" ? "bg-emerald-500" : "bg-amber-500"}`} />
@@ -117,35 +115,30 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      {/* Metrics row */}
-      <div className="relative">
-        <div className="absolute -inset-4 bg-gradient-to-r from-primary/5 via-background to-secondary/5 blur-3xl -z-10 rounded-full opacity-60" />
-        <DashboardMetrics shifts={shifts} staff={staff} />
+      {/* Zone 1 — Right Now: Today's shifts (primary) + action items (attention panel) */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 lg:h-[360px]">
+          <TodayScheduleWidget shifts={shifts} staff={staff} />
+        </div>
+        <div className="flex flex-col gap-4 lg:h-[360px]">
+          <PendingTimeOffWidget requests={pendingTimeOff} staff={staff} />
+          <PendingExchangesWidget exchanges={pendingExchanges} />
+        </div>
       </div>
 
-      {/* Schedule row — weekly overview + today's shifts */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2 h-[360px]">
+      {/* Zone 2 — This Week: contextual metrics */}
+      <DashboardMetrics shifts={shifts} staff={staff} />
+
+      {/* Zone 3 — Context: coverage heatmap + announcements */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2 lg:h-[340px]">
           <WeeklyScheduleOverview
             shifts={shifts}
             weekStart={weekStart}
             weekStartsOn={weekStartsOn}
           />
         </div>
-        <div className="lg:col-span-1 h-[360px]">
-          <TodayScheduleWidget shifts={shifts} staff={staff} />
-        </div>
-      </div>
-
-      {/* Action + activity row — what needs attention and what's new */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="h-[340px]">
-          <PendingTimeOffWidget requests={pendingTimeOff} staff={staff} />
-        </div>
-        <div className="h-[340px]">
-          <PendingExchangesWidget exchanges={pendingExchanges} />
-        </div>
-        <div className="h-[340px]">
+        <div className="lg:h-[340px]">
           <AnnouncementsWidget announcements={announcements} />
         </div>
       </div>

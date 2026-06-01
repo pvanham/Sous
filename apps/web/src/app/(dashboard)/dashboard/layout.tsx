@@ -51,6 +51,12 @@ export default async function DashboardLayout({
   const headerList = await headers();
   const pathname = headerList.get("x-pathname") ?? "";
   const isBillingRoute = pathname.startsWith("/dashboard/settings/billing");
+
+  // Exact match for /dashboard; prefix match for all sub-routes
+  function isActive(href: string) {
+    if (href === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(href);
+  }
   const subscriptionStatus = await getSubscriptionStatus(ctx.orgId);
   if (subscriptionStatus === "expired" && (ctx.role !== "owner" || !isBillingRoute)) {
     return <SubscriptionExpiredScreen role={ctx.role} />;
@@ -74,17 +80,24 @@ export default async function DashboardLayout({
             </Link>
 
             {/* Navigation */}
-            <nav className="flex items-center gap-4">
-              {navItems.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="flex items-center gap-1.5 text-sm font-sans text-stone-600 dark:text-stone-400 transition-colors hover:text-stone-900 dark:hover:text-stone-100"
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </Link>
-              ))}
+            <nav className="flex items-center gap-1">
+              {navItems.map((item) => {
+                const active = isActive(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-sans transition-colors ${
+                      active
+                        ? "bg-stone-200/70 dark:bg-white/8 text-stone-900 dark:text-stone-100 font-medium"
+                        : "text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-white/5 hover:text-stone-900 dark:hover:text-stone-100"
+                    }`}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
             </nav>
           </div>
           <div className="flex items-center gap-4">
