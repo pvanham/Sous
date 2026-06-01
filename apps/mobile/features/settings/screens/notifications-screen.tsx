@@ -1,11 +1,5 @@
-import { useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Switch,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, View } from "react-native";
 
 import type {
   NotificationCategory,
@@ -16,6 +10,7 @@ import type {
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { Toggle } from "@/components/ui/toggle";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { SettingsHeader } from "../components/settings-header";
 import { useAuthStore } from "@/features/auth/store";
@@ -376,14 +371,14 @@ function CategoryToggleRow({
         </StyledText>
       </View>
       <View className="w-16 items-center">
-        <Switch
+        <Toggle
           value={push}
           onValueChange={(next) => onPatch("push", next)}
           accessibilityLabel={`${row.label} push`}
         />
       </View>
       <View className="w-16 items-center">
-        <Switch
+        <Toggle
           value={email}
           onValueChange={(next) => onPatch("email", next)}
           accessibilityLabel={`${row.label} email`}
@@ -420,10 +415,9 @@ function ToggleRow({
           {description}
         </StyledText>
       </View>
-      <Switch
+      <Toggle
         value={value}
         onValueChange={onValueChange}
-        accessibilityRole="switch"
         accessibilityLabel={label}
       />
     </View>
@@ -491,15 +485,17 @@ interface QuietHoursPickerSheetProps {
   onSelect: (minute: number) => void;
 }
 
-const QUIET_HOURS_INCREMENT_MINUTES = 30;
+type Period = "AM" | "PM";
+
+const HOURS_12 = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
+const MINUTE_OPTIONS = [0, 15, 30, 45] as const;
 
 /**
- * Bottom sheet that lets the user pick a 30-minute boundary in the
- * day. We use a flat list of presets rather than the native time
- * picker so the experience is identical on iOS and Android — the
- * native picker is great for "any time" use cases but overkill
- * (and inconsistent) for a quiet-hours window where 30-minute steps
- * are plenty granular.
+ * Bottom sheet for picking a quiet-hours boundary as a 12-hour
+ * AM/PM time. The user dials in the hour, the minute, and the
+ * period independently and confirms — a deliberate, low-error
+ * pattern that reads identically on iOS and Android (unlike the
+ * native time picker, which renders very differently per platform).
  */
 function QuietHoursPickerSheet({
   visible,
@@ -508,47 +504,166 @@ function QuietHoursPickerSheet({
   onClose,
   onSelect,
 }: QuietHoursPickerSheetProps) {
-  const minutes = useMemo(() => {
-    const out: number[] = [];
-    for (let m = 0; m < 24 * 60; m += QUIET_HOURS_INCREMENT_MINUTES) {
-      out.push(m);
+  return (
+    <BottomSheet visible={visible} onClose={onClose} maxHeightClassName="max-h-[85%]">
+      <QuietHoursPickerContent
+        active={visible}
+        title={title}
+        currentMinute={currentMinute}
+        onSelect={onSelect}
+      />
+    </BottomSheet>
+  );
+}
+
+interface QuietHoursPickerContentProps {
+  /** When this flips true, the draft re-seeds from `currentMinute`. */
+  active: boolean;
+  title: string;
+  currentMinute: number;
+  onSelect: (minute: number) => void;
+}
+
+/**
+ * The interactive body of the quiet-hours picker, kept separate from
+ * the {@link BottomSheet} wrapper so it can be rendered and inspected
+ * on its own.
+ */
+function QuietHoursPickerContent({
+  active,
+  title,
+  currentMinute,
+  onSelect,
+}: QuietHoursPickerContentProps) {
+  // Seed the draft from the incoming value on first mount so the very
+  // first frame already shows the right time (no flash of a default).
+  const [hour12, setHour12] = useState(() => splitMinute(currentMinute).hour12);
+  const [minute, setMinute] = useState(() => splitMinute(currentMinute).minute);
+  const [period, setPeriod] = useState<Period>(
+    () => splitMinute(currentMinute).period,
+  );
+
+  // Re-seed when the sheet reopens for a different field (the instance
+  // is reused across opens), so reopening start vs end shows the
+  // right value rather than the previously-edited one.
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current) {
+      const parts = splitMinute(currentMinute);
+      setHour12(parts.hour12);
+      setMinute(parts.minute);
+      setPeriod(parts.period);
     }
-    return out;
-  }, []);
+    wasActive.current = active;
+  }, [active, currentMinute]);
+
+  const draftMinute = composeMinute(hour12, minute, period);
 
   return (
-    <BottomSheet visible={visible} onClose={onClose} maxHeightClassName="max-h-[80%]">
-      <View className="mb-3">
+    <>
+      <View className="mb-4">
         <StyledText variant="subtitle">{title}</StyledText>
         <StyledText variant="caption" className="mt-1">
           Notifications stay silent during this window in your timezone.
         </StyledText>
       </View>
-      <ScrollView className="max-h-[60%]">
-        {minutes.map((m) => {
-          const isSelected = m === currentMinute;
+
+      <View className="items-center mb-5">
+        <StyledText variant="title" className="text-4xl">
+          {formatMinute(draftMinute)}
+        </StyledText>
+      </View>
+
+      <View className="flex-row self-center mb-5 rounded-full bg-muted p-1">
+        {(["AM", "PM"] as const).map((p) => {
+          const active = period === p;
           return (
             <Pressable
-              key={m}
-              onPress={() => onSelect(m)}
-              className={`flex-row items-center px-3 py-3 rounded-md ${
-                isSelected ? "bg-muted" : "active:bg-muted/40"
-              }`}
+              key={p}
+              onPress={() => setPeriod(p)}
               accessibilityRole="button"
-              accessibilityLabel={formatMinute(m)}
-              accessibilityState={{ selected: isSelected }}
+              accessibilityState={{ selected: active }}
+              accessibilityLabel={p}
+              className={`px-6 py-2 rounded-full ${active ? "bg-primary" : ""}`}
             >
               <StyledText
-                variant="body"
-                className={isSelected ? "font-semibold" : ""}
+                variant="label"
+                className={active ? "text-primary-foreground" : "text-muted-foreground"}
               >
-                {formatMinute(m)}
+                {p}
               </StyledText>
             </Pressable>
           );
         })}
-      </ScrollView>
-    </BottomSheet>
+      </View>
+
+      <StyledText variant="caption" className="uppercase tracking-wider mb-2">
+        Hour
+      </StyledText>
+      <View className="flex-row flex-wrap mb-4">
+        {HOURS_12.map((h) => {
+          const active = h === hour12;
+          return (
+            <PickerChip
+              key={h}
+              label={String(h)}
+              active={active}
+              onPress={() => setHour12(h)}
+            />
+          );
+        })}
+      </View>
+
+      <StyledText variant="caption" className="uppercase tracking-wider mb-2">
+        Minute
+      </StyledText>
+      <View className="flex-row mb-6">
+        {MINUTE_OPTIONS.map((m) => {
+          const active = m === minute;
+          return (
+            <PickerChip
+              key={m}
+              label={`:${String(m).padStart(2, "0")}`}
+              active={active}
+              onPress={() => setMinute(m)}
+            />
+          );
+        })}
+      </View>
+
+      <Button title="Set time" onPress={() => onSelect(draftMinute)} />
+    </>
+  );
+}
+
+function PickerChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel={label}
+      className={`w-[58px] h-11 items-center justify-center rounded-md mr-2 mb-2 border ${
+        active
+          ? "bg-primary border-primary"
+          : "bg-card border-border active:bg-muted/40"
+      }`}
+    >
+      <StyledText
+        variant="body"
+        className={active ? "text-primary-foreground font-semibold" : ""}
+      >
+        {label}
+      </StyledText>
+    </Pressable>
   );
 }
 
@@ -580,9 +695,38 @@ function defaultQuietHoursForUser(): QuietHoursPrefs {
 
 function formatMinute(total: number): string {
   const safe = Math.max(0, Math.min(total, 24 * 60 - 1));
-  const h = Math.floor(safe / 60);
+  const h24 = Math.floor(safe / 60);
   const m = safe % 60;
-  const hh = String(h).padStart(2, "0");
+  const period = h24 < 12 ? "AM" : "PM";
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
   const mm = String(m).padStart(2, "0");
-  return `${hh}:${mm}`;
+  return `${h12}:${mm} ${period}`;
+}
+
+/** Split minutes-since-midnight into 12-hour clock parts for the picker. */
+function splitMinute(total: number): {
+  hour12: number;
+  minute: number;
+  period: Period;
+} {
+  const safe = Math.max(0, Math.min(total, 24 * 60 - 1));
+  const h24 = Math.floor(safe / 60);
+  const rawMinute = safe % 60;
+  const period: Period = h24 < 12 ? "AM" : "PM";
+  const hour12 = h24 % 12 === 0 ? 12 : h24 % 12;
+  // Snap to the nearest offered option so an arbitrary stored minute
+  // still highlights a chip when the sheet opens.
+  const minute = MINUTE_OPTIONS.reduce((closest, option) =>
+    Math.abs(option - rawMinute) < Math.abs(closest - rawMinute)
+      ? option
+      : closest,
+  );
+  return { hour12, minute, period };
+}
+
+/** Inverse of {@link splitMinute}: 12-hour parts → minutes since midnight. */
+function composeMinute(hour12: number, minute: number, period: Period): number {
+  const base = hour12 % 12;
+  const h24 = period === "PM" ? base + 12 : base;
+  return h24 * 60 + minute;
 }
