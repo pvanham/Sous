@@ -1,18 +1,24 @@
 ---
 name: bootstrap-env
 description: >-
-  Mandatory initialization procedure for every cloud agent session on the Sous
+  Mandatory initialization procedure for CLOUD agent sessions only on the Sous
   monorepo. Materializes per-app environment files (apps/web/.env.local and
   apps/mobile/.env) from globally provided WEB_* and MOBILE_* variables,
   installs dependencies, and verifies the workspace is ready before the agent
-  touches any code. Use this skill immediately at the start of a fresh agent
-  session or whenever environment variables, .env files, or setup-agent-envs.sh
-  are mentioned.
+  touches any code. Use this skill immediately at the start of a fresh CLOUD
+  agent session or whenever environment variables, .env files, or
+  setup-agent-envs.sh are mentioned.
 ---
 
 # Bootstrap Environment — Cloud Agent Initialization
 
-This is the **first thing** every cloud agent must do in a fresh session on
+> **Local agents: skip this skill entirely.**
+> If you are running inside Cursor IDE on a developer's machine, `.env.local`
+> and `.env` files already exist and the environment is already configured.
+> Running this script locally will overwrite those files with incomplete values.
+> Proceed directly to the user's task.
+
+This is the **first thing** every **cloud agent** must do in a fresh session on
 the Sous monorepo. No other work — reading code, running commands, editing
 files — should happen before this procedure completes successfully.
 

@@ -25,8 +25,8 @@ const SelectTrigger = React.forwardRef<
       "bg-stone-200 dark:bg-stone-800",
       // Inner shadow for recessed feel
       "shadow-[inset_0_2px_4px_0_rgb(0_0_0/0.05)]",
-      // Border - transparent until focused
-      "border border-transparent",
+      // Border - always visible so the control reads against any surface
+      "border border-border",
       // Focus state - sharp Rust ring
       "ring-offset-background focus:outline-none focus:ring-1 focus:ring-amber-700 dark:focus:ring-amber-600",
       // Placeholder

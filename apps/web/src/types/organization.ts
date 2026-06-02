@@ -18,6 +18,7 @@ export function toOrganizationDTO(
     id: String(doc._id),
     ownerId: doc.ownerId,
     name: doc.name,
+    businessType: doc.businessType,
     subscriptionTier: doc.subscriptionTier || "free",
     stripeCustomerId: doc.stripeCustomerId,
     stripeSubscriptionId: doc.stripeSubscriptionId,

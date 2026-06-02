@@ -29,6 +29,7 @@
     "postinstall": "node scripts/verify-react-singletons.mjs"
   },
   "dependencies": {
+    "@tailwindcss/typography": "^0.5.19",
     "expo-router": "55.0.13",
     "postcss": "^8.5.13",
     "react": "19.2.5",

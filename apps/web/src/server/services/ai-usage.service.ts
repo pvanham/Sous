@@ -191,4 +191,18 @@ export const AIUsageService = {
     });
     return result.deletedCount;
   },
+
+  /**
+   * Delete all usage logs for an organization.
+   * Used for owner-level cascading account deletion.
+   *
+   * @param orgId - Organization ID
+   * @returns Number of deleted documents
+   */
+  async deleteAllByOrgId(orgId: string): Promise<number> {
+    const result = await AIUsageLog.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+    });
+    return result.deletedCount;
+  },
 };

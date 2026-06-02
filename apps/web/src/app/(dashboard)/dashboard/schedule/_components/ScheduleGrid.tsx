@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, Loader2, Sparkles, Copy } from "lucide-react";
 import { toast } from "sonner";
@@ -136,11 +136,11 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
   });
 
   // State for the empty-state "Generate Schedule" flow.
-  // Because GenerateScheduleDialog requires a schedule doc, we first
-  // ensure one exists, set pendingGenerate=true, then open the dialog
-  // once the query refetches and schedule becomes non-null.
-  const [pendingGenerate, setPendingGenerate] = useState(false);
+  // `ensureScheduleForCurrentWeek` primes the schedule cache synchronously
+  // via setQueryData so the dialog (which is conditionally mounted on a
+  // non-null `schedule`) can be opened in the same handler.
   const [emptyStateGenerateOpen, setEmptyStateGenerateOpen] = useState(false);
+  const [isEnsuringSchedule, setIsEnsuringSchedule] = useState(false);
 
   // State for the empty-state "Copy Previous Week" flow.
   const [isCopyingFromPrev, setIsCopyingFromPrev] = useState(false);
@@ -250,9 +250,13 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
       toast.error(result.error);
       return null;
     }
-    await queryClient.invalidateQueries({
-      queryKey: scheduleKeys.week(weekStartKey),
-    });
+    // Prime the schedule cache directly with the server's response so
+    // downstream renders (and the GenerateScheduleDialog mount guard)
+    // see the new schedule on the very next commit, with no refetch race.
+    queryClient.setQueryData(
+      scheduleKeys.week(weekStartKey),
+      result.data,
+    );
     await queryClient.invalidateQueries({
       queryKey: scheduleKeys.effectiveStatus(weekStartKey),
     });
@@ -452,22 +456,19 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     }
   };
 
-  // Once the schedule doc materialises after ensureScheduleForCurrentWeek,
-  // open the generate dialog that was deferred from the empty state.
-  useEffect(() => {
-    if (pendingGenerate && schedule) {
-      setEmptyStateGenerateOpen(true);
-      setPendingGenerate(false);
-    }
-  }, [pendingGenerate, schedule]);
-
-  // Open the generate dialog from the empty state: create the schedule
-  // doc first, then let the useEffect above open the dialog once the
-  // query refetches and schedule is non-null.
+  // Open the generate dialog from the empty state: ensure a schedule
+  // doc exists (priming the cache synchronously), then open the dialog.
+  // The dialog's `{schedule && ...}` mount guard will see the freshly-
+  // primed cache value on the next render.
   const handleGenerateFromEmpty = async () => {
-    const scheduleId = await ensureScheduleForCurrentWeek();
-    if (!scheduleId) return;
-    setPendingGenerate(true);
+    setIsEnsuringSchedule(true);
+    try {
+      const scheduleId = await ensureScheduleForCurrentWeek();
+      if (!scheduleId) return;
+      setEmptyStateGenerateOpen(true);
+    } finally {
+      setIsEnsuringSchedule(false);
+    }
   };
 
   // Copy the previous week's shifts into the current (empty) week.
@@ -677,10 +678,10 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
               <Button
                 size="sm"
                 onClick={() => void handleGenerateFromEmpty()}
-                disabled={pendingGenerate}
+                disabled={isEnsuringSchedule}
                 className="ai-gradient border-0 text-white shadow-md whitespace-nowrap"
               >
-                {pendingGenerate ? (
+                {isEnsuringSchedule ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Sparkles className="mr-2 h-4 w-4" />

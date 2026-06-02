@@ -328,6 +328,27 @@ export const TimeOffRequestService = {
   },
 
   /**
+   * Delete all time-off requests for a staff member.
+   * Called when a staff member is permanently deleted.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
+   * @param staffId - Staff document ID
+   * @returns Number of deleted documents
+   */
+  async deleteByStaffId(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<number> {
+    const result = await TimeOffRequest.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      staffId: new Types.ObjectId(staffId),
+    });
+    return result.deletedCount;
+  },
+
+  /**
    * Delete all time-off requests for a location (for testing/cleanup).
    * @param orgId - Organization ID
    * @param locationId - Location ID

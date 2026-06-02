@@ -3,9 +3,10 @@ import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
-import { LocationService } from "@/server/services/location.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
+import { DeviceTokenService } from "@/server/services/device-token.service";
+import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
 
@@ -65,9 +66,6 @@ export async function POST(req: Request) {
     const userId = evt.data.id;
     const publicMetadata = evt.data.public_metadata;
     const email = evt.data.email_addresses[0]?.email_address || "";
-    
-    // Default org name derived from email if available
-    const defaultName = email ? `${email.split('@')[0]}'s Restaurant` : "My Restaurant";
 
     const metadataRole = publicMetadata?.role as string | undefined;
     const isInvitedMember = metadataRole && publicMetadata?.orgId;
@@ -109,30 +107,6 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error("Failed to create membership:", error);
-        return new Response("Internal Server Error", { status: 500 });
-      }
-    } else {
-      // PHASE 1: Normal signup as an Owner
-      try {
-        const newOrg = await OrganizationService.create(userId, {
-          name: defaultName,
-        });
-
-        await LocationService.create(newOrg.id, {
-          name: "Main Kitchen",
-          timezone: "America/New_York",
-        });
-
-        await OrganizationMemberService.create({
-          orgId: newOrg.id,
-          locationId: null, // Org-wide access for owner
-          clerkUserId: userId,
-          role: "owner",
-        });
-        
-        console.log(`Successfully provisioned new owner ${userId} with org ${newOrg.id}`);
-      } catch (error) {
-        console.error("Failed to provision new organization:", error);
         return new Response("Internal Server Error", { status: 500 });
       }
     }
@@ -185,51 +159,54 @@ export async function POST(req: Request) {
           // PHASE 4: Cascading delete for owners
           const orgId = membership.orgId;
 
-          // 1. Delete all manager clerk accounts for this org
+          // 1. Delete all other member clerk accounts for this org.
           const allMembers = await OrganizationMemberService.listByOrgId(orgId);
-          await Promise.all(
-            allMembers
-              .filter(m => m.clerkUserId !== userId)
-              .map(m => (async () => {
-                const client = await clerkClient();
-                return client.users.deleteUser(m.clerkUserId).catch(e => {
-                   console.error(`Failed to delete clerk user ${m.clerkUserId}:`, e)
-                });
-              })())
+          const otherMembers = allMembers.filter(
+            (m) => m.clerkUserId !== userId,
+          );
+          const client = await clerkClient();
+          await Promise.allSettled(
+            otherMembers.map((m) => client.users.deleteUser(m.clerkUserId)),
           );
 
-          // 2. Delete all MongoDB data for this org
-          await OrganizationMemberService.deleteAllByOrgId(orgId);
-          await LocationService.deleteAllByOrgId(orgId);
-          await OrganizationService.delete(orgId);
-          
-          // Staff, Schedule, Shifts, etc. to be deleted here as well
-          const Staff = (await import("@/server/models/Staff")).default;
-          await Staff.deleteMany({ orgId });
-          
-          const Schedule = (await import("@/server/models/Schedule")).default;
-          await Schedule.deleteMany({ orgId });
-          
-          const Shift = (await import("@/server/models/Shift")).default;
-          await Shift.deleteMany({ orgId });
-          
-          const LaborRequirement = (await import("@/server/models/LaborRequirement")).default;
-          await LaborRequirement.deleteMany({ orgId });
-          
-          const TimeOffRequest = (await import("@/server/models/TimeOffRequest")).default;
-          await TimeOffRequest.deleteMany({ orgId });
-          
-          const StaffAvailability = (await import("@/server/models/StaffAvailability")).default;
-          await StaffAvailability.deleteMany({ orgId });
+          // 2. Delete identity-scoped rows (DeviceToken / NotificationPreference)
+          //    for the owner AND every other member, inline. We cannot rely on
+          //    the async user.deleted webhooks fired by step 1 to handle this:
+          //    step 3 below wipes every OrganizationMember row, so by the time
+          //    those webhooks run, `listByUserId` returns empty and their
+          //    per-member cleanup branch never executes. Doing it here makes
+          //    the cleanup synchronous and independent of webhook delivery.
+          const clerkUserIdsToClean = [
+            userId,
+            ...otherMembers.map((m) => m.clerkUserId),
+          ];
+          await Promise.all(
+            clerkUserIdsToClean.flatMap((id) => [
+              DeviceTokenService.deleteAllByClerkUserId(id),
+              NotificationPreferenceService.deleteAllByClerkUserId(id),
+            ]),
+          );
+
+          // 3. Delete all org-scoped data via service-layer cascade.
+          await OrganizationService.cascadeDelete(orgId);
 
           console.log(`Completed cascading delete for org ${orgId}`);
         } else if (membership.role === "staff") {
-          // Unlink Clerk user from Staff record but preserve scheduling data
-          await StaffService.unlinkClerkUser(userId);
+          // Unlink Clerk user from Staff record but preserve scheduling data,
+          // then clean up identity-scoped rows and the membership itself.
+          await Promise.all([
+            StaffService.unlinkClerkUser(userId),
+            DeviceTokenService.deleteAllByClerkUserId(userId),
+            NotificationPreferenceService.deleteAllByClerkUserId(userId),
+          ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
         } else {
-          // Manager / shift_lead: only delete their membership
+          // Manager / shift_lead: clean up identity-scoped rows, then delete membership.
+          await Promise.all([
+            DeviceTokenService.deleteAllByClerkUserId(userId),
+            NotificationPreferenceService.deleteAllByClerkUserId(userId),
+          ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted ${membership.role} membership ${membership.id}`);
         }

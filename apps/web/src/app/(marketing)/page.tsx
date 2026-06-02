@@ -172,6 +172,7 @@ export default function LandingPage() {
                   src="/images/marketing/feature-scheduling-v2.png" 
                   alt="AI Scheduling Node Network"
                   fill
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                   className="object-cover opacity-90 transition-transform duration-1000 hover:scale-105"
                 />
               </div>
@@ -212,6 +213,7 @@ export default function LandingPage() {
                   src="/images/marketing/feature-sync-v2.png" 
                   alt="Global multi-location synchronization"
                   fill
+                  sizes="(max-width: 1024px) 100vw, 50vw"
                   className="object-cover opacity-90 hover:scale-105 transition-transform duration-1000"
                 />
               </div>

@@ -1,9 +1,11 @@
 "use client";
 
+import { useAuth } from "@clerk/nextjs";
 import { useSignUp } from "@clerk/nextjs/legacy";
 import { useState, useMemo, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { getInvitationPrefill } from "@/server/actions/invitation.actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
@@ -39,6 +41,7 @@ function getPasswordStrength(pw: string): { score: number; label: string; color:
 
 export default function SignUpPage() {
   const { isLoaded, signUp, setActive } = useSignUp();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -49,6 +52,19 @@ export default function SignUpPage() {
   const invitationTicket = searchParams.get("__clerk_ticket");
   const isInvitationFlow = Boolean(invitationTicket);
 
+  // If a Clerk session is already active (e.g., the user reached this page
+  // after a partial sign-up that nevertheless created a session), route them
+  // away from the form. Without this the next `signUp.create` call throws
+  // "session already exists" and the user is stuck.
+  //
+  // Invitees go to /welcome (install the mobile app); self-serve owners go
+  // to /onboarding. Manager/shift-lead invitees who reach this edge case
+  // can sign out from /welcome and sign back in to land on /dashboard.
+  useEffect(() => {
+    if (!authLoaded || !isSignedIn) return;
+    router.replace(isInvitationFlow ? "/welcome" : "/onboarding");
+  }, [authLoaded, isSignedIn, isInvitationFlow, router]);
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -58,18 +74,36 @@ export default function SignUpPage() {
   const [pendingVerification, setPendingVerification] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // True once the invited staff member's name has been resolved from
+  // their invitation, so the first/last name fields are locked the same
+  // way the email is.
+  const [namesLocked, setNamesLocked] = useState(false);
 
   const strength = useMemo(() => getPasswordStrength(password), [password]);
 
-  // When the invitation ticket is present, Clerk already knows the invitee's
-  // email. Prefill it from the signUp resource once Clerk initializes so the
-  // user can see which account they're accepting into.
+  // Resolve the invitee's email and name straight from the ticket via a
+  // server lookup (the Backend API knows the invitation), then lock the
+  // corresponding fields. This deliberately does NOT call
+  // `signUp.create` on mount: doing so consumed the ticket through
+  // Clerk's client SDK and triggered a sign-up reload loop. The actual
+  // SignUp is still created on submit with the same ticket.
   useEffect(() => {
-    if (!isLoaded || !isInvitationFlow) return;
-    const invitedEmail = signUp?.emailAddress;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (invitedEmail) setEmail(invitedEmail);
-  }, [isLoaded, isInvitationFlow, signUp]);
+    if (!isInvitationFlow || !invitationTicket) return;
+    let cancelled = false;
+
+    void (async () => {
+      const res = await getInvitationPrefill({ ticket: invitationTicket });
+      if (cancelled || !res.success || !res.data) return;
+      if (res.data.email) setEmail(res.data.email);
+      if (res.data.firstName) setFirstName(res.data.firstName);
+      if (res.data.lastName) setLastName(res.data.lastName);
+      if (res.data.firstName || res.data.lastName) setNamesLocked(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isInvitationFlow, invitationTicket]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,22 +118,42 @@ export default function SignUpPage() {
     }
 
     try {
+      // Clerk keeps a SignUp resource alive on the client after any partial
+      // failure (e.g., a pwned-password rejection from prepare_verification).
+      // Re-calling `signUp.create` against that resource is rejected with a
+      // 400 ("session already exists"); the documented workaround is to call
+      // `signUp.update` on the existing resource until it reaches `complete`.
+      const hasInProgressSignUp =
+        Boolean(signUp.id) && signUp.status !== "complete";
+
       if (isInvitationFlow && invitationTicket) {
         // Accept the invitation: Clerk verifies the email via the ticket,
         // so no OTP step is needed. The server webhook will then see the
         // invitation's publicMetadata on the new user and provision their
         // OrganizationMember row.
-        const result = await signUp.create({
-          strategy: "ticket",
-          ticket: invitationTicket,
-          firstName,
-          lastName,
-          password,
-        });
+        const result = hasInProgressSignUp
+          ? await signUp.update({ firstName, lastName, password })
+          : await signUp.create({
+              strategy: "ticket",
+              ticket: invitationTicket,
+              firstName,
+              lastName,
+              password,
+            });
 
         if (result.status === "complete") {
           await setActive({ session: result.createdSessionId });
-          router.push("/dashboard");
+
+          // Always hand invitees to /welcome. That route is a server
+          // component that reads the user's publicMetadata (set by Clerk
+          // when the ticket was consumed) and either renders the
+          // install-the-app card (staff) or redirects to /dashboard
+          // (manager / shift_lead). Routing through the server-side gate
+          // avoids the race where the freshly created user's metadata
+          // hasn't propagated to the session JWT yet — without that,
+          // middleware would bounce staff into the owner onboarding
+          // wizard.
+          router.push("/welcome");
           return;
         }
 
@@ -111,13 +165,30 @@ export default function SignUpPage() {
         return;
       }
 
-      // Standard (non-invited) sign-up: create the user, then verify email.
-      await signUp.create({
-        firstName,
-        lastName,
-        emailAddress: email,
-        password,
-      });
+      // Standard (non-invited) sign-up: create or resume the SignUp, then
+      // send the verification code.
+      const result = hasInProgressSignUp
+        ? await signUp.update({
+            firstName,
+            lastName,
+            emailAddress: email,
+            password,
+          })
+        : await signUp.create({
+            firstName,
+            lastName,
+            emailAddress: email,
+            password,
+          });
+
+      // Dev instances with email verification disabled can complete the
+      // SignUp on `create`/`update` directly. Activate the session and let
+      // the middleware route the user through onboarding.
+      if (result.status === "complete" && result.createdSessionId) {
+        await setActive({ session: result.createdSessionId });
+        router.push("/onboarding");
+        return;
+      }
 
       await signUp.prepareEmailAddressVerification({
         strategy: "email_code",
@@ -144,7 +215,7 @@ export default function SignUpPage() {
 
       if (result.status === "complete") {
         await setActive({ session: result.createdSessionId });
-        router.push("/dashboard");
+        router.push("/onboarding");
       } else {
         setError("Verification was not complete. Please try again.");
       }
@@ -160,7 +231,7 @@ export default function SignUpPage() {
     signUp.authenticateWithRedirect({
       strategy: "oauth_google",
       redirectUrl: "/sso-callback",
-      redirectUrlComplete: "/dashboard",
+      redirectUrlComplete: "/onboarding",
     });
   };
 
@@ -267,9 +338,12 @@ export default function SignUpPage() {
                 id="firstName"
                 type="text"
                 placeholder="First name"
+                autoComplete="given-name"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 required
+                readOnly={namesLocked && Boolean(firstName)}
+                disabled={namesLocked && Boolean(firstName)}
               />
             </div>
             <div className="space-y-2">
@@ -277,17 +351,27 @@ export default function SignUpPage() {
                 id="lastName"
                 type="text"
                 placeholder="Last name"
+                autoComplete="family-name"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 required
+                readOnly={namesLocked && Boolean(lastName)}
+                disabled={namesLocked && Boolean(lastName)}
               />
             </div>
           </div>
+          {namesLocked && (
+            <p className="text-muted-foreground text-xs">
+              Your name is locked to what your manager entered. Contact them
+              if it needs to change.
+            </p>
+          )}
           <div className="space-y-2">
             <Input
               id="email"
               type="email"
               placeholder="name@example.com"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -342,6 +426,7 @@ export default function SignUpPage() {
               required
             />
           </div>
+          <div id="clerk-captcha" />
           {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
           <Button 
             type="submit" 
@@ -353,14 +438,16 @@ export default function SignUpPage() {
           </Button>
         </form>
       </CardContent>
-      <CardFooter className="flex justify-center border-t pt-6">
-        <div className="text-sm text-muted-foreground">
-          Already have an account?{" "}
-          <Link href="/sign-in" className="text-foreground font-medium underline-offset-4 hover:underline">
-            Sign in
-          </Link>
-        </div>
-      </CardFooter>
+      {!isInvitationFlow && (
+        <CardFooter className="flex justify-center border-t pt-6">
+          <div className="text-sm text-muted-foreground">
+            Already have an account?{" "}
+            <Link href="/sign-in" className="text-foreground font-medium underline-offset-4 hover:underline">
+              Sign in
+            </Link>
+          </div>
+        </CardFooter>
+      )}
     </Card>
   );
 }

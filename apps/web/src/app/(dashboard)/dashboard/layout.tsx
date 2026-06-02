@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import {
   Home,
@@ -13,8 +14,10 @@ import { CustomUserButton } from "@/components/shared/CustomUserButton";
 import { LocationSwitcher } from "@/components/shared/LocationSwitcher";
 import { AIAssistantPanel } from "@/components/shared/AIAssistantPanel";
 import { auth } from "@clerk/nextjs/server";
-import { getLocationContext } from "@/lib/auth/get-location-context";
+import { getLocationContext, NoMembershipError } from "@/lib/auth/get-location-context";
+import { ensureRole, getSubscriptionStatus } from "@/lib/auth/guards";
 import { listLocations } from "@/server/actions/location.actions";
+import { SubscriptionExpiredScreen } from "./_components/SubscriptionExpiredScreen";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Home },
@@ -32,10 +35,25 @@ export default async function DashboardLayout({
   const { userId } = await auth();
   if (!userId) return null;
 
-  const ctx = await getLocationContext(userId);
+  const ctx = await getLocationContext(userId).catch((err: unknown) => {
+    if (err instanceof NoMembershipError) {
+      return null;
+    }
+    throw err;
+  });
 
-  if (ctx.role === "staff") {
-    redirect("/staff-blocked");
+  if (!ctx) {
+    redirect("/onboarding");
+  }
+
+  ensureRole(ctx, ["owner", "manager", "shift_lead"], "/staff-blocked");
+
+  const headerList = await headers();
+  const pathname = headerList.get("x-pathname") ?? "";
+  const isBillingRoute = pathname.startsWith("/dashboard/settings/billing");
+  const subscriptionStatus = await getSubscriptionStatus(ctx.orgId);
+  if (subscriptionStatus === "expired" && (ctx.role !== "owner" || !isBillingRoute)) {
+    return <SubscriptionExpiredScreen role={ctx.role} />;
   }
 
   const result = await listLocations();

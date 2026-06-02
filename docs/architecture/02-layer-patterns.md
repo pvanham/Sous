@@ -211,6 +211,8 @@ Behavior:
    - If the organization has no locations at all, throw (unrecoverable —
      contact support).
 4. Return `{ orgId, locationId, role }`.
+5. If no `OrganizationMember` exists yet, throw `NoMembershipError` so
+   route/layout guards can redirect signed-in owners to `/onboarding`.
 
 There is also `hasLocationAccess(clerkUserId, orgId, locationId)` for
 explicit cross-location access checks (e.g. the AI orchestrator's
@@ -269,6 +271,26 @@ return type forces the caller to handle the failure path.
 
 See [05-api-and-testing.md](./05-api-and-testing.md) for the webhook /
 API testing story.
+
+---
+
+## Owner onboarding provisioning
+
+Tenant creation for owner accounts is now an explicit, synchronous flow
+through the onboarding wizard at `/onboarding`:
+
+1. `provisionOrganizationAndLocation` creates `Organization`, first
+   `Location`, and owner `OrganizationMember`.
+2. `saveOnboardingKitchenConfig` stores week start + operating hours +
+   roles/stations.
+3. `saveOnboardingShiftSlots` seeds initial `LaborRequirement` rows.
+4. `completeOnboarding` sets Clerk `publicMetadata.onboardingComplete`.
+
+The Clerk webhook no longer auto-creates owner org/location records on
+`user.created`; it only provisions invited members.
+
+See [11-onboarding.md](./11-onboarding.md) for the full step-by-step
+architecture.
 
 ---
 

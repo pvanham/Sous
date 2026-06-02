@@ -79,7 +79,7 @@ function InlineContent({ nodes }: { nodes: TiptapNode[] }) {
 
 // ── Block renderers ───────────────────────────────────────────
 
-function TiptapBlock({ node, listIndex }: { node: TiptapNode; listIndex?: number }) {
+function TiptapBlock({ node }: { node: TiptapNode }) {
   switch (node.type) {
     case "paragraph":
       return (
