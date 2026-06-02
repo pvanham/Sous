@@ -118,9 +118,18 @@ function unwrapServerError(err: unknown, fallback: string): Error {
   return new Error(fallback);
 }
 
-type SerializedStaff = Omit<StaffDTO, "createdAt" | "updatedAt"> & {
+type SerializedStaff = Omit<
+  StaffDTO,
+  "createdAt" | "updatedAt" | "onboardingCompletedAt"
+> & {
   createdAt: string;
   updatedAt: string;
+  /**
+   * `null` when the staff member hasn't completed onboarding yet;
+   * an ISO string once they have. We revive to `Date | null` to
+   * keep `StaffDTO` consumers free of wire-format details.
+   */
+  onboardingCompletedAt: string | null;
 };
 
 function reviveStaff(raw: SerializedStaff): StaffDTO {
@@ -128,5 +137,9 @@ function reviveStaff(raw: SerializedStaff): StaffDTO {
     ...raw,
     createdAt: new Date(raw.createdAt),
     updatedAt: new Date(raw.updatedAt),
+    onboardingCompletedAt:
+      raw.onboardingCompletedAt === null
+        ? null
+        : new Date(raw.onboardingCompletedAt),
   };
 }

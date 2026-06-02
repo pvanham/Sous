@@ -122,9 +122,17 @@ mobile app.
   hourlyRate: number,                  // used in labor-cost objective
   clerkUserId?: string | null,         // set when invitation is accepted
   invitationStatus: "not_invited" | "pending" | "accepted",
+  onboardingCompletedAt: Date | null,  // set when the staff member finishes the mobile wizard
   createdAt, updatedAt: Date,
 }
 ```
+
+`onboardingCompletedAt` is owned by the mobile onboarding flow:
+`null` while the wizard is still pending; a `Date` once the user
+completes the final step via `POST /api/me/onboarding/complete`.
+AuthGate in the Expo app reads this field to decide whether to
+mount the wizard or route into the tabs — see
+[12-mobile-onboarding.md](./12-mobile-onboarding.md).
 
 ### Schedule (`Schedule.ts`)
 

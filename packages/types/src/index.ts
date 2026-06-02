@@ -50,6 +50,14 @@ export interface StaffDTO {
   clerkUserId?: string | null;
   invitationStatus: InvitationStatus;
   /**
+   * Timestamp of the first time the staff member finished the mobile
+   * onboarding wizard. `null` until they tap "Get started" on the
+   * final step; once set, `AuthGate` in the mobile app skips the
+   * wizard on subsequent sessions. Managers / owners do not have a
+   * Staff row so this field never applies to them.
+   */
+  onboardingCompletedAt: Date | null;
+  /**
    * Public URL of the staff member's profile picture, mirrored from
    * Clerk so list views (rosters, schedules) can render the avatar
    * without a per-row Clerk API call. `null` (or absent) means the

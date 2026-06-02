@@ -35,6 +35,7 @@ import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
 import { useSettingsPreferences } from "@/features/settings/preferences-store";
 import { fetchMembership } from "@/features/auth/api";
 import { useAuthStore } from "@/features/auth/store";
+import { useMyStaff } from "@/features/profile/hooks";
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
@@ -140,10 +141,46 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     void registerForPushNotifications();
   }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess]);
 
+  // Staff record drives the onboarding gate. We only treat the
+  // returned DTO as authoritative once membership has been
+  // confirmed, so the query implicitly inherits AuthGate's auth
+  // sequencing — `useMyStaff` won't fire until `userId` is set,
+  // and a 404 (no Staff row at this location) is surfaced as
+  // `data === null`.
+  //
+  // We deliberately don't filter on `membership.role`: managers
+  // and shift leads who also work shifts have a Staff row (the
+  // schedule generator counts manager coverage as a hard
+  // constraint, so this is a common configuration), and they
+  // need to complete the wizard just like a pure staff member.
+  // Owners without a Staff row fall through naturally because
+  // their `useMyStaff` query resolves to `null`.
+  const myStaffQuery = useMyStaff();
+
   useEffect(() => {
     if (!isLoaded) return;
 
-    const inAuthGroup = segments[0] === "(auth)";
+    // Cast the segment to `string` so we can compare against the
+    // new route groups (`(onboarding)`, `invite`). Expo Router's
+    // typed segments are codegen-derived and may lag behind the
+    // route file system, especially in CI where typegen hasn't
+    // been run.
+    const topSegment = segments[0] as string | undefined;
+    const inAuthGroup = topSegment === "(auth)";
+    const inOnboardingGroup = topSegment === "(onboarding)";
+    // The /invite route is reachable pre-authentication via a
+    // Universal Link. Letting AuthGate redirect from there would
+    // turn every invite tap into a sign-in detour and discard the
+    // ticket.
+    const inInviteRoute = topSegment === "invite";
+
+    if (inInviteRoute) {
+      // Hands the screen control over to /invite — no redirects,
+      // no clearing of state. Once `signUp.create` activates a
+      // session, AuthGate will re-evaluate this effect with
+      // `isSignedIn === true` and route into onboarding.
+      return;
+    }
 
     if (!isSignedIn) {
       clearMembership();
@@ -157,7 +194,39 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     if (membershipQuery.isSuccess && membershipQuery.data) {
       setMembership(membershipQuery.data);
-      if (inAuthGroup) {
+
+      // Onboarding gate. Wait for the Staff query to settle
+      // before deciding — flashing `/(tabs)` and then redirecting
+      // would tear down half the home-tab queries on mount.
+      //
+      // The gate fires for *any* user with a Staff row that
+      // hasn't been onboarded yet, regardless of `membership.role`.
+      // Managers who also work shifts (a supported configuration —
+      // the scheduler requires manager-level coverage at all
+      // times) have a Staff row and must complete the wizard
+      // before reaching the tabs. Owners and pure managers
+      // without a Staff row resolve to `myStaffQuery.data ===
+      // null` and fall through.
+      if (myStaffQuery.isLoading) return;
+
+      const needsOnboarding =
+        myStaffQuery.isSuccess &&
+        myStaffQuery.data !== null &&
+        myStaffQuery.data.onboardingCompletedAt === null;
+
+      if (needsOnboarding) {
+        if (!inOnboardingGroup) {
+          router.replace("/(onboarding)/welcome" as never);
+        }
+        return;
+      }
+
+      // Users without a Staff row (owners / non-scheduled
+      // managers) and already-onboarded users fall through to
+      // the tabs. The (onboarding) group is only relevant for the
+      // wizard itself — bounce out if we somehow ended up there
+      // with onboarding already complete (or no Staff row).
+      if (inAuthGroup || inOnboardingGroup) {
         router.replace("/(tabs)");
       }
       return;
@@ -196,21 +265,65 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     membershipQuery.isError,
     membershipQuery.data,
     membershipQuery.error,
+    myStaffQuery.isLoading,
+    myStaffQuery.isSuccess,
+    myStaffQuery.data,
     setMembership,
     clearMembership,
     setPendingSignInError,
     signOut,
   ]);
 
-  const showMembershipSpinner =
-    isLoaded && isSignedIn && membershipQuery.isLoading;
+  // Whether the post-sign-in destination has been fully resolved AND
+  // we're already on it. Mirrors the redirect effect above so the
+  // loading overlay stays up until the user is actually on the right
+  // route — without this, the moment both queries settle there's a
+  // frame where `(tabs)` paints (mounting home queries / empty cards)
+  // before the redirect effect runs, which read as a "blank home
+  // flash" on a fresh staff login.
+  const routingSettled = (() => {
+    if (!isLoaded) return false;
+    const top = segments[0] as string | undefined;
+    // The invite screen owns its own routing pre-authentication.
+    if (top === "invite") return true;
+    if (!isSignedIn) return true;
+    if (membershipQuery.isLoading) return false;
+    // Error / no-membership both lead to a forced sign-out; keep the
+    // overlay up through that brief transition.
+    if (membershipQuery.isError) return false;
+    if (membershipQuery.isSuccess && !membershipQuery.data) return false;
+    if (membershipQuery.isSuccess && membershipQuery.data) {
+      if (myStaffQuery.isLoading) return false;
+      const needsOnboarding =
+        myStaffQuery.isSuccess &&
+        myStaffQuery.data !== null &&
+        myStaffQuery.data.onboardingCompletedAt === null;
+      if (needsOnboarding) {
+        // Settled only once we're inside the wizard group.
+        return top === "(onboarding)";
+      }
+      // Onboarded users (and users with no Staff row) are only
+      // bounced out of the auth / onboarding groups. Anywhere else
+      // (tabs, settings, profile, announcements) is a legitimate
+      // destination and should not be covered by the overlay.
+      return top !== "(auth)" && top !== "(onboarding)";
+    }
+    return false;
+  })();
+
+  const showLoadingOverlay = isLoaded && isSignedIn && !routingSettled;
 
   return (
     <>
       {children}
-      {showMembershipSpinner ? (
+      {showLoadingOverlay ? (
+        // Opaque (not translucent): fully hides whatever group Expo
+        // Router mounted underneath while we settle the destination,
+        // so the user sees a clean loading screen instead of a
+        // half-rendered home tab.
         <View
           pointerEvents="auto"
+          className="bg-background"
           style={{
             position: "absolute",
             top: 0,
@@ -219,7 +332,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
             bottom: 0,
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.25)",
           }}
         >
           <ActivityIndicator size="large" />
@@ -262,6 +374,8 @@ export default function RootLayout() {
                 <Stack screenOptions={{ headerShown: false }}>
                   <Stack.Screen name="(auth)" />
                   <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="(onboarding)" />
+                  <Stack.Screen name="invite" />
                   <Stack.Screen
                     name="profile"
                     options={{ presentation: "card" }}
