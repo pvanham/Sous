@@ -41,19 +41,24 @@ export function PendingTimeOffWidget({ requests, staff }: PendingTimeOffWidgetPr
   }, [staff]);
 
   const hasPending = requests.length > 0;
-  const visible = requests.slice(0, 3);
-  const overflow = requests.length - visible.length;
+  const displayed = useMemo(
+    () =>
+      [...requests]
+        .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())
+        .slice(0, 10),
+    [requests],
+  );
 
   return (
     <Card
-      className={`flex flex-col flex-1 min-h-0 border transition-colors ${
+      className={`flex flex-col h-full border transition-colors ${
         hasPending
           ? "border-rose-500/25 bg-rose-500/[0.04] dark:bg-rose-500/[0.06]"
           : "border-stone-300 dark:border-white/10 bg-card"
       }`}
     >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
+      <div className="flex items-center justify-between px-4 pt-4 pb-3 shrink-0">
         <div className="flex items-center gap-2">
           <CalendarOff className={`h-4 w-4 ${hasPending ? "text-rose-500" : "text-muted-foreground"}`} />
           <span className="text-sm font-semibold">Time Off</span>
@@ -68,47 +73,35 @@ export function PendingTimeOffWidget({ requests, staff }: PendingTimeOffWidgetPr
         )}
       </div>
 
-      <CardContent className="px-4 pb-4 pt-0 flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto">
+      {/* Scrollable list */}
+      <CardContent className="flex-1 overflow-y-auto min-h-0 px-4 pt-0 pb-4">
         {hasPending ? (
-          <>
-            <div className="space-y-1.5">
-              {visible.map((request) => {
-                const staffMember = staffMap.get(request.staffId);
-                return (
-                  <div
-                    key={request.id}
-                    className="flex items-center justify-between gap-2 rounded-md bg-background/60 border border-rose-500/15 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium truncate leading-tight">
-                        {staffMember?.name ?? "Unknown"}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {formatRange(request.startDate, request.endDate)}
-                      </p>
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground"
-                    >
-                      {TYPE_LABEL[request.type]}
-                    </Badge>
+          <div className="space-y-1.5">
+            {displayed.map((request) => {
+              const staffMember = staffMap.get(request.staffId);
+              return (
+                <div
+                  key={request.id}
+                  className="flex items-center justify-between gap-2 rounded-md bg-background/60 border border-rose-500/15 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate leading-tight">
+                      {staffMember?.name ?? "Unknown"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatRange(request.startDate, request.endDate)}
+                    </p>
                   </div>
-                );
-              })}
-              {overflow > 0 && (
-                <p className="text-xs text-muted-foreground pl-1">
-                  +{overflow} more request{overflow !== 1 ? "s" : ""}
-                </p>
-              )}
-            </div>
-            <Button asChild variant="outline" size="sm" className="w-full border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/8 hover:border-rose-500/50">
-              <Link href="/dashboard/time-off">
-                Review {requests.length} request{requests.length !== 1 ? "s" : ""}
-                <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-              </Link>
-            </Button>
-          </>
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 text-[10px] font-semibold uppercase text-muted-foreground"
+                  >
+                    {TYPE_LABEL[request.type]}
+                  </Badge>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="flex items-center gap-3 py-1">
             <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
@@ -125,6 +118,18 @@ export function PendingTimeOffWidget({ requests, staff }: PendingTimeOffWidgetPr
           </div>
         )}
       </CardContent>
+
+      {/* Pinned footer — only when there are pending items */}
+      {hasPending && (
+        <div className="shrink-0 px-4 pb-4 pt-3 border-t border-rose-500/15">
+          <Button asChild variant="outline" size="sm" className="w-full border-rose-500/30 text-rose-700 dark:text-rose-400 hover:bg-rose-500/8 hover:border-rose-500/50">
+            <Link href="/dashboard/time-off">
+              Review {requests.length} request{requests.length !== 1 ? "s" : ""}
+              <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+            </Link>
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }

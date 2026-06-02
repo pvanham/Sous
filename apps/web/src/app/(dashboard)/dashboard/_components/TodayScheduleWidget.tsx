@@ -119,13 +119,6 @@ export function TodayScheduleWidget({ shifts, staff }: TodayScheduleWidgetProps)
                 {format(new Date(), "EEEE")} is open
               </p>
             </div>
-            <Link
-              href="/dashboard/schedule"
-              className="flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-            >
-              Open schedule
-              <ArrowRight className="h-3 w-3" />
-            </Link>
           </div>
         ) : (
           <div className="space-y-4">
@@ -142,7 +135,7 @@ export function TodayScheduleWidget({ shifts, staff }: TodayScheduleWidgetProps)
                       {period}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="space-y-1.5">
                     {periodShifts.map((shift) => {
                       const staffMember = staffMap.get(shift.staffId);
                       const initials = staffMember
@@ -188,19 +181,20 @@ export function TodayScheduleWidget({ shifts, staff }: TodayScheduleWidgetProps)
                 </div>
               );
             })}
-
-            <div className="pt-1 flex justify-end">
-              <Link
-                href="/dashboard/schedule"
-                className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-              >
-                View full schedule
-                <ArrowRight className="h-3 w-3" />
-              </Link>
-            </div>
           </div>
         )}
       </CardContent>
+
+      {/* Pinned footer */}
+      <div className="shrink-0 px-4 py-3 border-t border-border/50 flex justify-end">
+        <Link
+          href="/dashboard/schedule"
+          className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+        >
+          View full schedule
+          <ArrowRight className="h-3 w-3" />
+        </Link>
+      </div>
     </Card>
   );
 }
