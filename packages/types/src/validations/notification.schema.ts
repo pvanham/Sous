@@ -39,6 +39,17 @@ const categoryChannelSchema = z.object({
 });
 
 /**
+ * Patch shape for a single category — both fields are optional so the
+ * client can flip just one channel without supplying the other.
+ */
+const categoryChannelPatchSchema = z
+  .object({
+    push: z.boolean().optional(),
+    email: z.boolean().optional(),
+  })
+  .strict();
+
+/**
  * Quiet hours window. `startMinute` and `endMinute` are minutes since
  * midnight in the user's `timezone`; a window where `start > end` is
  * interpreted as wrapping past midnight (e.g. 22:00 to 07:00).
@@ -104,15 +115,19 @@ export const updateNotificationPreferencesSchema = z
       })
       .optional(),
     categories: z
-      .record(
-        z.enum(notificationCategoryValues),
-        z
-          .object({
-            push: z.boolean().optional(),
-            email: z.boolean().optional(),
-          })
-          .strict(),
+      .object(
+        notificationCategoryValues.reduce(
+          (acc, key) => {
+            acc[key] = categoryChannelPatchSchema;
+            return acc;
+          },
+          {} as Record<
+            (typeof notificationCategoryValues)[number],
+            typeof categoryChannelPatchSchema
+          >,
+        ),
       )
+      .partial()
       .optional(),
     quietHours: quietHoursSchema.optional(),
   })

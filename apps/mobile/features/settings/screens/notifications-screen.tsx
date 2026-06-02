@@ -284,9 +284,20 @@ function NotificationsBody({ prefs, visibleSections, onPatch }: BodyProps) {
               <StyledText variant="caption" className="flex-1">
                 Category
               </StyledText>
-              <ChannelHeader label="Push" />
-              <ChannelHeader label="Email" />
+              <ChannelHeader label="Push" disabled={!prefs.channels.push} />
+              <ChannelHeader label="Email" disabled={!prefs.channels.email} />
             </View>
+            {(!prefs.channels.push || !prefs.channels.email) && (
+              <View className="px-4 py-2 bg-muted/40 border-b border-border">
+                <StyledText variant="caption" className="text-muted-foreground">
+                  {!prefs.channels.push && !prefs.channels.email
+                    ? "Push and email notifications are off — enable them above to configure categories."
+                    : !prefs.channels.push
+                      ? "Push notifications are off — enable them above to configure the Push column."
+                      : "Email notifications are off — enable them above to configure the Email column."}
+                </StyledText>
+              </View>
+            )}
             {section.rows.map((row, index) => (
               <CategoryToggleRow
                 key={row.key}
@@ -299,6 +310,8 @@ function NotificationsBody({ prefs, visibleSections, onPatch }: BodyProps) {
                     } as Parameters<typeof onPatch>[0]["categories"],
                   })
                 }
+                pushDisabled={!prefs.channels.push}
+                emailDisabled={!prefs.channels.email}
                 divider={index > 0}
               />
             ))}
@@ -347,6 +360,8 @@ interface CategoryToggleRowProps {
   row: CategoryRow;
   values?: { push: boolean; email: boolean };
   onPatch: (channel: NotificationChannel, next: boolean) => void;
+  pushDisabled?: boolean;
+  emailDisabled?: boolean;
   divider?: boolean;
 }
 
@@ -354,6 +369,8 @@ function CategoryToggleRow({
   row,
   values,
   onPatch,
+  pushDisabled = false,
+  emailDisabled = false,
   divider,
 }: CategoryToggleRowProps) {
   const push = values?.push ?? true;
@@ -374,6 +391,7 @@ function CategoryToggleRow({
         <Toggle
           value={push}
           onValueChange={(next) => onPatch("push", next)}
+          disabled={pushDisabled}
           accessibilityLabel={`${row.label} push`}
         />
       </View>
@@ -381,6 +399,7 @@ function CategoryToggleRow({
         <Toggle
           value={email}
           onValueChange={(next) => onPatch("email", next)}
+          disabled={emailDisabled}
           accessibilityLabel={`${row.label} email`}
         />
       </View>
@@ -451,10 +470,19 @@ function TimeRow({ label, minute, onPress, divider }: TimeRowProps) {
   );
 }
 
-function ChannelHeader({ label }: { label: string }) {
+function ChannelHeader({
+  label,
+  disabled = false,
+}: {
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <View className="w-16 items-center">
-      <StyledText variant="caption" className="uppercase tracking-wider">
+      <StyledText
+        variant="caption"
+        className={`uppercase tracking-wider ${disabled ? "opacity-40" : ""}`}
+      >
         {label}
       </StyledText>
     </View>
