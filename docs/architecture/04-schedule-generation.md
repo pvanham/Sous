@@ -210,6 +210,13 @@ Point the web app at it with `WEB_CP_SOLVER_URL=http://localhost:8000`
 (materialized via `./setup-agent-envs.sh` — see the `bootstrap-env`
 skill).
 
+> **Cloud agents:** Docker is not installed on the agent VM and
+> `python3-venv`/`ensurepip` are unavailable, so neither block above works
+> verbatim. Install with `pip install --break-system-packages -r
+> requirements.txt` from `solver/`, then run `python3 -m uvicorn main:app
+> --host 0.0.0.0 --port 8000`. See the `bootstrap-env` skill's "Cloud host
+> requirements & known constraints" section.
+
 ---
 
 ## Deprecated alternatives

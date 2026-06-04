@@ -3,8 +3,9 @@
   "private": true,
   "packageManager": "npm@11.13.0",
   "type": "module",
+  "//engines": "Floor is 22.12.0 to match the Cloud Agent runtime, which ships Node 22 LTS at /exec-daemon/node and shadows nvm. Next 16 (>=20.9.0) and React Native 0.83 (>=20.19.4) both support Node 22, and install/typecheck/build are verified on it. .node-version still pins 24.15.0 for local devs; keep the upper bound at <25 until the toolchain is validated on Node 25.",
   "engines": {
-    "node": ">=24.3.0 <25"
+    "node": ">=22.12.0 <25"
   },
   "workspaces": [
     "apps/*",
