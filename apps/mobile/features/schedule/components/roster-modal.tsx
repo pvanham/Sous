@@ -1,4 +1,4 @@
-import { View, FlatList } from "react-native";
+import { View, FlatList, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import type { StaffDTO } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
@@ -22,11 +22,17 @@ export function RosterModal({
   roster,
   loading,
 }: RosterModalProps) {
+  const { height: windowHeight } = useWindowDimensions();
+  // The sheet cap is 60% of screen. Reserve space for:
+  // drag handle (20px) + top/bottom padding (48px) + header texts (~80px) = ~148px
+  const listMaxHeight = windowHeight * 0.6 - 148;
+
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
       maxHeightClassName="max-h-[60%]"
+      scrollable
     >
       <StyledText variant="subtitle" className="mb-1">
         Shift Roster
@@ -46,6 +52,7 @@ export function RosterModal({
         <FlatList
           data={roster}
           keyExtractor={(item) => item.id}
+          style={{ maxHeight: listMaxHeight }}
           renderItem={({ item }) => (
             <View className="flex-row items-center py-3 border-b border-border">
               <View className="w-9 h-9 rounded-full bg-secondary items-center justify-center overflow-hidden mr-3">

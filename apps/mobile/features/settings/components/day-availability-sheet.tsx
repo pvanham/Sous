@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { View, Pressable, ScrollView } from "react-native";
+import { View, Pressable, Platform, useColorScheme } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { AvailabilityPreference } from "@sous/types";
 
@@ -12,15 +13,21 @@ const ICON_COLOR = "#78716c";
 const DEFAULT_FROM = "07:00";
 const DEFAULT_TO = "23:00";
 
-const TIME_OPTIONS = buildTimeOptions();
+function timeStringToDate(time: string): Date {
+  const [h, m] = time.split(":").map(Number);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
 
-function buildTimeOptions(): string[] {
-  const options: string[] = [];
-  for (let h = 0; h <= 23; h++) {
-    options.push(`${String(h).padStart(2, "0")}:00`);
-    options.push(`${String(h).padStart(2, "0")}:30`);
-  }
-  return options;
+/** Rounds a Date to the nearest half-hour and returns an "HH:mm" string. */
+function roundToNearestHalfHour(date: Date): string {
+  const h = date.getHours();
+  const min = date.getMinutes();
+  const roundedMin = min < 15 ? 0 : min < 45 ? 30 : 0;
+  const addHour = min >= 45 ? 1 : 0;
+  const finalH = (h + addHour) % 24;
+  return `${String(finalH).padStart(2, "0")}:${String(roundedMin).padStart(2, "0")}`;
 }
 
 interface DayAvailabilitySheetProps {
@@ -145,19 +152,11 @@ export function DayAvailabilitySheet({
       </View>
 
       {preference !== "unavailable" ? (
-        <View className="flex-row gap-3 mb-3">
-          <View className="flex-1">
-            <StyledText variant="label" className="mb-1.5">
-              From
-            </StyledText>
-            <TimePicker value={from} onChange={setFrom} />
-          </View>
-          <View className="flex-1">
-            <StyledText variant="label" className="mb-1.5">
-              To
-            </StyledText>
-            <TimePicker value={to} onChange={setTo} />
-          </View>
+        <View className="mb-3">
+          <StyledText variant="label" className="mb-0.5">From</StyledText>
+          <TimePicker value={from} onChange={setFrom} />
+          <StyledText variant="label" className="mt-3 mb-0.5">To</StyledText>
+          <TimePicker value={to} onChange={setTo} />
         </View>
       ) : null}
 
@@ -225,52 +224,32 @@ interface TimePickerProps {
 }
 
 /**
- * Cheap, native-feeling time picker. Horizontal list of half-hour
- * slots — taps set the value and highlight the active option. We
- * deliberately avoid pulling in `@react-native-community/datetimepicker`
- * here because a 48-option horizontal scroller is easier to reason
- * about across iOS + Android than the native pickers' platform
- * differences.
+ * Native platform time picker (iOS scroll wheel / Android spinner).
+ * Snaps to 30-minute intervals: `minuteInterval={30}` handles this on iOS;
+ * Android selections are rounded to the nearest half-hour after change.
+ *
+ * `themeVariant` is set explicitly from the system color scheme so the
+ * picker's own text renders correctly in dark mode (it doesn't inherit
+ * NativeWind styles).
  */
 function TimePicker({ value, onChange }: TimePickerProps) {
-  return (
-    <View className="bg-background border border-border rounded-md py-1">
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerClassName="px-2 gap-1"
-      >
-        {TIME_OPTIONS.map((option) => {
-          const selected = option === value;
-          return (
-            <Pressable
-              key={option}
-              onPress={() => onChange(option)}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              accessibilityLabel={option}
-              className={`px-3 py-2 rounded-md ${
-                selected ? "bg-primary" : "bg-transparent"
-              }`}
-            >
-              <StyledText
-                variant="body"
-                className={selected ? "text-primary-foreground" : ""}
-              >
-                {formatDisplay(option)}
-              </StyledText>
-            </Pressable>
-          );
-        })}
-      </ScrollView>
-    </View>
-  );
-}
+  const colorScheme = useColorScheme();
 
-function formatDisplay(value: string): string {
-  const [h, m] = value.split(":");
-  const hour = parseInt(h, 10);
-  const suffix = hour >= 12 ? "p" : "a";
-  const display = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return m === "00" ? `${display}${suffix}` : `${display}:${m}${suffix}`;
+  return (
+    <DateTimePicker
+      value={timeStringToDate(value)}
+      mode="time"
+      display="spinner"
+      minuteInterval={30}
+      themeVariant={colorScheme === "dark" ? "dark" : "light"}
+      onChange={(_, selected) => {
+        if (!selected) return;
+        const timeStr =
+          Platform.OS === "android"
+            ? roundToNearestHalfHour(selected)
+            : `${String(selected.getHours()).padStart(2, "0")}:${String(selected.getMinutes()).padStart(2, "0")}`;
+        onChange(timeStr);
+      }}
+    />
+  );
 }

@@ -4,6 +4,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { IconSymbol } from "@/components/ui/icon-symbol";
 import type { TimeOffRequestType, CreateTimeOffRequestInput } from "@/types";
 
 interface RequestModalProps {
@@ -33,8 +34,8 @@ export function RequestModal({
   const [endDate, setEndDate] = useState(new Date());
   const [requestType, setRequestType] = useState<TimeOffRequestType>("pto");
   const [reason, setReason] = useState("");
-  const [showStartPicker, setShowStartPicker] = useState(false);
-  const [showEndPicker, setShowEndPicker] = useState(false);
+  // "start" | "end" | null — tracks which field's picker is open
+  const [activePicker, setActivePicker] = useState<"start" | "end" | null>(null);
 
   const handleSubmit = () => {
     onSubmit({
@@ -50,6 +51,7 @@ export function RequestModal({
     setEndDate(new Date());
     setRequestType("pto");
     setReason("");
+    setActivePicker(null);
   };
 
   const handleClose = () => {
@@ -57,62 +59,79 @@ export function RequestModal({
     onClose();
   };
 
+  const togglePicker = (field: "start" | "end") => {
+    setActivePicker((prev) => (prev === field ? null : field));
+  };
+
+  const handleDateChange = (_: unknown, date?: Date) => {
+    if (Platform.OS === "android") {
+      // Android dialog closes itself; always reset activePicker
+      setActivePicker(null);
+    }
+    if (!date) return;
+
+    if (activePicker === "start") {
+      setStartDate(date);
+      if (date > endDate) setEndDate(date);
+    } else if (activePicker === "end") {
+      setEndDate(date);
+    }
+
+    // On iOS, close the inline calendar after selection
+    if (Platform.OS === "ios") {
+      setActivePicker(null);
+    }
+  };
+
+  const pickerValue = activePicker === "start" ? startDate : endDate;
+  const pickerMinDate = activePicker === "end" ? startDate : new Date();
+
   return (
     <BottomSheet visible={visible} onClose={handleClose}>
       <StyledText variant="subtitle" className="mb-5">
         New Time Off Request
       </StyledText>
 
-      {/* Date pickers */}
-      <View className="flex-row gap-3 mb-4">
-        <View className="flex-1">
-          <StyledText variant="label" className="mb-1.5">
-            Start Date
-          </StyledText>
-          <Pressable
-            onPress={() => setShowStartPicker(true)}
-            className="bg-background border border-border rounded-md px-3 py-3"
-          >
-            <StyledText variant="body">{formatDate(startDate)}</StyledText>
-          </Pressable>
-          {showStartPicker && (
-            <DateTimePicker
-              value={startDate}
-              mode="date"
-              minimumDate={new Date()}
-              onChange={(_, date) => {
-                setShowStartPicker(Platform.OS === "ios");
-                if (date) {
-                  setStartDate(date);
-                  if (date > endDate) setEndDate(date);
-                }
-              }}
-            />
-          )}
-        </View>
-        <View className="flex-1">
-          <StyledText variant="label" className="mb-1.5">
-            End Date
-          </StyledText>
-          <Pressable
-            onPress={() => setShowEndPicker(true)}
-            className="bg-background border border-border rounded-md px-3 py-3"
-          >
-            <StyledText variant="body">{formatDate(endDate)}</StyledText>
-          </Pressable>
-          {showEndPicker && (
-            <DateTimePicker
-              value={endDate}
-              mode="date"
-              minimumDate={startDate}
-              onChange={(_, date) => {
-                setShowEndPicker(Platform.OS === "ios");
-                if (date) setEndDate(date);
-              }}
-            />
-          )}
-        </View>
+      {/* Date fields */}
+      <View className="flex-row gap-3 mb-1">
+        <DateField
+          label="Start Date"
+          value={startDate}
+          active={activePicker === "start"}
+          onPress={() => togglePicker("start")}
+        />
+        <DateField
+          label="End Date"
+          value={endDate}
+          active={activePicker === "end"}
+          onPress={() => togglePicker("end")}
+        />
       </View>
+
+      {/* iOS inline calendar — shared between both fields */}
+      {Platform.OS === "ios" && activePicker !== null && (
+        <DateTimePicker
+          value={pickerValue}
+          mode="date"
+          display="inline"
+          minimumDate={pickerMinDate}
+          onChange={handleDateChange}
+          style={{ marginBottom: 8 }}
+        />
+      )}
+
+      {/* Android native dialog picker */}
+      {Platform.OS === "android" && activePicker !== null && (
+        <DateTimePicker
+          value={pickerValue}
+          mode="date"
+          minimumDate={pickerMinDate}
+          onChange={handleDateChange}
+        />
+      )}
+
+      {/* Spacer between date section and type selector */}
+      <View className="mb-4" />
 
       {/* Type selector */}
       <StyledText variant="label" className="mb-1.5">
@@ -165,6 +184,36 @@ export function RequestModal({
         size="lg"
       />
     </BottomSheet>
+  );
+}
+
+interface DateFieldProps {
+  label: string;
+  value: Date;
+  active: boolean;
+  onPress: () => void;
+}
+
+function DateField({ label, value, active, onPress }: DateFieldProps) {
+  return (
+    <View className="flex-1">
+      <StyledText variant="label" className="mb-1.5">
+        {label}
+      </StyledText>
+      <Pressable
+        onPress={onPress}
+        className={`flex-row items-center justify-between bg-background border rounded-md px-3 py-3 ${
+          active ? "border-primary" : "border-border"
+        }`}
+      >
+        <StyledText variant="body">{formatDate(value)}</StyledText>
+        <IconSymbol
+          name="calendar"
+          size={16}
+          color={active ? "#e8630a" : "#78716c"}
+        />
+      </Pressable>
+    </View>
   );
 }
 
