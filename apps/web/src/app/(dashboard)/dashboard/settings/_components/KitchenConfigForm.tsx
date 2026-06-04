@@ -149,8 +149,10 @@ export function KitchenConfigForm({
       }
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast.success("Kitchen configuration saved successfully!");
+      // Reset form to the saved values so isDirty becomes false and the banner disappears
+      form.reset(variables.data);
       // Clear pending data first so the dialog close handler knows it was a success (not cancel)
       setPendingData(null);
       setImpactData(null);
