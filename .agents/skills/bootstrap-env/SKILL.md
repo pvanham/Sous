@@ -66,6 +66,20 @@ test -d apps/web && test -d apps/mobile && echo "Workspace OK"
 If that command fails, the agent is in the wrong working directory. Stop
 and report.
 
+Also confirm the active Node version satisfies the repo's `.node-version`
+(`>=24.3.0 <25`, currently `24.15.0`):
+
+```bash
+node -v   # must report v24.x
+```
+
+If the host defaults to an older Node (some cloud-agent images ship Node 22),
+the web app may still boot but the Expo **web** bundler will fail to render
+(e.g. `Cannot use 'import meta' outside a module`). Select Node 24 before
+continuing — e.g. with nvm: `nvm install 24.15.0 && nvm use 24.15.0`. The
+durable fix is to bake Node 24 into the cloud-agent base image via an env
+setup agent.
+
 ### 2. Run the env bootstrap script
 
 ```bash
