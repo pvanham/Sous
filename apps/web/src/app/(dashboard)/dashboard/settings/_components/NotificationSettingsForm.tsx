@@ -193,7 +193,11 @@ export function NotificationSettingsForm({
               control={form.control}
               name={`categories.${meta.key}` as const}
               render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                <FormItem
+                  className={`flex items-center justify-between rounded-lg border p-4 transition-opacity ${
+                    masterEmail ? "" : "opacity-60"
+                  }`}
+                >
                   <div className="space-y-0.5 pr-4">
                     <FormLabel className="text-base">{meta.label}</FormLabel>
                     <FormDescription>{meta.description}</FormDescription>

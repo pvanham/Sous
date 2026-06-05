@@ -8,25 +8,14 @@ import { OrganizationMemberService } from "@/server/services/organization-member
 import { StaffService } from "@/server/services/staff.service";
 import { sendExpoPush, type ExpoPushPayload } from "@/lib/push/expo-push";
 import { sendEmailBatch, type SendEmailInput } from "@/lib/email/resend";
-import { inQuietHours } from "@/lib/notifications/quiet-hours";
 import {
-  webNotificationCategoryValues,
-  type NotificationCategory,
-  type NotificationPreferencesDTO,
-  type WebNotificationCategory,
+  isWebEmailCategory,
+  resolveChannelDecision,
+} from "@/lib/notifications/channel-decision";
+import type {
+  NotificationCategory,
+  NotificationPreferencesDTO,
 } from "@sous/types";
-
-/**
- * Categories whose audience is a web-facing manager / owner. For these,
- * **email** delivery is governed by the user's separate
- * `WebNotificationPreference` (the dashboard settings), not the mobile
- * matrix — see `web-notification.schema.ts`. Push for these categories
- * still follows the mobile preferences. Every other category keeps
- * email on the mobile matrix as before.
- */
-const WEB_EMAIL_CATEGORIES = new Set<NotificationCategory>(
-  webNotificationCategoryValues,
-);
 
 /**
  * Audience descriptors the dispatcher knows how to resolve. A single
@@ -97,7 +86,7 @@ export const NotificationService = {
       // Manager/owner-facing categories route their *email* decision
       // through the separate web preferences; everything else stays on
       // the mobile matrix.
-      const isWebEmailCategory = WEB_EMAIL_CATEGORIES.has(input.category);
+      const needsWebPrefs = isWebEmailCategory(input.category);
 
       // Resolve preferences in parallel; the dispatcher is fire-and-
       // forget so we don't need transactional consistency, but we do
@@ -107,7 +96,7 @@ export const NotificationService = {
           try {
             const prefs =
               await NotificationPreferenceService.getOrCreate(clerkUserId);
-            const webPrefs = isWebEmailCategory
+            const webPrefs = needsWebPrefs
               ? await WebNotificationPreferenceService.getOrCreate(clerkUserId)
               : null;
             return { clerkUserId, prefs, webPrefs };
@@ -125,22 +114,12 @@ export const NotificationService = {
       for (const entry of prefsList) {
         if (!entry) continue;
         const { clerkUserId, prefs, webPrefs } = entry;
-        const wantsPush =
-          prefs.channels.push &&
-          prefs.categories[input.category]?.push !== false &&
-          !inQuietHours(now, prefs.quietHours);
-        // Web-facing categories: email is gated by the dashboard's web
-        // preferences (no quiet hours — that's a mobile/push concept).
-        // All other categories keep email on the mobile matrix.
-        const wantsEmail =
-          isWebEmailCategory && webPrefs
-            ? webPrefs.email &&
-              webPrefs.categories[
-                input.category as WebNotificationCategory
-              ] !== false
-            : prefs.channels.email &&
-              prefs.categories[input.category]?.email !== false &&
-              !inQuietHours(now, prefs.quietHours);
+        const { wantsPush, wantsEmail } = resolveChannelDecision({
+          category: input.category,
+          mobilePrefs: prefs,
+          webPrefs,
+          now,
+        });
 
         if (wantsPush) {
           await collectPushTargets(
