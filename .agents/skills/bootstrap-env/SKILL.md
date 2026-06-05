@@ -161,6 +161,12 @@ written through unchanged. Common examples:
   `"Sous <onboarding@resend.dev>"` for dev; verified domain in prod)
 - `WEB_EXPO_ACCESS_TOKEN` → `EXPO_ACCESS_TOKEN` (raises Expo push rate
   limits; optional — anonymous push still works)
+- `WEB_R2_ACCOUNT_ID`, `WEB_R2_ACCESS_KEY_ID`, `WEB_R2_SECRET_ACCESS_KEY`,
+  `WEB_R2_BUCKET`, `WEB_R2_PUBLIC_URL` → Cloudflare R2 object storage for
+  attachment uploads. **Optional**: `src/lib/storage/r2.ts` reads them lazily,
+  only when an attachment upload URL is requested. The app boots, connects to
+  Mongo, and serves the full UI without them — only the attachment-upload
+  endpoint returns a 500 when they are absent.
 - `WEB_SEED_CLERK_USER_ID`, `WEB_SEED_CLERK_USER_ID2` for seed scripts
 
 The cloud host should set any combination of these that the current task
