@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Bot } from "lucide-react";
 import { ChatShell } from "@/components/ai-chat/ChatShell";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,17 @@ interface AIAssistantPanelProps {
   locationId: string;
 }
 
-function resolveActiveView(pathname: string): ViewportContext["activeView"] {
-  if (pathname.startsWith("/dashboard/staff/") && pathname.endsWith("/availability")) {
+function resolveActiveView(
+  pathname: string,
+  staffTab: string | null,
+): ViewportContext["activeView"] {
+  // The staff detail page hosts availability under a tab; treat that tab as
+  // the availability view so the assistant keeps the same context it had on
+  // the old `/dashboard/staff/[id]/availability` route.
+  if (
+    pathname.startsWith("/dashboard/staff/") &&
+    (pathname.endsWith("/availability") || staffTab === "availability")
+  ) {
     return "availability";
   }
 
@@ -31,14 +40,16 @@ function resolveActiveView(pathname: string): ViewportContext["activeView"] {
 
 export function AIAssistantPanel({ locationId }: AIAssistantPanelProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const staffTab = searchParams.get("tab");
   const [open, setOpen] = useState(false);
 
   const viewportContext = useMemo<ViewportContext>(() => {
     return {
       locationId,
-      activeView: resolveActiveView(pathname),
+      activeView: resolveActiveView(pathname, staffTab),
     };
-  }, [locationId, pathname]);
+  }, [locationId, pathname, staffTab]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>

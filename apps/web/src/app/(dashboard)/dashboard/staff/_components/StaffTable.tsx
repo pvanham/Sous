@@ -13,7 +13,6 @@ import { toast } from "sonner";
 import {
   UserX,
   UserCheck,
-  Pencil,
   Trash2,
   ArrowUpAZ,
   ArrowDownZA,
@@ -21,10 +20,10 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Calendar,
-  CalendarOff,
   Mail,
   Wrench,
+  MoreHorizontal,
+  SquarePen,
 } from "lucide-react";
 
 import {
@@ -53,6 +52,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   listStaffPaginated,
@@ -63,8 +69,6 @@ import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import { listSkillChangeRequests } from "@/server/actions/skill-change-request.actions";
 import type { StaffDTO, PaginatedStaffResult } from "@/types/staff";
 import type { SkillChangeRequestDTO } from "@/types/skill-change-request";
-import { StaffFormDialog } from "./StaffFormDialog";
-import { SkillChangeReviewDialog } from "./SkillChangeReviewDialog";
 import { cn } from "@/lib/utils";
 
 interface StaffTableProps {
@@ -98,11 +102,9 @@ export function StaffTable({
   const [search, setSearch] = useState("");
 
   // Dialog states
-  const [editStaff, setEditStaff] = useState<StaffDTO | null>(null);
   const [deleteConfirmStaff, setDeleteConfirmStaff] = useState<StaffDTO | null>(
     null,
   );
-  const [reviewStaff, setReviewStaff] = useState<StaffDTO | null>(null);
 
   // Pending self-service skill changes, grouped per staff member. Backs
   // the per-row "review" action + count badge.
@@ -228,13 +230,33 @@ export function StaffTable({
         </Button>
       ),
       cell: (info) => {
-        const isInactive = !info.row.original.isActive;
+        const staffMember = info.row.original;
+        const isInactive = !staffMember.isActive;
+        const pendingSkillChanges = pendingByStaff.get(staffMember.id) ?? [];
         return (
-          <span
-            className={cn("font-medium", isInactive && "text-muted-foreground")}
-          >
-            {info.getValue()}
-          </span>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/staff/${staffMember.id}`}
+              className={cn(
+                "font-medium hover:underline",
+                isInactive && "text-muted-foreground",
+              )}
+            >
+              {info.getValue()}
+            </Link>
+            {pendingSkillChanges.length > 0 && (
+              <Link
+                href={`/dashboard/staff/${staffMember.id}?tab=skills`}
+                title={`Review ${pendingSkillChanges.length} pending skill change${
+                  pendingSkillChanges.length === 1 ? "" : "s"
+                }`}
+                className="flex items-center gap-1 rounded-full border border-amber-400 px-1.5 py-0.5 text-[11px] font-semibold leading-none text-amber-600"
+              >
+                <Wrench className="h-3 w-3" />
+                {pendingSkillChanges.length}
+              </Link>
+            )}
+          </div>
         );
       },
     }),
@@ -351,7 +373,7 @@ export function StaffTable({
     }),
     columnHelper.display({
       id: "actions",
-      header: "Actions",
+      header: () => <div className="text-right">Actions</div>,
       cell: (info) => {
         const staffMember = info.row.original;
         const canInvite =
@@ -360,104 +382,58 @@ export function StaffTable({
         const canResend =
           !staffMember.clerkUserId &&
           staffMember.invitationStatus === "pending";
-        const pendingSkillChanges = pendingByStaff.get(staffMember.id) ?? [];
         return (
-          <div className="flex items-center gap-1">
-            {/* Pending skill-change review */}
-            {pendingSkillChanges.length > 0 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="relative text-amber-600 hover:text-amber-600"
-                onClick={() => setReviewStaff(staffMember)}
-                title={`Review ${pendingSkillChanges.length} skill change${
-                  pendingSkillChanges.length === 1 ? "" : "s"
-                }`}
-              >
-                <Wrench className="h-4 w-4" />
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
-                  {pendingSkillChanges.length}
-                </span>
-              </Button>
-            )}
-
-            {/* Send / Resend Invite Button */}
-            {(canInvite || canResend) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => inviteMutation.mutate(staffMember.id)}
-                disabled={inviteMutation.isPending}
-                title={canResend ? "Resend Invitation" : "Send App Invitation"}
-              >
-                <Mail className="h-4 w-4" />
-              </Button>
-            )}
-
-            {/* Edit Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setEditStaff(staffMember)}
-              title="Edit"
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-
-            {/* Availability Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              asChild
-              title="Set Availability"
-            >
-              <Link href={`/dashboard/staff/${staffMember.id}/availability`}>
-                <Calendar className="h-4 w-4" />
+          <div className="flex items-center justify-end gap-1">
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/dashboard/staff/${staffMember.id}`}>
+                <SquarePen className="mr-1.5 h-3.5 w-3.5" />
+                Manage
               </Link>
             </Button>
 
-            {/* Time Off Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              asChild
-              title="Time Off Requests"
-            >
-              <Link href={`/dashboard/time-off?staffId=${staffMember.id}`}>
-                <CalendarOff className="h-4 w-4" />
-              </Link>
-            </Button>
-
-            {/* Toggle Active Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() =>
-                toggleActiveMutation.mutate({
-                  staffId: staffMember.id,
-                  isActive: !staffMember.isActive,
-                })
-              }
-              disabled={toggleActiveMutation.isPending}
-              title={staffMember.isActive ? "Deactivate" : "Activate"}
-            >
-              {staffMember.isActive ? (
-                <UserX className="h-4 w-4" />
-              ) : (
-                <UserCheck className="h-4 w-4" />
-              )}
-            </Button>
-
-            {/* Delete Button */}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setDeleteConfirmStaff(staffMember)}
-              title="Delete"
-              className="text-destructive hover:text-destructive"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="More actions">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {(canInvite || canResend) && (
+                  <DropdownMenuItem
+                    onSelect={() => inviteMutation.mutate(staffMember.id)}
+                  >
+                    <Mail className="h-4 w-4" />
+                    {canResend ? "Resend invitation" : "Send app invitation"}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  onSelect={() =>
+                    toggleActiveMutation.mutate({
+                      staffId: staffMember.id,
+                      isActive: !staffMember.isActive,
+                    })
+                  }
+                >
+                  {staffMember.isActive ? (
+                    <UserX className="h-4 w-4" />
+                  ) : (
+                    <UserCheck className="h-4 w-4" />
+                  )}
+                  {staffMember.isActive ? "Deactivate" : "Activate"}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    setDeleteConfirmStaff(staffMember);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         );
       },
@@ -621,22 +597,6 @@ export function StaffTable({
           </Button>
         </div>
       </div>
-
-      {/* Edit Dialog */}
-      <StaffFormDialog
-        open={!!editStaff}
-        onOpenChange={(open) => !open && setEditStaff(null)}
-        staff={editStaff || undefined}
-      />
-
-      {/* Skill Change Review Dialog */}
-      <SkillChangeReviewDialog
-        open={!!reviewStaff}
-        onOpenChange={(open) => !open && setReviewStaff(null)}
-        staffName={reviewStaff?.name ?? ""}
-        staffId={reviewStaff?.id ?? ""}
-        requests={reviewStaff ? (pendingByStaff.get(reviewStaff.id) ?? []) : []}
-      />
 
       {/* Delete Confirmation Dialog */}
       <Dialog
