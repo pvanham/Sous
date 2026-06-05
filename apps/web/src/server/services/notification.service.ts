@@ -2,16 +2,31 @@ import { clerkClient } from "@clerk/nextjs/server";
 import type { ReactElement } from "react";
 
 import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
+import { WebNotificationPreferenceService } from "@/server/services/web-notification-preference.service";
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
 import { sendExpoPush, type ExpoPushPayload } from "@/lib/push/expo-push";
 import { sendEmailBatch, type SendEmailInput } from "@/lib/email/resend";
 import { inQuietHours } from "@/lib/notifications/quiet-hours";
-import type {
-  NotificationCategory,
-  NotificationPreferencesDTO,
+import {
+  webNotificationCategoryValues,
+  type NotificationCategory,
+  type NotificationPreferencesDTO,
+  type WebNotificationCategory,
 } from "@sous/types";
+
+/**
+ * Categories whose audience is a web-facing manager / owner. For these,
+ * **email** delivery is governed by the user's separate
+ * `WebNotificationPreference` (the dashboard settings), not the mobile
+ * matrix — see `web-notification.schema.ts`. Push for these categories
+ * still follows the mobile preferences. Every other category keeps
+ * email on the mobile matrix as before.
+ */
+const WEB_EMAIL_CATEGORIES = new Set<NotificationCategory>(
+  webNotificationCategoryValues,
+);
 
 /**
  * Audience descriptors the dispatcher knows how to resolve. A single
@@ -79,6 +94,11 @@ export const NotificationService = {
       const pushQueue: ExpoPushPayload[] = [];
       const emailQueue: SendEmailInput[] = [];
 
+      // Manager/owner-facing categories route their *email* decision
+      // through the separate web preferences; everything else stays on
+      // the mobile matrix.
+      const isWebEmailCategory = WEB_EMAIL_CATEGORIES.has(input.category);
+
       // Resolve preferences in parallel; the dispatcher is fire-and-
       // forget so we don't need transactional consistency, but we do
       // want one Mongo round-trip per recipient and not N^2.
@@ -87,7 +107,10 @@ export const NotificationService = {
           try {
             const prefs =
               await NotificationPreferenceService.getOrCreate(clerkUserId);
-            return { clerkUserId, prefs };
+            const webPrefs = isWebEmailCategory
+              ? await WebNotificationPreferenceService.getOrCreate(clerkUserId)
+              : null;
+            return { clerkUserId, prefs, webPrefs };
           } catch (err) {
             console.error("[notify] failed to load prefs:", {
               category: input.category,
@@ -101,15 +124,23 @@ export const NotificationService = {
 
       for (const entry of prefsList) {
         if (!entry) continue;
-        const { clerkUserId, prefs } = entry;
+        const { clerkUserId, prefs, webPrefs } = entry;
         const wantsPush =
           prefs.channels.push &&
           prefs.categories[input.category]?.push !== false &&
           !inQuietHours(now, prefs.quietHours);
+        // Web-facing categories: email is gated by the dashboard's web
+        // preferences (no quiet hours — that's a mobile/push concept).
+        // All other categories keep email on the mobile matrix.
         const wantsEmail =
-          prefs.channels.email &&
-          prefs.categories[input.category]?.email !== false &&
-          !inQuietHours(now, prefs.quietHours);
+          isWebEmailCategory && webPrefs
+            ? webPrefs.email &&
+              webPrefs.categories[
+                input.category as WebNotificationCategory
+              ] !== false
+            : prefs.channels.email &&
+              prefs.categories[input.category]?.email !== false &&
+              !inQuietHours(now, prefs.quietHours);
 
         if (wantsPush) {
           await collectPushTargets(

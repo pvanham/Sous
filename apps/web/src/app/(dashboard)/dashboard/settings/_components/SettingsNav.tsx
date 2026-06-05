@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UtensilsCrossed, Bot, Calendar, Users, MapPin, CreditCard } from "lucide-react";
+import { UtensilsCrossed, Bot, Calendar, Users, MapPin, CreditCard, Bell } from "lucide-react";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
 const baseNavItems = [
@@ -11,6 +11,7 @@ const baseNavItems = [
   { href: "/dashboard/settings/team", label: "Team / Invites", icon: Users },
   { href: "/dashboard/settings/ai", label: "AI Settings", icon: Bot },
   { href: "/dashboard/settings/schedule-generation", label: "Schedule Generation", icon: Calendar },
+  { href: "/dashboard/settings/notifications", label: "Notifications", icon: Bell },
 ];
 
 const billingItem = { href: "/dashboard/settings/billing", label: "Billing", icon: CreditCard };
