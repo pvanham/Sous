@@ -45,11 +45,6 @@ REQUIRED_WEB_VARS=(
   "WEB_MONGODB_URI"
   "WEB_OPENAI_API_KEY"
   "WEB_NEXT_PUBLIC_APP_URL"
-  "WEB_R2_ACCOUNT_ID"
-  "WEB_R2_ACCESS_KEY_ID"
-  "WEB_R2_SECRET_ACCESS_KEY"
-  "WEB_R2_BUCKET"
-  "WEB_R2_PUBLIC_URL"
 )
 
 REQUIRED_MOBILE_VARS=(
@@ -68,6 +63,18 @@ REQUIRED_MOBILE_VARS=(
 #   WEB_RESEND_API_KEY       — Resend transactional API key
 #   WEB_RESEND_FROM          — Default From address (e.g. "Sous <…>" )
 #   WEB_EXPO_ACCESS_TOKEN    — Expo push access token (raises rate limits)
+#
+# Cloudflare R2 (attachment uploads): read lazily by src/lib/storage/r2.ts
+# only when an attachment upload URL is requested. The app boots, connects to
+# Mongo, and serves the full UI without them — only the announcement/profile/
+# chat attachment-upload endpoint 500s when they are absent. They are therefore
+# optional here so a missing R2 secret never blocks a full bootstrap.
+#
+#   WEB_R2_ACCOUNT_ID        — Cloudflare account id
+#   WEB_R2_ACCESS_KEY_ID     — R2 API token access key id
+#   WEB_R2_SECRET_ACCESS_KEY — R2 API token secret access key
+#   WEB_R2_BUCKET            — R2 bucket name
+#   WEB_R2_PUBLIC_URL        — Public base URL for stored objects
 # -----------------------------------------------------------------------------
 
 # -----------------------------------------------------------------------------
