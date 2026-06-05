@@ -6,23 +6,30 @@ Guidance for cloud agents working in the Sous monorepo.
 
 ### Runtime
 
-- **Node.js 22 LTS** ships at `/exec-daemon/node` (on `PATH`). The repo's
-  `engines.node` field targets Node 24+, but the cloud runtime intentionally
-  stays on Node 22 — do **not** try to force Node 24.
-- **`npm install` may print `EBADENGINE`** warnings; installs and typecheck
-  still succeed on Node 22.
+- **Node.js 24.15.0** (per `.node-version`) is the default for cloud agents.
+  `/exec-daemon/node` ships Node 22 and sits ahead of nvm on `PATH`; the VM
+  startup update script installs Node 24.15.0 via nvm and prepends
+  `$HOME/.nvm/versions/node/v24.15.0/bin` to `PATH` so `node --version` reports
+  `v24.15.0` without manual `nvm use`.
 - **Docker is unavailable.** The CP-SAT solver runs directly via uvicorn, not
   `docker compose`.
 
 ### Bootstrap (automatic on VM startup)
 
-The update script runs:
+The update script installs Node 24.15.0, materializes per-app env files, and
+installs npm workspaces:
 
 ```bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+nvm install 24.15.0
+export PATH="$HOME/.nvm/versions/node/v24.15.0/bin:$PATH"
 bash ./setup-agent-envs.sh
 npm install
-pip install --break-system-packages -r solver/requirements.txt
 ```
+
+`pip install --break-system-packages -r solver/requirements.txt` is a one-time
+manual step when working on the CP-SAT solver (not in the update script).
 
 After startup, confirm per-app env files exist:
 
