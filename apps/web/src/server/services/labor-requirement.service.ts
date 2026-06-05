@@ -129,7 +129,7 @@ export const LaborRequirementService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -176,7 +176,7 @@ export const LaborRequirementService = {
     };
 
     const doc = await LaborRequirement.findOneAndUpdate(filter, update, {
-      new: true,
+      returnDocument: "after",
       upsert: true,
       runValidators: true,
     }).lean();

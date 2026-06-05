@@ -354,7 +354,7 @@ export const ScheduleService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { status } },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     ).lean();
 
     if (!doc) return null;
@@ -382,7 +382,7 @@ export const ScheduleService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { notes } },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     ).lean();
 
     if (!doc) return null;

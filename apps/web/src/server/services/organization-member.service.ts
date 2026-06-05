@@ -151,7 +151,7 @@ export const OrganizationMemberService = {
     const doc = await OrganizationMember.findByIdAndUpdate(
       memberId,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;

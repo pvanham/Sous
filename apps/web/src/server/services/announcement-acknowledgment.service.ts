@@ -33,7 +33,7 @@ export const AnnouncementAcknowledgmentService = {
       const updated = await AnnouncementAcknowledgment.findOneAndUpdate(
         { ...baseFilter, readAt: null },
         { $set: { readAt: now } },
-        { new: true, runValidators: true }
+        { returnDocument: "after", runValidators: true }
       ).lean();
 
       if (updated) {
@@ -55,7 +55,7 @@ export const AnnouncementAcknowledgmentService = {
             acknowledgedAt: null,
           },
         },
-        { new: true, upsert: true, runValidators: true }
+        { returnDocument: "after", upsert: true, runValidators: true }
       ).lean();
     } catch {
       doc = await AnnouncementAcknowledgment.findOne(baseFilter).lean();
@@ -86,7 +86,7 @@ export const AnnouncementAcknowledgmentService = {
     let doc = await AnnouncementAcknowledgment.findOneAndUpdate(
       { ...baseFilter, acknowledgedAt: null },
       { $set: { acknowledgedAt: now } },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) {

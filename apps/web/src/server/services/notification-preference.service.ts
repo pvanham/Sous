@@ -24,7 +24,7 @@ export const NotificationPreferenceService = {
   /**
    * Look up a user's preferences, creating a default row on first
    * access. Atomic via `findOneAndUpdate({ ..., upsert: true,
-   * new: true })` so two concurrent first reads can't race into two
+   * returnDocument: "after" })` so two concurrent first reads can't race into two
    * documents (the unique index on `clerkUserId` is the backstop).
    */
   async getOrCreate(
@@ -41,10 +41,10 @@ export const NotificationPreferenceService = {
           quietHours: seeded.quietHours,
         },
       },
-      { new: true, upsert: true, setDefaultsOnInsert: true },
+      { returnDocument: "after", upsert: true, setDefaultsOnInsert: true },
     ).lean();
 
-    // `doc` is guaranteed non-null with `upsert: true, new: true` but
+    // `doc` is guaranteed non-null with `upsert: true, returnDocument: "after"` but
     // typescript doesn't model that.
     if (!doc) {
       throw new Error(
@@ -115,7 +115,7 @@ export const NotificationPreferenceService = {
           quietHours: nextQuietHours,
         },
       },
-      { new: true, runValidators: true },
+      { returnDocument: "after", runValidators: true },
     ).lean();
 
     if (!updated) {

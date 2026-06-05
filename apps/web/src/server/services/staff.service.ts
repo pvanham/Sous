@@ -257,7 +257,7 @@ export const StaffService = {
         locationId: new Types.ObjectId(locationId),
       },
       mutation,
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -356,7 +356,7 @@ export const StaffService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { isActive } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!doc) return null;
@@ -607,7 +607,7 @@ export const StaffService = {
     const doc = await Staff.findOneAndUpdate(
       filter,
       { $push: { skills: { station: skill.station, proficiency: skill.proficiency } } },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -638,7 +638,7 @@ export const StaffService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $pull: { skills: { station } } },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -850,7 +850,7 @@ export const StaffService = {
           invitationStatus: "accepted" as InvitationStatus,
         },
       },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -870,7 +870,7 @@ export const StaffService = {
     const doc = await Staff.findByIdAndUpdate(
       staffId,
       { $set: { invitationStatus: status } },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -928,7 +928,7 @@ export const StaffService = {
     const updated = await Staff.findOneAndUpdate(
       { ...tenantFilter, onboardingCompletedAt: null },
       { $set: { onboardingCompletedAt: new Date() } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (updated) return toStaffDTO(updated);

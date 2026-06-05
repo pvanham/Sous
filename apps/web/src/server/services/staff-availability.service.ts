@@ -199,7 +199,7 @@ export const StaffAvailabilityService = {
     };
 
     const doc = await StaffAvailability.findOneAndUpdate(filter, update, {
-      new: true,
+      returnDocument: "after",
       upsert: true,
       runValidators: true,
     }).lean();
@@ -304,7 +304,7 @@ export const StaffAvailabilityService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;

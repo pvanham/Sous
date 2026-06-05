@@ -297,7 +297,7 @@ export const TimeOffRequestService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
