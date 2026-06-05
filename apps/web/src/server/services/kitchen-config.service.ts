@@ -61,6 +61,7 @@ export const KitchenConfigService = {
       managerRoles: (data.managerRoles ?? []).filter((mr) => filteredRoles.includes(mr)),
       operatingHours: data.operatingHours,
       minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
+      allowStaffToManageOwnSkills: data.allowStaffToManageOwnSkills,
       weekStartsOn: data.weekStartsOn,
     };
 
