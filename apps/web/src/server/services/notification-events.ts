@@ -9,6 +9,7 @@ import type {
   ExchangeShiftDTO,
   ScheduleDTO,
   ShiftDTO,
+  SkillChangeRequestDTO,
   TimeOffRequestDTO,
 } from "@sous/types";
 
@@ -567,6 +568,104 @@ export const NotificationEvents = {
               label: "Manage billing",
               url: `${APP_URL}/dashboard/billing`,
             },
+          }),
+        },
+      },
+    });
+  },
+
+  skillChangeSubmitted({
+    request,
+    orgId,
+    locationId,
+  }: {
+    request: SkillChangeRequestDTO;
+    orgId: string;
+    locationId: string;
+  }): Promise<void> {
+    const verb = request.type === "add" ? "wants to add" : "wants to remove";
+    const title = `Skill change from ${request.staffName}`;
+    const body = `${request.staffName} ${verb} ${request.station}`;
+    return NotificationService.notify({
+      recipients: { managersOf: { orgId, locationId } },
+      category: "skill_change_submitted",
+      orgId,
+      locationId,
+      payload: {
+        title,
+        body,
+        data: {
+          url: "sous://profile",
+          requestId: request.id,
+          category: "skill_change_submitted",
+        },
+        email: {
+          subject: title,
+          react: createElement(NotificationEmail, {
+            preview: body,
+            heading: title,
+            paragraphs: [
+              `${request.staffName} ${verb} the "${request.station}" skill.`,
+              request.type === "remove" && request.reason
+                ? `Reason: "${request.reason}"`
+                : "",
+              request.type === "add"
+                ? "The skill is not active until you approve it."
+                : "The skill stays active until you approve the removal.",
+            ].filter(Boolean),
+            cta: {
+              label: "Review on the staff page",
+              url: `${APP_URL}/dashboard/staff`,
+            },
+          }),
+        },
+      },
+    });
+  },
+
+  skillChangeDecision({
+    request,
+    requesterClerkUserId,
+    orgId,
+    locationId,
+  }: {
+    request: SkillChangeRequestDTO;
+    requesterClerkUserId: string;
+    orgId: string;
+    locationId: string;
+  }): Promise<void> {
+    const decision =
+      request.status === "approved"
+        ? "approved"
+        : request.status === "denied"
+          ? "denied"
+          : null;
+    if (!decision) return Promise.resolve();
+    const action = request.type === "add" ? "addition" : "removal";
+    const title = `Skill ${action} ${decision}`;
+    const body = `${request.station}`;
+    return NotificationService.notify({
+      recipients: { clerkUserIds: [requesterClerkUserId] },
+      category: "skill_change_decision",
+      orgId,
+      locationId,
+      payload: {
+        title,
+        body,
+        data: {
+          url: "sous://profile",
+          requestId: request.id,
+          category: "skill_change_decision",
+        },
+        email: {
+          subject: `Your skill ${action} was ${decision}`,
+          react: createElement(NotificationEmail, {
+            preview: body,
+            heading: title,
+            paragraphs: [
+              `Your request to ${request.type} the "${request.station}" skill was ${decision} by your manager.`,
+              request.reviewNotes ? `Note: "${request.reviewNotes}"` : "",
+            ].filter(Boolean),
           }),
         },
       },

@@ -1,21 +1,30 @@
 import { listStaffPaginated } from "@/server/actions/staff.actions";
+import { listSkillChangeRequests } from "@/server/actions/skill-change-request.actions";
 import { StaffTable } from "./_components/StaffTable";
 import { StaffCsvUploadButton } from "./_components/StaffCsvUploadButton";
 import { AddStaffButton } from "./_components/AddStaffButton";
 import { Users } from "lucide-react";
 
 export default async function StaffPage() {
-  // Fetch initial paginated data (page 1, 10 per page, sorted A-Z)
-  const result = await listStaffPaginated({
-    page: 1,
-    pageSize: 10,
-    sortOrder: "asc",
-  });
+  // Fetch initial paginated data (page 1, 10 per page, sorted A-Z) plus the
+  // pending self-service skill changes that surface inline on the table.
+  const [result, skillChangeResult] = await Promise.all([
+    listStaffPaginated({
+      page: 1,
+      pageSize: 10,
+      sortOrder: "asc",
+    }),
+    listSkillChangeRequests({ status: "pending" }),
+  ]);
 
   // Default empty result if fetch fails
   const initialData = result.success
     ? result.data
     : { staff: [], total: 0, page: 1, pageSize: 10, totalPages: 0 };
+
+  const initialSkillChangeRequests = skillChangeResult.success
+    ? skillChangeResult.data
+    : [];
 
   return (
     <div className="space-y-6">
@@ -42,7 +51,10 @@ export default async function StaffPage() {
         </div>
       </div>
 
-      <StaffTable initialData={initialData} />
+      <StaffTable
+        initialData={initialData}
+        initialSkillChangeRequests={initialSkillChangeRequests}
+      />
     </div>
   );
 }

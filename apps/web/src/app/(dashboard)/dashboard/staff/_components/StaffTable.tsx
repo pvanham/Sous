@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -24,6 +24,7 @@ import {
   Calendar,
   CalendarOff,
   Mail,
+  Wrench,
 } from "lucide-react";
 
 import {
@@ -59,12 +60,16 @@ import {
   deleteStaff,
 } from "@/server/actions/staff.actions";
 import { inviteStaffToApp } from "@/server/actions/invitation.actions";
+import { listSkillChangeRequests } from "@/server/actions/skill-change-request.actions";
 import type { StaffDTO, PaginatedStaffResult } from "@/types/staff";
+import type { SkillChangeRequestDTO } from "@/types/skill-change-request";
 import { StaffFormDialog } from "./StaffFormDialog";
+import { SkillChangeReviewDialog } from "./SkillChangeReviewDialog";
 import { cn } from "@/lib/utils";
 
 interface StaffTableProps {
   initialData: PaginatedStaffResult;
+  initialSkillChangeRequests: SkillChangeRequestDTO[];
 }
 
 const columnHelper = createColumnHelper<StaffDTO>();
@@ -79,7 +84,10 @@ function ProficiencyStars({ level }: { level: number }) {
   );
 }
 
-export function StaffTable({ initialData }: StaffTableProps) {
+export function StaffTable({
+  initialData,
+  initialSkillChangeRequests,
+}: StaffTableProps) {
   const queryClient = useQueryClient();
 
   // State for pagination, sorting, and search
@@ -94,6 +102,29 @@ export function StaffTable({ initialData }: StaffTableProps) {
   const [deleteConfirmStaff, setDeleteConfirmStaff] = useState<StaffDTO | null>(
     null,
   );
+  const [reviewStaff, setReviewStaff] = useState<StaffDTO | null>(null);
+
+  // Pending self-service skill changes, grouped per staff member. Backs
+  // the per-row "review" action + count badge.
+  const { data: skillChangeRequests = initialSkillChangeRequests } = useQuery({
+    queryKey: ["skillChangeRequests", "pending"],
+    queryFn: async () => {
+      const result = await listSkillChangeRequests({ status: "pending" });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    initialData: initialSkillChangeRequests,
+  });
+
+  const pendingByStaff = useMemo(() => {
+    const map = new Map<string, SkillChangeRequestDTO[]>();
+    for (const request of skillChangeRequests) {
+      const existing = map.get(request.staffId);
+      if (existing) existing.push(request);
+      else map.set(request.staffId, [request]);
+    }
+    return map;
+  }, [skillChangeRequests]);
 
   useEffect(() => {
     const timer = setTimeout(() => setSearch(searchInput), 300);
@@ -329,8 +360,27 @@ export function StaffTable({ initialData }: StaffTableProps) {
         const canResend =
           !staffMember.clerkUserId &&
           staffMember.invitationStatus === "pending";
+        const pendingSkillChanges = pendingByStaff.get(staffMember.id) ?? [];
         return (
           <div className="flex items-center gap-1">
+            {/* Pending skill-change review */}
+            {pendingSkillChanges.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative text-amber-600 hover:text-amber-600"
+                onClick={() => setReviewStaff(staffMember)}
+                title={`Review ${pendingSkillChanges.length} skill change${
+                  pendingSkillChanges.length === 1 ? "" : "s"
+                }`}
+              >
+                <Wrench className="h-4 w-4" />
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  {pendingSkillChanges.length}
+                </span>
+              </Button>
+            )}
+
             {/* Send / Resend Invite Button */}
             {(canInvite || canResend) && (
               <Button
@@ -577,6 +627,15 @@ export function StaffTable({ initialData }: StaffTableProps) {
         open={!!editStaff}
         onOpenChange={(open) => !open && setEditStaff(null)}
         staff={editStaff || undefined}
+      />
+
+      {/* Skill Change Review Dialog */}
+      <SkillChangeReviewDialog
+        open={!!reviewStaff}
+        onOpenChange={(open) => !open && setReviewStaff(null)}
+        staffName={reviewStaff?.name ?? ""}
+        staffId={reviewStaff?.id ?? ""}
+        requests={reviewStaff ? (pendingByStaff.get(reviewStaff.id) ?? []) : []}
       />
 
       {/* Delete Confirmation Dialog */}

@@ -4,11 +4,20 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
-import { useMyStaff, useUpdateMyStaff } from "@/features/profile/hooks";
+import { useAllowStaffToManageOwnSkills } from "@/features/auth/store";
+import {
+  useMyStaff,
+  useUpdateMyStaff,
+  useAvailableStations,
+  useMySkillRequests,
+  useProposeMySkill,
+} from "@/features/profile/hooks";
+import { AddSkillsSheet } from "@/features/profile/components/add-skills-sheet";
 import { OnboardingHeader } from "../components/onboarding-header";
 import { useOnboardingNav } from "../use-onboarding-nav";
 
 const ICON_COLOR = "#78716c";
+const PENDING_COLOR = "#b45309";
 
 /**
  * Station preferences (step 2/4).
@@ -28,6 +37,11 @@ export function StationsStepScreen() {
   const myStaffQuery = useMyStaff();
   const updateMyStaff = useUpdateMyStaff();
 
+  const canManageSkills = useAllowStaffToManageOwnSkills();
+  const availableStationsQuery = useAvailableStations();
+  const skillRequestsQuery = useMySkillRequests();
+  const proposeSkill = useProposeMySkill();
+
   const staff = myStaffQuery.data ?? null;
 
   const approvedStations = useMemo(() => {
@@ -37,9 +51,27 @@ export function StationsStepScreen() {
     return Array.from(set).sort();
   }, [staff]);
 
+  const pendingAdditions = useMemo(
+    () =>
+      (skillRequestsQuery.data ?? [])
+        .filter((r) => r.status === "pending" && r.type === "add")
+        .map((r) => ({ station: r.station, proficiency: r.proficiency })),
+    [skillRequestsQuery.data],
+  );
+
+  const activeStationSet = useMemo(
+    () => new Set(approvedStations),
+    [approvedStations],
+  );
+  const pendingAddStationSet = useMemo(
+    () => new Set(pendingAdditions.map((a) => a.station)),
+    [pendingAdditions],
+  );
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [addSkillsOpen, setAddSkillsOpen] = useState(false);
 
   useEffect(() => {
     if (staff) {
@@ -99,6 +131,11 @@ export function StationsStepScreen() {
   }
 
   const hasStations = approvedStations.length > 0;
+  const hasPendingAdditions = pendingAdditions.length > 0;
+  // When self-service is on, finishing is always allowed (the user may
+  // be proposing brand-new skills); otherwise we only block-skip when
+  // the manager hasn't approved any stations yet.
+  const advanceLabel = hasStations || canManageSkills ? "Next" : "Skip for now";
 
   return (
     <View className="flex-1 bg-background">
@@ -108,13 +145,13 @@ export function StationsStepScreen() {
           Your stations
         </StyledText>
         <StyledText variant="caption" className="mb-6 text-sm">
-          These are the stations your manager has approved you for. Tap
-          the star on any you&apos;d like to be scheduled at more
-          often.
+          {canManageSkills
+            ? "Add the stations you can work — your manager confirms them — then tap the star on any you'd like to be scheduled at more often."
+            : "These are the stations your manager has approved you for. Tap the star on any you'd like to be scheduled at more often."}
         </StyledText>
 
         {hasStations ? (
-          <View className="flex-row flex-wrap gap-2 mb-6">
+          <View className="flex-row flex-wrap gap-2 mb-4">
             {approvedStations.map((station) => (
               <StationChip
                 key={station}
@@ -124,7 +161,7 @@ export function StationsStepScreen() {
               />
             ))}
           </View>
-        ) : (
+        ) : !canManageSkills ? (
           <View className="bg-card border border-border rounded-md px-4 py-5 mb-6">
             <View className="flex-row items-center mb-2">
               <MaterialIcons name="info-outline" size={20} color={ICON_COLOR} />
@@ -138,7 +175,51 @@ export function StationsStepScreen() {
               preferences once they do.
             </StyledText>
           </View>
-        )}
+        ) : null}
+
+        {canManageSkills ? (
+          <>
+            {hasPendingAdditions ? (
+              <View className="mb-4">
+                <StyledText variant="caption" className="mb-2 text-sm">
+                  Waiting on your manager
+                </StyledText>
+                <View className="flex-row flex-wrap gap-2">
+                  {pendingAdditions.map((addition) => (
+                    <View
+                      key={addition.station}
+                      className="flex-row items-center rounded-full px-4 py-2 border border-border bg-card"
+                    >
+                      <MaterialIcons
+                        name="schedule"
+                        size={14}
+                        color={PENDING_COLOR}
+                      />
+                      <StyledText
+                        variant="body"
+                        className="ml-1.5 text-sm text-muted-foreground"
+                      >
+                        {addition.station}
+                      </StyledText>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            <Pressable
+              onPress={() => setAddSkillsOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Add skills"
+              className="flex-row items-center justify-center gap-2 border border-border rounded-md px-4 py-3 mb-6 active:opacity-80"
+            >
+              <MaterialIcons name="add" size={18} color={ICON_COLOR} />
+              <StyledText variant="label" className="text-base font-semibold">
+                Add skills
+              </StyledText>
+            </Pressable>
+          </>
+        ) : null}
 
         {error ? (
           <View className="border border-destructive rounded-md px-3 py-2 mb-3">
@@ -149,14 +230,29 @@ export function StationsStepScreen() {
         ) : null}
 
         <Button
-          title={hasStations ? "Next" : "Skip for now"}
-          onPress={() => handleSubmit(hasStations ? "next" : "skip")}
+          title={advanceLabel}
+          onPress={() =>
+            handleSubmit(advanceLabel === "Next" ? "next" : "skip")
+          }
           loading={submitting}
           disabled={submitting}
           size="lg"
           className="mt-2"
         />
       </ScrollView>
+
+      {canManageSkills ? (
+        <AddSkillsSheet
+          visible={addSkillsOpen}
+          onClose={() => setAddSkillsOpen(false)}
+          availableStations={availableStationsQuery.data ?? []}
+          activeStations={activeStationSet}
+          pendingStations={pendingAddStationSet}
+          onSubmit={async (input) => {
+            await proposeSkill.mutateAsync(input);
+          }}
+        />
+      ) : null}
     </View>
   );
 }

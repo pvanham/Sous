@@ -574,6 +574,78 @@ export const StaffService = {
   },
 
   /**
+   * Add (or replace) a single station skill on a staff member. Used by
+   * the skill-change approval flow when a manager approves a staff
+   * member's self-proposed addition. Idempotent on `station`: any
+   * existing entry for the station is replaced so an approval can also
+   * adjust the proficiency.
+   *
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param staffId - Staff document ID
+   * @param skill - Station + proficiency to set
+   * @returns Updated StaffDTO or null if the staff member was not found
+   */
+  async addSkill(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    skill: { station: string; proficiency: 1 | 2 | 3 | 4 | 5 }
+  ): Promise<StaffDTO | null> {
+    const filter = {
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    };
+
+    // Drop any stale entry for this station first so the push can also
+    // serve as a proficiency update without creating a duplicate row.
+    await Staff.updateOne(filter, {
+      $pull: { skills: { station: skill.station } },
+    });
+
+    const doc = await Staff.findOneAndUpdate(
+      filter,
+      { $push: { skills: { station: skill.station, proficiency: skill.proficiency } } },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Remove a single station skill from a staff member. Used by the
+   * skill-change approval flow when a manager approves a removal
+   * request.
+   *
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param staffId - Staff document ID
+   * @param station - Station name to remove from skills
+   * @returns Updated StaffDTO or null if the staff member was not found
+   */
+  async removeSkill(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    station: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $pull: { skills: { station } } },
+      { new: true, runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
    * Count staff who have any of the specified stations in their preferredStations array.
    * Used for impact analysis when removing stations from kitchen config.
    * @param orgId - Organization ID
