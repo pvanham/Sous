@@ -394,6 +394,13 @@ export interface KitchenConfigDTO {
   aiSettings: AISettingsDTO;
   scheduleGenerationSettings: ScheduleGenerationSettingsDTO;
   /**
+   * When `true`, staff may propose their own skill additions and
+   * removals from the mobile app (both require manager approval before
+   * they take effect). Defaults to `true` to reduce onboarding friction
+   * for new owners; managers who want full control toggle it off.
+   */
+  allowStaffToManageOwnSkills: boolean;
+  /**
    * Calendar day each new weekly schedule starts on. Persisted as a
    * lowercase day name (`"monday"` … `"sunday"`); helpers in
    * `@sous/types/validations/kitchen-config.schema` convert to/from the
@@ -683,6 +690,61 @@ export interface ExchangeShiftViabilityDTO {
   pickerName: string | null;
 }
 
+// ── Skill Change Request ─────────────────────────────────────
+
+export {
+  skillChangeTypeValues,
+  skillChangeStatusValues,
+  skillChangeTypeSchema,
+  skillChangeStatusSchema,
+  submitSkillAdditionSchema,
+  submitSkillRemovalSchema,
+  reviewSkillChangeSchema,
+  reviewSkillChangesBatchSchema,
+  listSkillChangeRequestsSchema,
+} from "./validations/skill-change-request.schema";
+
+export type {
+  SkillChangeType,
+  SkillChangeStatus,
+  SubmitSkillAdditionInput,
+  SubmitSkillRemovalInput,
+  ReviewSkillChangeInput,
+  ReviewSkillChangesBatchInput,
+  ListSkillChangeRequestsInput,
+} from "./validations/skill-change-request.schema";
+
+/**
+ * A staff member's proposal to add or remove one of their station
+ * skills. Both directions require manager approval before they touch
+ * `Staff.skills`; see `skill-change-request.schema.ts` for the
+ * lifecycle. `proficiency` is the staff-proposed level for an `add`
+ * request and a snapshot of the current level for a `remove` request.
+ */
+export interface SkillChangeRequestDTO {
+  id: string;
+  orgId: string;
+  locationId: string;
+  staffId: string;
+  /** `Staff.name` snapshot so manager lists render without a join. */
+  staffName: string;
+  /** Clerk user id of the staff member who submitted the request. */
+  clerkUserId: string;
+  type: import("./validations/skill-change-request.schema").SkillChangeType;
+  station: string;
+  proficiency: 1 | 2 | 3 | 4 | 5;
+  /** Required for `remove`; empty string for `add`. */
+  reason: string;
+  status: import("./validations/skill-change-request.schema").SkillChangeStatus;
+  /** Clerk user id of the manager who issued the decision. */
+  reviewedBy?: string | null;
+  reviewedAt?: Date | null;
+  /** Optional manager note attached to the decision. */
+  reviewNotes: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 // ── Notifications ────────────────────────────────────────────
 
 import type {
@@ -769,6 +831,8 @@ export function defaultNotificationPreferences(
     "exchange_new_drop",
     "exchange_pending_approval",
     "exchange_decision",
+    "skill_change_submitted",
+    "skill_change_decision",
     "announcements",
     "schedule_generation_async",
     "billing_alerts",

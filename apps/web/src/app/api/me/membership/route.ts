@@ -41,7 +41,7 @@ export async function GET() {
 
   const existing = await OrganizationMemberService.getFirstByUserId(userId);
   if (existing) {
-    const weekStartsOn = await resolveWeekStartsOn(
+    const settings = await resolveLocationSettings(
       existing.orgId,
       existing.locationId,
     );
@@ -49,13 +49,13 @@ export async function GET() {
       role: existing.role,
       orgId: existing.orgId,
       locationId: existing.locationId,
-      weekStartsOn,
+      ...settings,
     });
   }
 
   const healed = await tryHealMembership(userId);
   if (healed) {
-    const weekStartsOn = await resolveWeekStartsOn(
+    const settings = await resolveLocationSettings(
       healed.orgId,
       healed.locationId,
     );
@@ -63,7 +63,7 @@ export async function GET() {
       role: healed.role,
       orgId: healed.orgId,
       locationId: healed.locationId,
-      weekStartsOn,
+      ...settings,
     });
   }
 
@@ -74,18 +74,25 @@ export async function GET() {
 }
 
 /**
- * Look up the configured week-start day for the membership's location.
- * Org-wide memberships (no `locationId`) and brand-new tenants without a
- * KitchenConfig row both fall back to Monday — the same default the
- * Mongoose schema uses, so the mobile UI never has to special-case the
- * absence of a value.
+ * Resolve the per-location settings the mobile app caches alongside the
+ * membership: the week-start day and whether staff may self-manage their
+ * skills. Org-wide memberships (no `locationId`) and brand-new tenants
+ * without a KitchenConfig row fall back to the same defaults the Mongoose
+ * schema uses (`monday`, skills self-management on), so the mobile UI
+ * never has to special-case a missing config.
  */
-async function resolveWeekStartsOn(
+async function resolveLocationSettings(
   orgId: string,
   locationId: string | null,
-): Promise<DayOfWeek> {
-  if (!locationId) return "monday";
-  return KitchenConfigService.getWeekStartsOn(orgId, locationId);
+): Promise<{ weekStartsOn: DayOfWeek; allowStaffToManageOwnSkills: boolean }> {
+  if (!locationId) {
+    return { weekStartsOn: "monday", allowStaffToManageOwnSkills: true };
+  }
+  const config = await KitchenConfigService.getByLocation(orgId, locationId);
+  return {
+    weekStartsOn: config?.weekStartsOn ?? "monday",
+    allowStaffToManageOwnSkills: config?.allowStaffToManageOwnSkills ?? true,
+  };
 }
 
 type HealedMembership = {

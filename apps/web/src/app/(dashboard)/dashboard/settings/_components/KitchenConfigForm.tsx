@@ -94,6 +94,8 @@ export function KitchenConfigForm({
         managerRoles: initialConfig.managerRoles || [],
         operatingHours: initialConfig.operatingHours,
         minTimeOffAdvanceDays: initialConfig.minTimeOffAdvanceDays ?? 7,
+        allowStaffToManageOwnSkills:
+          initialConfig.allowStaffToManageOwnSkills ?? true,
         aiSettings: initialConfig.aiSettings ?? {
           monthlyGenerationLimit: 50,
           subscriptionTier: "free",
@@ -485,6 +487,38 @@ export function KitchenConfigForm({
                 </FormItem>
               )}
             />
+        </div>
+
+        {/* Staff Permissions */}
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Staff Permissions</h3>
+            <p className="text-sm text-muted-foreground">
+              Control what staff can manage themselves from the mobile app.
+            </p>
+          </div>
+          <FormField
+            control={form.control}
+            name="allowStaffToManageOwnSkills"
+            render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5 pr-4">
+                  <FormLabel>Let staff propose their own skills</FormLabel>
+                  <FormDescription>
+                    Staff can propose adding or removing their station skills
+                    during onboarding and from their profile. Both additions
+                    and removals require your approval before they take effect.
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Week Start (owner-only) */}

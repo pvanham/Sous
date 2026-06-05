@@ -41,6 +41,8 @@ export function toKitchenConfigDTO(doc: IKitchenConfig & { _id: unknown }): impo
     managerRoles: doc.managerRoles || [],
     operatingHours: doc.operatingHours,
     minTimeOffAdvanceDays: doc.minTimeOffAdvanceDays ?? 7,
+    // Default to enabled for legacy docs predating the field.
+    allowStaffToManageOwnSkills: doc.allowStaffToManageOwnSkills ?? true,
     aiSettings: doc.aiSettings
       ? {
           monthlyGenerationLimit: doc.aiSettings.monthlyGenerationLimit ?? DEFAULT_AI_SETTINGS.monthlyGenerationLimit,

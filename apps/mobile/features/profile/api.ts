@@ -1,5 +1,9 @@
 import { AxiosError } from "axios";
-import type { StaffAddress, StaffDTO } from "@sous/types";
+import type {
+  SkillChangeRequestDTO,
+  StaffAddress,
+  StaffDTO,
+} from "@sous/types";
 import { apiClient } from "@/lib/api-client";
 
 // ─────────────────────────────────────────────────────────────
@@ -102,6 +106,79 @@ export async function syncProfileImage(
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Self-service skills.
+//
+// Staff propose skill changes from the profile + onboarding; both
+// additions and removals require manager approval before they touch
+// `Staff.skills`. Backed by the routes under
+// `apps/web/src/app/api/me/skills/*` and `/api/me/stations`. All are
+// gated server-side by `KitchenConfig.allowStaffToManageOwnSkills`.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Fetch the station catalogue for the caller's location. Drives the
+ * "Add skills" chip selector (the client can't derive the full list
+ * from existing skills alone).
+ */
+export async function fetchAvailableStations(): Promise<string[]> {
+  const response = await apiClient.get<{ stations: string[] }>(
+    "/me/stations",
+  );
+  return response.data.stations;
+}
+
+/**
+ * Fetch the caller's own skill change requests. The `pending` ones
+ * drive the "pending approval" (add) and "pending removal" chip states.
+ */
+export async function fetchMySkillRequests(): Promise<
+  SkillChangeRequestDTO[]
+> {
+  const response = await apiClient.get<SerializedSkillChangeRequest[]>(
+    "/me/skills/requests",
+  );
+  return response.data.map(reviveSkillChangeRequest);
+}
+
+/**
+ * Propose adding a station skill. The skill is not active until a
+ * manager approves the returned `pending` request.
+ */
+export async function proposeMySkill(input: {
+  station: string;
+  proficiency: number;
+}): Promise<SkillChangeRequestDTO> {
+  try {
+    const response = await apiClient.post<SerializedSkillChangeRequest>(
+      "/me/skills/additions",
+      input,
+    );
+    return reviveSkillChangeRequest(response.data);
+  } catch (err) {
+    throw unwrapServerError(err, "Could not submit the skill.");
+  }
+}
+
+/**
+ * Request removing one of the caller's station skills, with a reason.
+ * The skill stays active until a manager approves the removal.
+ */
+export async function requestSkillRemoval(input: {
+  station: string;
+  reason: string;
+}): Promise<SkillChangeRequestDTO> {
+  try {
+    const response = await apiClient.post<SerializedSkillChangeRequest>(
+      "/me/skills/removals",
+      input,
+    );
+    return reviveSkillChangeRequest(response.data);
+  } catch (err) {
+    throw unwrapServerError(err, "Could not submit the removal request.");
+  }
+}
+
 /**
  * Translate an `AxiosError` from the profile endpoints into a plain
  * `Error` whose `.message` is the server-supplied string (or the
@@ -141,5 +218,25 @@ function reviveStaff(raw: SerializedStaff): StaffDTO {
       raw.onboardingCompletedAt === null
         ? null
         : new Date(raw.onboardingCompletedAt),
+  };
+}
+
+type SerializedSkillChangeRequest = Omit<
+  SkillChangeRequestDTO,
+  "createdAt" | "updatedAt" | "reviewedAt"
+> & {
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+};
+
+function reviveSkillChangeRequest(
+  raw: SerializedSkillChangeRequest,
+): SkillChangeRequestDTO {
+  return {
+    ...raw,
+    createdAt: new Date(raw.createdAt),
+    updatedAt: new Date(raw.updatedAt),
+    reviewedAt: raw.reviewedAt === null ? null : new Date(raw.reviewedAt),
   };
 }

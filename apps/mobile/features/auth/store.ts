@@ -14,6 +14,12 @@ export interface Membership {
    * `apps/web/src/app/api/me/membership/route.ts`.
    */
   weekStartsOn: DayOfWeek;
+  /**
+   * When `true`, staff can propose their own skill changes from the
+   * profile + onboarding (both additions and removals require manager
+   * approval). Defaults to `true`; gates the self-service skills UI.
+   */
+  allowStaffToManageOwnSkills: boolean;
 }
 
 interface AuthStore {
@@ -51,4 +57,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
  */
 export function useWeekStartsOn(): DayOfWeek {
   return useAuthStore((s) => s.membership?.weekStartsOn ?? "monday");
+}
+
+/**
+ * Selector hook for whether staff may manage their own skills at this
+ * location. Defaults to `true` until the membership query has loaded so
+ * the self-service UI matches the server-side default.
+ */
+export function useAllowStaffToManageOwnSkills(): boolean {
+  return useAuthStore(
+    (s) => s.membership?.allowStaffToManageOwnSkills ?? true,
+  );
 }

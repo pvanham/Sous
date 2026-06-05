@@ -13,6 +13,7 @@ import { ShiftService } from "@/server/services/shift.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
 import { StaffAvailabilityService } from "@/server/services/staff-availability.service";
 import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
+import { SkillChangeRequestService } from "@/server/services/skill-change-request.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { ActionResponse } from "@/lib/safe-action";
@@ -416,7 +417,25 @@ export async function updateStaff(
       return { success: false, error: "Staff member not found" };
     }
 
-    // 6. Return response
+    // 6. Reconcile any open self-service skill requests the manager just
+    // satisfied by editing skills directly (e.g. they added a station a
+    // staff member had proposed, or removed one a staff member wanted
+    // gone). Best-effort — never block the update on this.
+    if (updateData.skills) {
+      try {
+        await SkillChangeRequestService.reconcileForStaffSkills(
+          ctx.orgId,
+          ctx.locationId,
+          staffId,
+          staff.skills.map((s) => s.station),
+          userId
+        );
+      } catch (reconcileError) {
+        console.error("updateStaff skill reconcile error:", reconcileError);
+      }
+    }
+
+    // 7. Return response
     return { success: true, data: staff };
   } catch (error) {
     const message =
@@ -491,6 +510,7 @@ export async function deleteStaff(
       TimeOffRequestService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
       StaffAvailabilityService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
       ExchangeShiftService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
+      SkillChangeRequestService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
     ]);
 
     // 4. Delete the staff member
