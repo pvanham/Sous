@@ -351,6 +351,13 @@ export default function RootLayout() {
   const colorScheme = useEffectiveColorScheme();
 
   useEffect(() => {
+    // react-native-web does not implement `Appearance.setColorScheme`, so
+    // guard the call to avoid a hard crash on the web target (used by cloud
+    // agents to preview the app). On web, NativeWind's `prefers-color-scheme`
+    // media query already tracks the system theme, so skipping is safe.
+    if (typeof Appearance.setColorScheme !== "function") {
+      return;
+    }
     // When the user is on "system", clear any override so the OS
     // signal is authoritative. Otherwise, pin Appearance to the
     // explicit choice — this flips NativeWind's media query
