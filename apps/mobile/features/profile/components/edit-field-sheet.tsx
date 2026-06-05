@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ComponentProps } from "react";
-import { View, TextInput, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
+import type { TextInputProps } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -21,10 +22,10 @@ interface EditFieldSheetProps {
    * never shows stale input from a previous edit. */
   initialValue: string;
   placeholder?: string;
-  keyboardType?: ComponentProps<typeof TextInput>["keyboardType"];
-  autoCapitalize?: ComponentProps<typeof TextInput>["autoCapitalize"];
-  autoComplete?: ComponentProps<typeof TextInput>["autoComplete"];
-  textContentType?: ComponentProps<typeof TextInput>["textContentType"];
+  keyboardType?: TextInputProps["keyboardType"];
+  autoCapitalize?: TextInputProps["autoCapitalize"];
+  autoComplete?: TextInputProps["autoComplete"];
+  textContentType?: TextInputProps["textContentType"];
   maxLength?: number;
   /**
    * Optional client-side validator. Return an error message string to
@@ -123,7 +124,7 @@ export function EditFieldSheet({
         <View className="w-14" />
       </View>
 
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={setValue}
         placeholder={placeholder}

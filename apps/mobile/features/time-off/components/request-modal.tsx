@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { View, Pressable, TextInput, Platform } from "react-native";
+import { View, Pressable, Platform } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -166,7 +167,7 @@ export function RequestModal({
       <StyledText variant="label" className="mb-1.5">
         Reason (optional)
       </StyledText>
-      <TextInput
+      <AppTextInput
         value={reason}
         onChangeText={setReason}
         placeholder="E.g., doctor's appointment..."

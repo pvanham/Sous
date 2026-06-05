@@ -1,11 +1,11 @@
 import { useState, useCallback } from "react";
 import {
   View,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Pressable,
 } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { useSignIn, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -173,7 +173,7 @@ export function ForgotPasswordScreen() {
                   <StyledText variant="label" className="mb-1.5">
                     Email
                   </StyledText>
-                  <TextInput
+                  <AppTextInput
                     value={email}
                     onChangeText={setEmail}
                     placeholder="you@restaurant.com"
@@ -209,7 +209,7 @@ export function ForgotPasswordScreen() {
                   <StyledText variant="label" className="mb-1.5">
                     Verification code
                   </StyledText>
-                  <TextInput
+                  <AppTextInput
                     value={code}
                     onChangeText={setCode}
                     placeholder="123456"
@@ -248,7 +248,7 @@ export function ForgotPasswordScreen() {
                     New password
                   </StyledText>
                   <View className="flex-row items-center bg-background border border-border rounded-md pr-1">
-                    <TextInput
+                    <AppTextInput
                       value={newPassword}
                       onChangeText={setNewPassword}
                       placeholder="Enter a new password"

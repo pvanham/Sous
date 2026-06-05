@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from "react";
 import {
   View,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Pressable,
 } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { useSignIn, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import type { EmailCodeFactor, SignInResource } from "@clerk/types";
 import { useRouter } from "expo-router";
@@ -208,7 +208,7 @@ export function SignInScreen() {
                 <StyledText variant="label" className="mb-1.5">
                   Email
                 </StyledText>
-                <TextInput
+                <AppTextInput
                   value={email}
                   onChangeText={setEmail}
                   placeholder="you@restaurant.com"
@@ -240,7 +240,7 @@ export function SignInScreen() {
                   </Pressable>
                 </View>
                 <View className="flex-row items-center bg-background border border-border rounded-md pr-1">
-                  <TextInput
+                  <AppTextInput
                     value={password}
                     onChangeText={setPassword}
                     placeholder="Enter your password"
@@ -307,7 +307,7 @@ export function SignInScreen() {
                 <StyledText variant="label" className="mb-1.5">
                   Verification code
                 </StyledText>
-                <TextInput
+                <AppTextInput
                   value={code}
                   onChangeText={setCode}
                   placeholder="123456"

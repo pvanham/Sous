@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import {
   View,
   ScrollView,
-  TextInput,
   Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import {
   useUser,
   isClerkAPIResponseError,
@@ -205,7 +205,7 @@ export function ProfileStepScreen() {
                 <StyledText variant="label" className="mb-1.5">
                   First name
                 </StyledText>
-                <TextInput
+                <AppTextInput
                   value={firstName}
                   onChangeText={setFirstName}
                   placeholder="First"
@@ -221,7 +221,7 @@ export function ProfileStepScreen() {
                 <StyledText variant="label" className="mb-1.5">
                   Last name
                 </StyledText>
-                <TextInput
+                <AppTextInput
                   value={lastName}
                   onChangeText={setLastName}
                   placeholder="Last"
@@ -253,7 +253,7 @@ export function ProfileStepScreen() {
               <StyledText variant="label" className="mb-1.5">
                 Phone
               </StyledText>
-              <TextInput
+              <AppTextInput
                 value={phone}
                 onChangeText={setPhone}
                 placeholder="(555) 123-4567"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, TextInput, Pressable } from "react-native";
+import { View, Pressable } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -89,7 +90,7 @@ export function RequestRemovalSheet({
         . It stays active until they approve the removal.
       </StyledText>
 
-      <TextInput
+      <AppTextInput
         value={reason}
         onChangeText={setReason}
         placeholder="e.g. Injury, no longer working this station"

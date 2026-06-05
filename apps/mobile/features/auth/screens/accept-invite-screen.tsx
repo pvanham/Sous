@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
-  TextInput,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
 } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { useSignUp, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import { useRouter } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -255,7 +255,7 @@ export function AcceptInviteScreen({ ticket }: AcceptInviteScreenProps) {
                   <StyledText variant="label" className="mb-1.5">
                     First name
                   </StyledText>
-                  <TextInput
+                  <AppTextInput
                     value={firstName}
                     onChangeText={setFirstName}
                     placeholder="First"
@@ -271,7 +271,7 @@ export function AcceptInviteScreen({ ticket }: AcceptInviteScreenProps) {
                   <StyledText variant="label" className="mb-1.5">
                     Last name
                   </StyledText>
-                  <TextInput
+                  <AppTextInput
                     value={lastName}
                     onChangeText={setLastName}
                     placeholder="Last"
@@ -290,7 +290,7 @@ export function AcceptInviteScreen({ ticket }: AcceptInviteScreenProps) {
                   Password
                 </StyledText>
                 <View className="flex-row items-center bg-background border border-border rounded-md pr-1">
-                  <TextInput
+                  <AppTextInput
                     value={password}
                     onChangeText={setPassword}
                     placeholder="At least 8 characters"
@@ -333,7 +333,7 @@ export function AcceptInviteScreen({ ticket }: AcceptInviteScreenProps) {
                 <StyledText variant="label" className="mb-1.5">
                   Confirm password
                 </StyledText>
-                <TextInput
+                <AppTextInput
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   placeholder="Re-enter password"
