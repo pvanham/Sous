@@ -16,10 +16,13 @@ import {
 import { ShiftService } from "@/server/services/shift.service";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { LocationService } from "@/server/services/location.service";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { currentWeekStartInLocationTz } from "@/lib/utils/timezone";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
+import type { DayOfWeek } from "@sous/types";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -117,6 +120,48 @@ export async function getScheduleByWeek(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to get schedule";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Resolve the current week's start anchor for the caller's active
+ * location, computed in that location's IANA timezone.
+ *
+ * Server Components must use this instead of
+ * `getWeekStart(new Date(), weekStartsOn)`: the latter anchors to the
+ * *server's* timezone, so on a deployment whose timezone differs from
+ * the location (e.g. a UTC host serving an `America/New_York` kitchen)
+ * it yields the wrong instant — one that `assertWeekStartAligned`
+ * rejects, leaving the dashboard's shift/schedule reads empty even
+ * though the data exists.
+ *
+ * @returns `{ weekStart, weekStartsOn, timezone }` for the active location
+ */
+export async function getCurrentWeekStart(): Promise<
+  ActionResponse<{ weekStart: Date; weekStartsOn: DayOfWeek; timezone: string }>
+> {
+  try {
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    const ctx = await getLocationContext(userId);
+
+    const [weekStartsOn, location] = await Promise.all([
+      KitchenConfigService.getWeekStartsOn(ctx.orgId, ctx.locationId),
+      LocationService.getById(ctx.locationId),
+    ]);
+    const timezone = location?.timezone ?? "UTC";
+    const weekStart = currentWeekStartInLocationTz(weekStartsOn, timezone);
+
+    return { success: true, data: { weekStart, weekStartsOn, timezone } };
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Failed to resolve current week";
     return { success: false, error: message };
   }
 }

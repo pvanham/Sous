@@ -5,20 +5,29 @@ import type { ScheduleStatus } from "../index";
 export const scheduleStatusSchema = z.enum(["DRAFT", "PUBLISHED"]);
 
 /**
- * The configured `weekStartsOn` is per-location, so the day-of-week
- * check moved to the service layer (`ScheduleService.getOrCreateForWeek`)
- * where we can read the live `KitchenConfig`. Here we only assert that
- * the supplied date is normalized to local midnight — a safety net
- * that prevents callers from accidentally storing mid-day timestamps
- * as a week boundary.
+ * The configured `weekStartsOn` AND the location's IANA timezone are
+ * per-location, so both the day-of-week and the exact-midnight checks
+ * live in the service layer (`assertWeekStartAligned`) where we can read
+ * the live `KitchenConfig` and `Location`. A week anchor is the UTC
+ * instant of midnight *in the location's timezone* (e.g. an
+ * `America/New_York` Monday is `04:00`/`05:00Z`, not `00:00Z`), so this
+ * schema must NOT assume the server's local midnight — doing so rejected
+ * every valid anchor whenever the server timezone differed from the
+ * location (e.g. a UTC host).
+ *
+ * Here we only keep a timezone-agnostic sanity net: the value must be a
+ * real instant landing on a minute boundary that a real IANA offset can
+ * produce (offsets are whole multiples of 15 minutes), which still
+ * blocks an accidental mid-day timestamp like `14:23:11` from being
+ * stored as a week boundary.
  */
 const weekStartDateSchema = z.coerce.date().refine(
   (date) =>
-    date.getHours() === 0 &&
-    date.getMinutes() === 0 &&
-    date.getSeconds() === 0 &&
-    date.getMilliseconds() === 0,
-  { message: "Week start date must be at midnight (00:00:00.000)" },
+    !Number.isNaN(date.getTime()) &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0 &&
+    date.getUTCMinutes() % 15 === 0,
+  { message: "Week start date must fall on a timezone midnight boundary" },
 );
 
 // Schema for creating/getting a schedule for a week
