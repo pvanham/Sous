@@ -13,6 +13,10 @@ import { useEffect, useRef } from "react";
 import { Appearance, View, ActivityIndicator, Linking } from "react-native";
 // eslint-disable-next-line import/no-duplicates
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -31,6 +35,7 @@ import {
   attachNotificationTapHandler,
   registerForPushNotifications,
 } from "@/lib/notifications";
+import { OfflineBanner } from "@/components/offline-banner";
 import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
 import { useSettingsPreferences } from "@/features/settings/preferences-store";
 import { fetchMembership } from "@/features/auth/api";
@@ -371,41 +376,49 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ClerkProvider tokenCache={tokenCache} publishableKey={clerkPublishableKey}>
-        <ClerkLoaded>
-          <QueryClientProvider client={queryClient}>
-            <ThemeProvider
-              value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-            >
-              <AuthGate>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="(auth)" />
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="(onboarding)" />
-                  <Stack.Screen name="invite" />
-                  <Stack.Screen
-                    name="profile"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="settings"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="announcements/index"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="announcements/[id]"
-                    options={{ presentation: "card" }}
-                  />
-                </Stack>
-              </AuthGate>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </QueryClientProvider>
-        </ClerkLoaded>
-      </ClerkProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <ClerkProvider
+          tokenCache={tokenCache}
+          publishableKey={clerkPublishableKey}
+        >
+          <ClerkLoaded>
+            <QueryClientProvider client={queryClient}>
+              <ThemeProvider
+                value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+              >
+                <AuthGate>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(auth)" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="(onboarding)" />
+                    <Stack.Screen name="invite" />
+                    <Stack.Screen
+                      name="profile"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="settings"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="announcements/index"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="announcements/[id]"
+                      options={{ presentation: "card" }}
+                    />
+                  </Stack>
+                </AuthGate>
+                {/* Global connectivity banner — rendered above the
+                    navigator so it overlays every screen. */}
+                <OfflineBanner />
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </QueryClientProvider>
+          </ClerkLoaded>
+        </ClerkProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
