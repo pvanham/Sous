@@ -11,6 +11,12 @@ export function MarketingFooter() {
           <Link href="/pricing" className="text-sm text-stone-500 hover:text-stone-900 dark:hover:text-stone-300">
             Pricing
           </Link>
+          <Link href="/privacy" className="text-sm text-stone-500 hover:text-stone-900 dark:hover:text-stone-300">
+            Privacy
+          </Link>
+          <Link href="/terms" className="text-sm text-stone-500 hover:text-stone-900 dark:hover:text-stone-300">
+            Terms
+          </Link>
         </div>
         <div className="mt-8 md:order-1 md:mt-0">
           <p className="text-center text-sm leading-5 text-stone-500">
