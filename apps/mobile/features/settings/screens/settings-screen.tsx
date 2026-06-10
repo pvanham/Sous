@@ -5,6 +5,7 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useUser, useClerk } from "@clerk/clerk-expo";
@@ -12,12 +13,20 @@ import { useMutation } from "@tanstack/react-query";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
+import * as WebBrowser from "expo-web-browser";
+import Constants from "expo-constants";
 
 import { StyledText } from "@/components/ui/text";
 import { useSignOut } from "@/features/auth/use-sign-out";
 import { useAuthStore } from "@/features/auth/store";
 import { useMyStaff } from "@/features/profile/hooks";
 import { useProfileImage } from "@/features/profile/use-profile-image";
+import {
+  PRIVACY_POLICY_URL,
+  SUPPORT_EMAIL,
+  SUPPORT_MAILTO,
+  TERMS_OF_SERVICE_URL,
+} from "@/lib/legal";
 import { deleteMyAccount } from "../api";
 import { useSettingsPreferences } from "../preferences-store";
 
@@ -84,6 +93,27 @@ export function SettingsScreen() {
     ]);
   }, [signOut]);
 
+  const openExternalUrl = useCallback(async (url: string) => {
+    try {
+      await WebBrowser.openBrowserAsync(url);
+    } catch {
+      // Fall back to the system handler if the in-app browser fails
+      // (e.g. on web, where expo-web-browser opens a new tab).
+      Linking.openURL(url).catch(() => {
+        Alert.alert("Couldn't open link", url);
+      });
+    }
+  }, []);
+
+  const handleContactSupport = useCallback(() => {
+    Linking.openURL(SUPPORT_MAILTO).catch(() => {
+      Alert.alert(
+        "Contact support",
+        `Email us at ${SUPPORT_EMAIL} and we'll be happy to help.`,
+      );
+    });
+  }, []);
+
   const handleDeleteAccount = useCallback(() => {
     Alert.alert(
       "Delete account",
@@ -126,6 +156,7 @@ export function SettingsScreen() {
   const isOwner = membership?.role === "owner";
   const hasStaffRow = staffQuery.data != null;
   const themeLabel = theme === "system" ? "System" : theme === "dark" ? "Dark" : "Light";
+  const appVersion = Constants.expoConfig?.version ?? "1.0.0";
 
   return (
     <View className="flex-1 bg-background" style={{ paddingTop: insets.top }}>
@@ -257,6 +288,30 @@ export function SettingsScreen() {
           />
         </Group>
 
+        <SectionHeader label="Legal & Support" />
+        <Group>
+          <LinkRow
+            label="Privacy Policy"
+            description="How we handle your data"
+            icon="privacy-tip"
+            onPress={() => void openExternalUrl(PRIVACY_POLICY_URL)}
+          />
+          <LinkRow
+            label="Terms of Service"
+            description="The terms you agree to"
+            icon="description"
+            onPress={() => void openExternalUrl(TERMS_OF_SERVICE_URL)}
+            divider
+          />
+          <LinkRow
+            label="Contact support"
+            description={SUPPORT_EMAIL}
+            icon="mail-outline"
+            onPress={handleContactSupport}
+            divider
+          />
+        </Group>
+
         <View className="border-t border-border mt-2 pt-4">
           <StyledText
             variant="caption"
@@ -312,6 +367,13 @@ export function SettingsScreen() {
             </Pressable>
           )}
         </View>
+
+        <StyledText
+          variant="caption"
+          className="text-center mt-6"
+        >
+          Sous v{appVersion}
+        </StyledText>
       </ScrollView>
     </View>
   );
