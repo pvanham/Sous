@@ -753,6 +753,11 @@ import type {
   QuietHoursPrefs,
 } from "./validations/notification.schema";
 
+import type {
+  WebNotificationCategory,
+  WebNotificationCategoriesPrefs,
+} from "./validations/web-notification.schema";
+
 export type {
   NotificationCategory,
   NotificationChannel,
@@ -770,6 +775,17 @@ export {
   registerDeviceTokenSchema,
   quietHoursSchema,
 } from "./validations/notification.schema";
+
+export type {
+  WebNotificationCategory,
+  WebNotificationCategoriesPrefs,
+  UpdateWebNotificationPreferencesInput,
+} from "./validations/web-notification.schema";
+
+export {
+  webNotificationCategoryValues,
+  updateWebNotificationPreferencesSchema,
+} from "./validations/web-notification.schema";
 
 /**
  * A user's notification preferences across all channels and
@@ -844,6 +860,49 @@ export function defaultNotificationPreferences(
     channels: { push: true, email: true },
     categories,
     quietHours: null,
+  };
+}
+
+/**
+ * Web manager/owner notification preferences. Stored once per Clerk
+ * user, **separately** from the mobile {@link NotificationPreferencesDTO}
+ * (different collection, different category set). Web only delivers
+ * email, so there is a single master `email` switch plus a per-category
+ * email toggle for the manager/owner-facing categories.
+ */
+export interface WebNotificationPreferencesDTO {
+  /** Clerk user id this row belongs to. */
+  clerkUserId: string;
+  /** Master web-email switch; `off` disables every web category email. */
+  email: boolean;
+  /** Per-category email toggle. Every web category key is always present. */
+  categories: WebNotificationCategoriesPrefs;
+  updatedAt: Date;
+}
+
+/**
+ * Default web preferences used the first time a manager opens the web
+ * notification settings page. Every web category opts in; users opt out
+ * from the dashboard settings screen.
+ */
+export function defaultWebNotificationPreferences(
+  clerkUserId: string,
+): Omit<WebNotificationPreferencesDTO, "updatedAt"> {
+  const categories = {} as WebNotificationCategoriesPrefs;
+  for (const cat of [
+    "time_off_submitted",
+    "exchange_pending_approval",
+    "manager_coverage_gap",
+    "skill_change_submitted",
+    "schedule_generation_async",
+    "billing_alerts",
+  ] as const satisfies readonly WebNotificationCategory[]) {
+    categories[cat] = true;
+  }
+  return {
+    clerkUserId,
+    email: true,
+    categories,
   };
 }
 

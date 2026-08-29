@@ -9,6 +9,9 @@ export type {
   QuietHoursPrefs,
   NotificationPreferencesDTO,
   DeviceTokenDTO,
+  WebNotificationCategory,
+  WebNotificationCategoriesPrefs,
+  WebNotificationPreferencesDTO,
 } from "@sous/types";
 
 import type {
@@ -16,6 +19,8 @@ import type {
   NotificationPreferencesDTO,
   DeviceTokenDTO,
   QuietHoursPrefs,
+  WebNotificationCategoriesPrefs,
+  WebNotificationPreferencesDTO,
 } from "@sous/types";
 
 // ── Server-coupled: Mongoose document interfaces ─────────────
@@ -79,6 +84,37 @@ export function toDeviceTokenDTO(
     lastSeenAt: doc.lastSeenAt,
     revokedAt: doc.revokedAt ?? null,
     createdAt: doc.createdAt,
+    updatedAt: doc.updatedAt,
+  };
+}
+
+// ── Web (manager / owner) notification preferences ───────────
+//
+// Stored separately from the mobile matrix above (own collection,
+// email-only, manager/owner-facing category subset). Same user-scoped
+// tenancy exception as `NotificationPreference` — keyed by Clerk user
+// id, no `orgId` / `locationId`.
+
+export interface IWebNotificationPreference {
+  clerkUserId: string;
+  email: boolean;
+  categories: WebNotificationCategoriesPrefs;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Convert a lean web preference document into the wire-safe DTO. The
+ * stored shape already matches the DTO; we just coerce the master
+ * switch and drop Mongoose internals.
+ */
+export function toWebNotificationPreferenceDTO(
+  doc: IWebNotificationPreference & { _id: unknown },
+): WebNotificationPreferencesDTO {
+  return {
+    clerkUserId: doc.clerkUserId,
+    email: Boolean(doc.email ?? true),
+    categories: doc.categories,
     updatedAt: doc.updatedAt,
   };
 }

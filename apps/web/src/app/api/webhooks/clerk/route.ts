@@ -7,6 +7,7 @@ import { OrganizationMemberService } from "@/server/services/organization-member
 import { StaffService } from "@/server/services/staff.service";
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
+import { WebNotificationPreferenceService } from "@/server/services/web-notification-preference.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
 
@@ -184,6 +185,7 @@ export async function POST(req: Request) {
             clerkUserIdsToClean.flatMap((id) => [
               DeviceTokenService.deleteAllByClerkUserId(id),
               NotificationPreferenceService.deleteAllByClerkUserId(id),
+              WebNotificationPreferenceService.deleteAllByClerkUserId(id),
             ]),
           );
 
@@ -198,6 +200,7 @@ export async function POST(req: Request) {
             StaffService.unlinkClerkUser(userId),
             DeviceTokenService.deleteAllByClerkUserId(userId),
             NotificationPreferenceService.deleteAllByClerkUserId(userId),
+            WebNotificationPreferenceService.deleteAllByClerkUserId(userId),
           ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
@@ -206,6 +209,7 @@ export async function POST(req: Request) {
           await Promise.all([
             DeviceTokenService.deleteAllByClerkUserId(userId),
             NotificationPreferenceService.deleteAllByClerkUserId(userId),
+            WebNotificationPreferenceService.deleteAllByClerkUserId(userId),
           ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted ${membership.role} membership ${membership.id}`);

@@ -1,5 +1,6 @@
 import NotificationPreference from "@/server/models/NotificationPreference";
 import {
+  type INotificationPreference,
   type NotificationPreferencesDTO,
   toNotificationPreferenceDTO,
 } from "@/types/notification";
@@ -23,13 +24,26 @@ import {
 export const NotificationPreferenceService = {
   /**
    * Look up a user's preferences, creating a default row on first
-   * access. Atomic via `findOneAndUpdate({ ..., upsert: true,
-   * returnDocument: "after" })` so two concurrent first reads can't race into two
-   * documents (the unique index on `clerkUserId` is the backstop).
+   * access.
+   *
+   * The common path is a plain `findOne`. Routing it through
+   * `findOneAndUpdate({ upsert: true })` instead would be a primary
+   * write on *every* read, because Mongoose's `timestamps: true` adds
+   * `$set: { updatedAt }` even when only the `$setOnInsert` branch
+   * applies — and the dispatcher calls this once per recipient of
+   * every notification. Only a genuine first access falls through to
+   * the upsert, which stays atomic so two concurrent first reads can't
+   * race into two documents (the unique index on `clerkUserId` is the
+   * backstop).
    */
   async getOrCreate(
     clerkUserId: string,
   ): Promise<NotificationPreferencesDTO> {
+    const existing = await NotificationPreference.findOne({
+      clerkUserId,
+    }).lean();
+    if (existing) return finalize(clerkUserId, existing);
+
     const seeded = defaultNotificationPreferences(clerkUserId);
     const doc = await NotificationPreference.findOneAndUpdate(
       { clerkUserId },
@@ -52,19 +66,7 @@ export const NotificationPreferenceService = {
       );
     }
 
-    // Backfill any newly-added category that's missing from an older
-    // document so callers always see every key (the default factory
-    // is the source of truth for the category list).
-    const backfilled = backfillCategories(doc.categories);
-    if (backfilled !== doc.categories) {
-      await NotificationPreference.updateOne(
-        { clerkUserId },
-        { $set: { categories: backfilled } },
-      );
-      doc.categories = backfilled;
-    }
-
-    return toNotificationPreferenceDTO(doc);
+    return finalize(clerkUserId, doc);
   },
 
   /**
@@ -136,6 +138,26 @@ export const NotificationPreferenceService = {
     return result.deletedCount;
   },
 };
+
+/**
+ * Shared tail for both `getOrCreate` paths: top up any category the
+ * stored document predates (the default factory is the source of truth
+ * for the category list), then map to the wire DTO.
+ */
+async function finalize(
+  clerkUserId: string,
+  doc: INotificationPreference & { _id: unknown },
+): Promise<NotificationPreferencesDTO> {
+  const backfilled = backfillCategories(doc.categories);
+  if (backfilled !== doc.categories) {
+    await NotificationPreference.updateOne(
+      { clerkUserId },
+      { $set: { categories: backfilled } },
+    );
+    doc.categories = backfilled;
+  }
+  return toNotificationPreferenceDTO(doc);
+}
 
 /**
  * Older preference rows may be missing a category that was added

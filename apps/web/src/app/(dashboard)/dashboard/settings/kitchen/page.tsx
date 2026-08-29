@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
-import { OrganizationMemberService } from "@/server/services/organization-member.service";
+import { getLocationContext } from "@/lib/auth/get-location-context";
+import { ensureRole } from "@/lib/auth/guards";
 import { KitchenConfigForm } from "../_components/KitchenConfigForm";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
@@ -17,9 +18,10 @@ export default async function KitchenSettingsPage() {
 
   let currentRole: MemberRole = "staff";
   if (userId) {
-    const membership =
-      await OrganizationMemberService.getFirstByUserId(userId);
-    if (membership) currentRole = membership.role;
+    const ctx = await getLocationContext(userId);
+    // The settings layout admits shift leads for the notifications page.
+    ensureRole(ctx, ["owner", "manager"]);
+    currentRole = ctx.role;
   }
 
   return (
