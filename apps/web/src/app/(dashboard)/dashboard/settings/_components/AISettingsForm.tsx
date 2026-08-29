@@ -56,8 +56,10 @@ export function AISettingsForm({ initialSettings }: AISettingsFormProps) {
       }
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast.success("AI settings saved successfully!");
+      // Re-point the form defaults at the saved values so isDirty clears.
+      form.reset(variables);
       queryClient.invalidateQueries({ queryKey: ["kitchenConfig"] });
     },
     onError: (error: Error) => {

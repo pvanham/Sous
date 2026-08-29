@@ -120,9 +120,11 @@ export function KitchenConfigForm({
     name: "roles" as never,
   });
 
-  // Reset form to original/default values
+  // Revert to the last saved values. A bare `reset()` uses the form's
+  // current defaults, which `onSuccess` re-points at the saved data —
+  // `initialConfig` is a server-component prop and goes stale after a save.
   const resetFormToOriginal = () => {
-    form.reset(defaultValues);
+    form.reset();
   };
 
   // Mutation for previewing changes

@@ -1,5 +1,6 @@
 import WebNotificationPreference from "@/server/models/WebNotificationPreference";
 import {
+  type IWebNotificationPreference,
   type WebNotificationPreferencesDTO,
   toWebNotificationPreferenceDTO,
 } from "@/types/notification";
@@ -23,13 +24,26 @@ import {
 export const WebNotificationPreferenceService = {
   /**
    * Look up a user's web preferences, creating a default row on first
-   * access. Atomic via `findOneAndUpdate({ ..., upsert: true })` so two
-   * concurrent first reads can't race into two documents (the unique
-   * index on `clerkUserId` is the backstop).
+   * access.
+   *
+   * The common path is a plain `findOne`. Routing it through
+   * `findOneAndUpdate({ upsert: true })` instead would be a primary
+   * write on *every* read, because Mongoose's `timestamps: true` adds
+   * `$set: { updatedAt }` even when only the `$setOnInsert` branch
+   * applies — which both costs a write per dispatcher recipient and
+   * destroys the meaning of `updatedAt`. Only a genuine first access
+   * falls through to the upsert, which stays atomic so two concurrent
+   * first reads can't race into two documents (the unique index on
+   * `clerkUserId` is the backstop).
    */
   async getOrCreate(
     clerkUserId: string,
   ): Promise<WebNotificationPreferencesDTO> {
+    const existing = await WebNotificationPreference.findOne({
+      clerkUserId,
+    }).lean();
+    if (existing) return finalize(clerkUserId, existing);
+
     const seeded = defaultWebNotificationPreferences(clerkUserId);
     const doc = await WebNotificationPreference.findOneAndUpdate(
       { clerkUserId },
@@ -49,18 +63,7 @@ export const WebNotificationPreferenceService = {
       );
     }
 
-    // Backfill any newly-added category that's missing from an older
-    // document so callers always see every key.
-    const backfilled = backfillCategories(doc.categories);
-    if (backfilled !== doc.categories) {
-      await WebNotificationPreference.updateOne(
-        { clerkUserId },
-        { $set: { categories: backfilled } },
-      );
-      doc.categories = backfilled;
-    }
-
-    return toWebNotificationPreferenceDTO(doc);
+    return finalize(clerkUserId, doc);
   },
 
   /**
@@ -116,6 +119,25 @@ export const WebNotificationPreferenceService = {
     return result.deletedCount;
   },
 };
+
+/**
+ * Shared tail for both `getOrCreate` paths: top up any category the
+ * stored document predates, then map to the wire DTO.
+ */
+async function finalize(
+  clerkUserId: string,
+  doc: IWebNotificationPreference & { _id: unknown },
+): Promise<WebNotificationPreferencesDTO> {
+  const backfilled = backfillCategories(doc.categories);
+  if (backfilled !== doc.categories) {
+    await WebNotificationPreference.updateOne(
+      { clerkUserId },
+      { $set: { categories: backfilled } },
+    );
+    doc.categories = backfilled;
+  }
+  return toWebNotificationPreferenceDTO(doc);
+}
 
 /**
  * Older preference rows may be missing a category that was added after

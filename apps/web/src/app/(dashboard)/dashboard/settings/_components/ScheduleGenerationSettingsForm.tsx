@@ -58,8 +58,11 @@ export function ScheduleGenerationSettingsForm({
     defaultValues: initialSettings ?? defaultValues,
   });
 
+  // Revert to the last saved values. A bare `reset()` uses the form's
+  // current defaults, which `onSuccess` re-points at the saved data —
+  // `initialSettings` is a server-component prop and goes stale after a save.
   const resetFormToOriginal = () => {
-    form.reset(initialSettings ?? defaultValues);
+    form.reset();
   };
 
   const allowClopening = form.watch("allowClopening");

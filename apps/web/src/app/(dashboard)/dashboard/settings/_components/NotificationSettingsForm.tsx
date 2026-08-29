@@ -1,7 +1,7 @@
 "use client";
 
 import { useForm } from "react-hook-form";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ import {
 import { updateWebNotificationPreferences } from "@/server/actions/notification-preference.actions";
 import {
   webNotificationCategoryValues,
+  type UpdateWebNotificationPreferencesInput,
   type WebNotificationCategory,
   type WebNotificationCategoriesPrefs,
 } from "@sous/types";
@@ -102,10 +103,9 @@ export function NotificationSettingsForm({
   initialPreferences,
   role,
 }: NotificationSettingsFormProps) {
-  const queryClient = useQueryClient();
-  const defaults = buildDefaults(initialPreferences);
-
-  const form = useForm<FormValues>({ defaultValues: defaults });
+  const form = useForm<FormValues>({
+    defaultValues: buildDefaults(initialPreferences),
+  });
 
   const masterEmail = form.watch("email");
 
@@ -114,8 +114,8 @@ export function NotificationSettingsForm({
   );
 
   const saveMutation = useMutation({
-    mutationFn: async (data: FormValues) => {
-      const result = await updateWebNotificationPreferences(data);
+    mutationFn: async (patch: UpdateWebNotificationPreferencesInput) => {
+      const result = await updateWebNotificationPreferences(patch);
       if (!result.success) {
         throw new Error(result.error);
       }
@@ -124,27 +124,27 @@ export function NotificationSettingsForm({
     onSuccess: (data) => {
       toast.success("Notification settings saved!");
       form.reset(buildDefaults(data));
-      queryClient.invalidateQueries({
-        queryKey: ["webNotificationPreferences"],
-      });
     },
     onError: (error: Error) => {
       toast.error(error.message ?? "Failed to save notification settings");
     },
   });
 
+  // Revert to the last saved values. A bare `reset()` uses the form's
+  // current defaults, which `onSuccess` re-points at the saved data —
+  // `initialPreferences` is a server-component prop and goes stale after a save.
   const resetFormToOriginal = () => {
-    form.reset(defaults);
+    form.reset();
   };
 
   const onSubmit = (data: FormValues) => {
     // Only persist toggles the user can actually see/control; this keeps
     // a manager from ever flipping owner-only categories like billing.
-    const categories = {} as Partial<WebNotificationCategoriesPrefs>;
+    const categories: Partial<WebNotificationCategoriesPrefs> = {};
     for (const meta of visibleCategories) {
       categories[meta.key] = data.categories[meta.key];
     }
-    saveMutation.mutate({ email: data.email, categories } as FormValues);
+    saveMutation.mutate({ email: data.email, categories });
   };
 
   return (
