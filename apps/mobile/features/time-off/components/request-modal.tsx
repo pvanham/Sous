@@ -6,6 +6,7 @@ import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { IconSymbol } from "@/components/ui/icon-symbol";
+import { toIsoCalendarDate } from "@/lib/date";
 import type { TimeOffRequestType, CreateTimeOffRequestInput } from "@/types";
 
 interface RequestModalProps {
@@ -39,9 +40,12 @@ export function RequestModal({
   const [activePicker, setActivePicker] = useState<"start" | "end" | null>(null);
 
   const handleSubmit = () => {
+    // Send calendar days rather than the picker's local-midnight Date, so
+    // the server stores the day the user picked instead of whatever
+    // instant that happened to be in the device's timezone.
     onSubmit({
-      startDate,
-      endDate: endDate < startDate ? startDate : endDate,
+      startDate: toIsoCalendarDate(startDate),
+      endDate: toIsoCalendarDate(endDate < startDate ? startDate : endDate),
       type: requestType,
       reason: reason.trim() || undefined,
     });

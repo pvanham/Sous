@@ -5,8 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format } from "date-fns";
+import { formatCalendarDate } from "@sous/types/utils/calendar-date";
 import { toast } from "sonner";
-import { Check, Loader2, Plus, Trash2, X } from "lucide-react";
+import { Check, Loader2, Plus, RotateCcw, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -62,6 +63,7 @@ import {
   createTimeOffRequest,
   deleteTimeOffRequest,
   getTimeOffRequestsByStaff,
+  resetTimeOffRequestToPending,
   updateTimeOffRequestStatus,
 } from "@/server/actions/time-off-request.actions";
 import type {
@@ -97,9 +99,28 @@ interface StaffTimeOffPanelProps {
   minAdvanceDays: number;
 }
 
-const timeOffKeys = {
+export const timeOffKeys = {
   byStaff: (staffId: string) => ["timeOffRequests", "staff", staffId] as const,
 };
+
+/**
+ * Shared by this panel and the page header, which needs the same list to
+ * count pending requests for its tab badge. One cache entry, one fetch.
+ */
+export function useStaffTimeOffRequests(
+  staffId: string,
+  initialRequests: TimeOffRequestDTO[],
+) {
+  return useQuery({
+    queryKey: timeOffKeys.byStaff(staffId),
+    queryFn: async () => {
+      const result = await getTimeOffRequestsByStaff({ staffId });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    initialData: initialRequests,
+  });
+}
 
 export function StaffTimeOffPanel({
   staffId,
@@ -117,19 +138,17 @@ export function StaffTimeOffPanel({
   const [deleteRequest, setDeleteRequest] = useState<TimeOffRequestDTO | null>(
     null,
   );
+  const [resetRequest, setResetRequest] = useState<TimeOffRequestDTO | null>(
+    null,
+  );
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: timeOffKeys.byStaff(staffId) });
 
-  const { data: requests = initialRequests, isLoading } = useQuery({
-    queryKey: timeOffKeys.byStaff(staffId),
-    queryFn: async () => {
-      const result = await getTimeOffRequestsByStaff({ staffId });
-      if (!result.success) throw new Error(result.error);
-      return result.data;
-    },
-    initialData: initialRequests,
-  });
+  const { data: requests, isLoading } = useStaffTimeOffRequests(
+    staffId,
+    initialRequests,
+  );
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -141,6 +160,20 @@ export function StaffTimeOffPanel({
       toast.success("Time-off request deleted");
       invalidate();
       setDeleteRequest(null);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const resetMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const result = await resetTimeOffRequestToPending({ requestId });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: () => {
+      toast.success("Time-off request returned to pending");
+      invalidate();
+      setResetRequest(null);
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -212,11 +245,9 @@ export function StaffTimeOffPanel({
                 {filtered.map((request) => (
                   <TableRow key={request.id}>
                     <TableCell>
-                      {format(new Date(request.startDate), "MMM d, yyyy")}
+                      {formatCalendarDate(request.startDate)}
                     </TableCell>
-                    <TableCell>
-                      {format(new Date(request.endDate), "MMM d, yyyy")}
-                    </TableCell>
+                    <TableCell>{formatCalendarDate(request.endDate)}</TableCell>
                     <TableCell>
                       <Badge variant="secondary">
                         {TYPE_LABELS[request.type] ?? "PTO"}
@@ -242,7 +273,7 @@ export function StaffTimeOffPanel({
                         >
                           {request.status === "pending" ? "Review" : "View"}
                         </Button>
-                        {request.status === "pending" && (
+                        {request.status === "pending" ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -251,6 +282,15 @@ export function StaffTimeOffPanel({
                             onClick={() => setDeleteRequest(request)}
                           >
                             <Trash2 className="h-4 w-4" />
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title="Return to pending"
+                            onClick={() => setResetRequest(request)}
+                          >
+                            <RotateCcw className="h-4 w-4" />
                           </Button>
                         )}
                       </div>
@@ -309,6 +349,41 @@ export function StaffTimeOffPanel({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!resetRequest}
+        onOpenChange={(open) => {
+          if (!open) setResetRequest(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Return request to pending</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears the recorded decision and puts the request back in
+              the review queue, where it can be reviewed again or deleted. The
+              staff member is not notified.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (resetRequest) resetMutation.mutate(resetRequest.id);
+              }}
+              disabled={resetMutation.isPending}
+            >
+              {resetMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Return to pending
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -577,13 +652,13 @@ function ReviewStaffTimeOffDialog({
             <div>
               <span className="text-muted-foreground">Start date</span>
               <p className="font-medium">
-                {format(new Date(request.startDate), "MMM d, yyyy")}
+                {formatCalendarDate(request.startDate)}
               </p>
             </div>
             <div>
               <span className="text-muted-foreground">End date</span>
               <p className="font-medium">
-                {format(new Date(request.endDate), "MMM d, yyyy")}
+                {formatCalendarDate(request.endDate)}
               </p>
             </div>
           </div>

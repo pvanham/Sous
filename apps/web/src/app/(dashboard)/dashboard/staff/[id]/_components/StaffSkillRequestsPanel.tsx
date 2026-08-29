@@ -32,20 +32,20 @@ interface StaffSkillRequestsPanelProps {
   initialRequests: SkillChangeRequestDTO[];
 }
 
-const skillKeys = {
+export const skillKeys = {
   byStaff: (staffId: string) =>
     ["skillChangeRequests", "staff", staffId, "pending"] as const,
 };
 
-export function StaffSkillRequestsPanel({
-  staffId,
-  staffName,
-  initialRequests,
-}: StaffSkillRequestsPanelProps) {
-  const queryClient = useQueryClient();
-  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
-
-  const { data: requests = initialRequests } = useQuery({
+/**
+ * Shared by this panel and the page header, which needs the same list to
+ * count pending requests for its tab badge. One cache entry, one fetch.
+ */
+export function useStaffSkillChangeRequests(
+  staffId: string,
+  initialRequests: SkillChangeRequestDTO[],
+) {
+  return useQuery({
     queryKey: skillKeys.byStaff(staffId),
     queryFn: async () => {
       const result = await listSkillChangeRequests({
@@ -57,6 +57,20 @@ export function StaffSkillRequestsPanel({
     },
     initialData: initialRequests,
   });
+}
+
+export function StaffSkillRequestsPanel({
+  staffId,
+  staffName,
+  initialRequests,
+}: StaffSkillRequestsPanelProps) {
+  const queryClient = useQueryClient();
+  const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
+
+  const { data: requests } = useStaffSkillChangeRequests(
+    staffId,
+    initialRequests,
+  );
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["skillChangeRequests"] });

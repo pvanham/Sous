@@ -10,6 +10,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import { format } from "date-fns";
+import { formatCalendarDate } from "@sous/types/utils/calendar-date";
 import { toast } from "sonner";
 import { Plus, Trash2, Eye, Loader2 } from "lucide-react";
 
@@ -160,11 +161,11 @@ export function TimeOffRequestTable({
       }),
       columnHelper.accessor("startDate", {
         header: "Start Date",
-        cell: (info) => format(new Date(info.getValue()), "MMM d, yyyy"),
+        cell: (info) => formatCalendarDate(info.getValue()),
       }),
       columnHelper.accessor("endDate", {
         header: "End Date",
-        cell: (info) => format(new Date(info.getValue()), "MMM d, yyyy"),
+        cell: (info) => formatCalendarDate(info.getValue()),
       }),
       columnHelper.accessor("reason", {
         header: "Reason",

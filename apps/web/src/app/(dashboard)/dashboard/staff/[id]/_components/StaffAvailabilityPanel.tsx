@@ -178,7 +178,9 @@ export function StaffAvailabilityPanel({
   const [days, setDays] = useState<Map<number, DayState>>(() =>
     buildDayStates(initialAvailability),
   );
-  const [initialDays] = useState<Map<number, DayState>>(() =>
+  // The saved baseline that "Unsaved changes" and "Discard Changes" are
+  // measured against. It advances on every successful save.
+  const [initialDays, setInitialDays] = useState<Map<number, DayState>>(() =>
     buildDayStates(initialAvailability),
   );
 
@@ -285,7 +287,12 @@ export function StaffAvailabilityPanel({
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      // Re-seed from what the server actually persisted rather than from
+      // local state, so the baseline reflects any normalization it did.
+      const persisted = buildDayStates(saved);
+      setDays(persisted);
+      setInitialDays(persisted);
       toast.success("Availability saved");
       queryClient.invalidateQueries({
         queryKey: availabilityKeys.byStaff(staffId),
@@ -296,8 +303,8 @@ export function StaffAvailabilityPanel({
   });
 
   const handleReset = useCallback(() => {
-    setDays(buildDayStates(initialAvailability));
-  }, [initialAvailability]);
+    setDays(new Map(initialDays));
+  }, [initialDays]);
 
   return (
     <Card>

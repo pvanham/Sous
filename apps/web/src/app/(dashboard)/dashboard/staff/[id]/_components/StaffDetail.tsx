@@ -54,8 +54,14 @@ import type { SkillChangeRequestDTO } from "@/types/skill-change-request";
 
 import { StaffProfilePanel } from "./StaffProfilePanel";
 import { StaffAvailabilityPanel } from "./StaffAvailabilityPanel";
-import { StaffTimeOffPanel } from "./StaffTimeOffPanel";
-import { StaffSkillRequestsPanel } from "./StaffSkillRequestsPanel";
+import {
+  StaffTimeOffPanel,
+  useStaffTimeOffRequests,
+} from "./StaffTimeOffPanel";
+import {
+  StaffSkillRequestsPanel,
+  useStaffSkillChangeRequests,
+} from "./StaffSkillRequestsPanel";
 
 type StaffTab = "profile" | "availability" | "time-off" | "skills";
 
@@ -74,6 +80,10 @@ interface StaffDetailProps {
   roles: string[];
   stations: string[];
   minTimeOffAdvanceDays: number;
+}
+
+function isStaffTab(value: string): value is StaffTab {
+  return VALID_TABS.includes(value as StaffTab);
 }
 
 function getInitials(name: string): string {
@@ -96,10 +106,13 @@ export function StaffDetail({
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
-  const requestedTab = searchParams.get("tab");
-  const activeTab: StaffTab = VALID_TABS.includes(requestedTab as StaffTab)
-    ? (requestedTab as StaffTab)
-    : "profile";
+  // Seeded from the URL once so deep links land on the right tab; from
+  // then on the tab is local state and the URL follows it (see
+  // handleTabChange), never the other way round.
+  const [activeTab, setActiveTab] = useState<StaffTab>(() => {
+    const requested = searchParams.get("tab");
+    return requested && isStaffTab(requested) ? requested : "profile";
+  });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -117,14 +130,18 @@ export function StaffDetail({
     initialData: initialStaff,
   });
 
-  const handleTabChange = useCallback(
-    (value: string) => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("tab", value);
-      router.replace(`?${params.toString()}`, { scroll: false });
-    },
-    [router, searchParams],
-  );
+  // `router.replace` would soft-navigate and re-run the Server Component,
+  // re-fetching every panel's data just to move a tab. The page does not
+  // read `tab` on the server, so the native History API is enough — and
+  // the App Router still keeps `useSearchParams` consumers (the AI
+  // assistant's viewport context) in sync.
+  const handleTabChange = useCallback((value: string) => {
+    if (!isStaffTab(value)) return;
+    setActiveTab(value);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", value);
+    window.history.replaceState(null, "", `?${params.toString()}`);
+  }, []);
 
   const toggleActiveMutation = useMutation({
     mutationFn: async () => {
@@ -176,16 +193,25 @@ export function StaffDetail({
   const canResend =
     !staff.clerkUserId && staff.invitationStatus === "pending";
 
+  // The badges read the same cache entries the panels do, so reviewing a
+  // request inside a panel moves its badge without a server round trip.
+  const { data: timeOffRequests } = useStaffTimeOffRequests(
+    staff.id,
+    initialTimeOffRequests,
+  );
+  const { data: skillChangeRequests } = useStaffSkillChangeRequests(
+    staff.id,
+    initialSkillChangeRequests,
+  );
+
   const pendingSkillCount = useMemo(
-    () =>
-      initialSkillChangeRequests.filter((r) => r.status === "pending").length,
-    [initialSkillChangeRequests],
+    () => skillChangeRequests.filter((r) => r.status === "pending").length,
+    [skillChangeRequests],
   );
 
   const pendingTimeOffCount = useMemo(
-    () =>
-      initialTimeOffRequests.filter((r) => r.status === "pending").length,
-    [initialTimeOffRequests],
+    () => timeOffRequests.filter((r) => r.status === "pending").length,
+    [timeOffRequests],
   );
 
   return (
@@ -285,22 +311,14 @@ export function StaffDetail({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    handleTabChange("profile");
-                  }}
-                >
+                <DropdownMenuItem onSelect={() => handleTabChange("profile")}>
                   <UserCog className="h-4 w-4" />
                   Edit profile
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-destructive focus:text-destructive"
-                  onSelect={(e) => {
-                    e.preventDefault();
-                    setDeleteOpen(true);
-                  }}
+                  onSelect={() => setDeleteOpen(true)}
                 >
                   <Trash2 className="h-4 w-4" />
                   Delete staff member

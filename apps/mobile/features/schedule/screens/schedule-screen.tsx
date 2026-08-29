@@ -8,6 +8,10 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-expo";
 import type { ShiftDTO, TimeOffRequestDTO } from "@sous/types";
+import {
+  toCalendarDateString,
+  toCalendarDateUTC,
+} from "@sous/types/utils/calendar-date";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { useWeekStartsOn } from "@/features/auth/store";
@@ -119,22 +123,24 @@ export function ScheduleScreen() {
 
   // Index time-off requests by each calendar day they touch so the
   // DayRow can decide its overlay without doing the overlap math
-  // itself.
+  // itself. Request boundaries are canonical calendar dates stored at
+  // UTC midnight, so the walk advances in UTC; the resulting keys are
+  // plain calendar days and line up with the week grid's own keys.
   const timeOffByDay = useMemo(() => {
     const map = new Map<string, TimeOffRequestDTO[]>();
     for (const request of timeOffQuery.data ?? []) {
-      const start = startOfDay(new Date(request.startDate));
-      const end = startOfDay(new Date(request.endDate));
-      const cursor = new Date(start);
-      while (cursor.getTime() <= end.getTime()) {
-        const iso = toIsoDate(cursor);
+      const cursor = toCalendarDateUTC(request.startDate);
+      const lastIso = toCalendarDateString(request.endDate);
+      let iso = toCalendarDateString(cursor);
+      while (iso <= lastIso) {
         const bucket = map.get(iso);
         if (bucket) {
           bucket.push(request);
         } else {
           map.set(iso, [request]);
         }
-        cursor.setDate(cursor.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
+        iso = toCalendarDateString(cursor);
       }
     }
     return map;

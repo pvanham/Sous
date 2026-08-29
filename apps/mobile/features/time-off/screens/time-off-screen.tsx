@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@clerk/clerk-expo";
 import { isAxiosError } from "axios";
 import type { TimeOffRequestDTO, TimeOffRequestStatus } from "@sous/types";
+import { formatCalendarRange } from "@sous/types/utils/calendar-date";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { RequestModal } from "../components/request-modal";
@@ -196,15 +197,7 @@ function CounterCard({
 
 function RequestCard({ request }: { request: TimeOffRequestDTO }) {
   const config = STATUS_CONFIG[request.status];
-  const startDate = new Date(request.startDate);
-  const endDate = new Date(request.endDate);
-
-  const isSingleDay =
-    startDate.toDateString() === endDate.toDateString();
-
-  const dateLabel = isSingleDay
-    ? formatDate(startDate)
-    : `${formatDate(startDate)} – ${formatDate(endDate)}`;
+  const dateLabel = formatCalendarRange(request.startDate, request.endDate);
 
   return (
     <View className="bg-card border border-border rounded-md p-4">
@@ -225,11 +218,4 @@ function RequestCard({ request }: { request: TimeOffRequestDTO }) {
       </View>
     </View>
   );
-}
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
 }

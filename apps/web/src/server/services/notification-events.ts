@@ -4,6 +4,7 @@ import { NotificationService } from "@/server/services/notification.service";
 import { NotificationEmail } from "@/lib/email/templates/NotificationEmail";
 import { AnnouncementEmail } from "@/lib/email/templates/AnnouncementEmail";
 import { tiptapBodyToPlainText } from "@/lib/announcement/composer-defaults";
+import { formatCalendarRange } from "@sous/types/utils/calendar-date";
 import type {
   AnnouncementDTO,
   ExchangeShiftDTO,
@@ -236,7 +237,7 @@ export const NotificationEvents = {
     locationId: string;
   }): Promise<void> {
     const title = `Time-off request from ${staffName}`;
-    const body = `${formatRange(request.startDate, request.endDate)} • ${request.type}`;
+    const body = `${formatCalendarRange(request.startDate, request.endDate)} • ${request.type}`;
     return NotificationService.notify({
       recipients: { managersOf: { orgId, locationId } },
       category: "time_off_submitted",
@@ -256,7 +257,7 @@ export const NotificationEvents = {
             preview: body,
             heading: title,
             paragraphs: [
-              `${staffName} submitted a time-off request for ${formatRange(request.startDate, request.endDate)}.`,
+              `${staffName} submitted a time-off request for ${formatCalendarRange(request.startDate, request.endDate)}.`,
               request.reason
                 ? `Reason: "${request.reason}"`
                 : "No reason provided.",
@@ -286,7 +287,7 @@ export const NotificationEvents = {
           ? "denied"
           : null;
     if (!decision) return Promise.resolve();
-    const range = formatRange(request.startDate, request.endDate);
+    const range = formatCalendarRange(request.startDate, request.endDate);
     const title = `Time-off ${decision}`;
     const body = `${range}`;
     return NotificationService.notify({
@@ -672,14 +673,3 @@ export const NotificationEvents = {
     });
   },
 };
-
-function formatRange(start: Date, end: Date): string {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-  if (start.toDateString() === end.toDateString()) {
-    return fmt.format(start);
-  }
-  return `${fmt.format(start)} – ${fmt.format(end)}`;
-}

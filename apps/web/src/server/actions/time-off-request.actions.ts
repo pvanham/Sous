@@ -1,11 +1,13 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { auth } from "@clerk/nextjs/server";
 import { addDays, startOfDay } from "date-fns";
 import { z } from "zod";
 import {
   createTimeOffRequestSchema,
   updateTimeOffStatusSchema,
+  resetTimeOffStatusSchema,
   timeOffByStaffSchema,
   timeOffByDateRangeSchema,
   approvedTimeOffQuerySchema,
@@ -123,6 +125,7 @@ export async function createTimeOffRequest(
       locationId: ctx.locationId,
     });
 
+    revalidatePath("/dashboard/staff");
     return { success: true, data: result };
   } catch (error) {
     console.error("createTimeOffRequest error:", error);
@@ -267,6 +270,7 @@ export async function updateTimeOffRequestStatus(
       });
     }
 
+    revalidatePath("/dashboard/staff");
     return { success: true, data: result };
   } catch (error) {
     console.error("updateTimeOffRequestStatus error:", error);
@@ -276,6 +280,59 @@ export async function updateTimeOffRequestStatus(
         error instanceof Error
           ? error.message
           : "Failed to update time-off request status",
+    };
+  }
+}
+
+/**
+ * Return a reviewed time-off request to the pending queue, undoing a
+ * mistaken approval or denial. Clears the review stamps and, because
+ * deletion is restricted to pending requests, is also the way a bad
+ * request gets removed.
+ *
+ * No notification fires: the staff member already heard the decision,
+ * and the manager is expected to re-review immediately.
+ *
+ * @param input - Object with requestId
+ */
+export async function resetTimeOffRequestToPending(
+  input: unknown
+): Promise<ActionResponse<TimeOffRequestDTO>> {
+  const { userId } = await auth();
+  if (!userId) {
+    return { success: false, error: "Unauthorized" };
+  }
+
+  const parsed = resetTimeOffStatusSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Invalid input",
+    };
+  }
+
+  try {
+    const ctx = await getLocationContext(userId);
+    const result = await TimeOffRequestService.resetToPending(
+      ctx.orgId,
+      ctx.locationId,
+      parsed.data.requestId
+    );
+
+    if (!result) {
+      return { success: false, error: "Time-off request not found" };
+    }
+
+    revalidatePath("/dashboard/staff");
+    return { success: true, data: result };
+  } catch (error) {
+    console.error("resetTimeOffRequestToPending error:", error);
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to reset time-off request",
     };
   }
 }
@@ -416,6 +473,7 @@ export async function deleteTimeOffRequest(
           "Time-off request not found or cannot be deleted (only pending requests can be deleted)",
       };
     }
+    revalidatePath("/dashboard/staff");
     return { success: true, data: true };
   } catch (error) {
     console.error("deleteTimeOffRequest error:", error);
