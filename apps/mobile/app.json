@@ -10,9 +10,13 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sous.mobile",
-      "associatedDomains": ["applinks:localhost:3000"],
+      "associatedDomains": [
+        "applinks:localhost:3000"
+      ],
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSPhotoLibraryUsageDescription": "Sous needs access to your photos so you can choose a profile picture.",
+        "NSCameraUsageDescription": "Sous needs access to your camera so you can take a new profile picture."
       }
     },
     "android": {
@@ -35,7 +39,10 @@
               "pathPrefix": "/invite"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },
@@ -61,7 +68,9 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Sous needs access to your photos so you can choose a profile picture."
+          "photosPermission": "Sous needs access to your photos so you can choose a profile picture.",
+          "cameraPermission": "Sous needs access to your camera so you can take a new profile picture.",
+          "microphonePermission": false
         }
       ],
       "@react-native-community/datetimepicker",
@@ -73,6 +82,18 @@
           "icon": "./assets/images/android-icon-monochrome.png",
           "color": "#1c1917",
           "defaultChannel": "default"
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36
+          },
+          "ios": {
+            "deploymentTarget": "15.1"
+          }
         }
       ]
     ],

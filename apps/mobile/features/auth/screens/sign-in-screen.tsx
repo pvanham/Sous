@@ -10,10 +10,12 @@ import { useSignIn, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import type { EmailCodeFactor, SignInResource } from "@clerk/types";
 import { useRouter } from "expo-router";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import * as WebBrowser from "expo-web-browser";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { Button } from "@/components/ui/button";
 import { StyledText } from "@/components/ui/text";
 import { useAuthStore } from "@/features/auth/store";
+import { PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from "@/lib/legal";
 
 const PLACEHOLDER_COLOR = "#a8a29e";
 const ICON_COLOR = "#78716c";
@@ -175,6 +177,12 @@ export function SignInScreen() {
   const goToForgotPassword = useCallback(() => {
     router.push("/(auth)/forgot-password");
   }, [router]);
+
+  const openLegalUrl = useCallback((url: string) => {
+    void WebBrowser.openBrowserAsync(url).catch(() => {
+      /* best-effort: the in-app browser may be unavailable */
+    });
+  }, []);
 
   return (
     <ScreenWrapper>
@@ -365,6 +373,34 @@ export function SignInScreen() {
           New staff member? Check your email for an invitation link to create
           your account.
         </StyledText>
+
+        <View className="flex-row items-center justify-center gap-2 mt-4">
+          <Pressable
+            onPress={() => openLegalUrl(PRIVACY_POLICY_URL)}
+            hitSlop={6}
+            accessibilityRole="link"
+            accessibilityLabel="Privacy Policy"
+            className="active:opacity-60"
+          >
+            <StyledText variant="caption" className="text-muted-foreground text-xs">
+              Privacy Policy
+            </StyledText>
+          </Pressable>
+          <StyledText variant="caption" className="text-muted-foreground text-xs">
+            &middot;
+          </StyledText>
+          <Pressable
+            onPress={() => openLegalUrl(TERMS_OF_SERVICE_URL)}
+            hitSlop={6}
+            accessibilityRole="link"
+            accessibilityLabel="Terms of Service"
+            className="active:opacity-60"
+          >
+            <StyledText variant="caption" className="text-muted-foreground text-xs">
+              Terms of Service
+            </StyledText>
+          </Pressable>
+        </View>
       </KeyboardAvoidingView>
     </ScreenWrapper>
   );

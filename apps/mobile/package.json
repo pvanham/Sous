@@ -33,6 +33,7 @@
     "axios": "^1.15.0",
     "expo": "~55.0.20",
     "expo-auth-session": "~55.0.15",
+    "expo-build-properties": "~55.0.14",
     "expo-constants": "~55.0.15",
     "expo-crypto": "~55.0.14",
     "expo-dev-client": "~55.0.32",
