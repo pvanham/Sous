@@ -305,8 +305,42 @@ export const TimeOffRequestService = {
   },
 
   /**
+   * Return a reviewed request to the pending queue, undoing a mistaken
+   * approval or denial. Deliberately not routed through `updateStatus`,
+   * which stamps `reviewedAt` / `reviewedBy` — a request that is pending
+   * again has, by definition, not been reviewed.
+   *
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param requestId - TimeOffRequest document ID
+   * @returns Updated TimeOffRequestDTO, or null if not found
+   */
+  async resetToPending(
+    orgId: string,
+    locationId: string,
+    requestId: string
+  ): Promise<TimeOffRequestDTO | null> {
+    const doc = await TimeOffRequest.findOneAndUpdate(
+      {
+        _id: requestId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      {
+        $set: { status: "pending" },
+        $unset: { reviewedAt: "", reviewedBy: "" },
+      },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toTimeOffRequestDTO(doc);
+  },
+
+  /**
    * Delete a time-off request. Only allows deletion of pending requests
-   * to preserve audit trails for approved/denied requests.
+   * to preserve audit trails for approved/denied requests. A reviewed
+   * request can be walked back with `resetToPending` first.
    *
    * @param orgId - Organization ID (ownership check)
    * @param locationId - Location ID (ownership check)

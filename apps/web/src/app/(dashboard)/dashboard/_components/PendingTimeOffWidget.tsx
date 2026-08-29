@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { format } from "date-fns";
+import { formatCalendarRange } from "@sous/types/utils/calendar-date";
 import { ArrowRight, CalendarOff, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,18 +20,6 @@ const TYPE_LABEL: Record<TimeOffRequestType, string> = {
   sick: "Sick",
   unpaid: "Unpaid",
 };
-
-function formatRange(start: Date, end: Date): string {
-  const startDate = new Date(start);
-  const endDate = new Date(end);
-  if (format(startDate, "yyyy-MM-dd") === format(endDate, "yyyy-MM-dd")) {
-    return format(startDate, "MMM d");
-  }
-  if (format(startDate, "MMM yyyy") === format(endDate, "MMM yyyy")) {
-    return `${format(startDate, "MMM d")}–${format(endDate, "d")}`;
-  }
-  return `${format(startDate, "MMM d")} – ${format(endDate, "MMM d")}`;
-}
 
 export function PendingTimeOffWidget({ requests, staff }: PendingTimeOffWidgetProps) {
   const staffMap = useMemo(() => {
@@ -89,7 +77,7 @@ export function PendingTimeOffWidget({ requests, staff }: PendingTimeOffWidgetPr
                       {staffMember?.name ?? "Unknown"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatRange(request.startDate, request.endDate)}
+                      {formatCalendarRange(request.startDate, request.endDate)}
                     </p>
                   </div>
                   <Badge

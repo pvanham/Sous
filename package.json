@@ -31,7 +31,7 @@
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",
     "expo-router": "55.0.13",
-    "postcss": "^8.5.13",
+    "postcss": "^8.5.15",
     "react": "19.2.5",
     "react-dom": "19.2.5"
   },
@@ -40,6 +40,7 @@
     "turbo": "^2.5.0"
   },
   "//overrides": "react/react-dom/scheduler are pinned so the entire dependency tree — including transitive peer auto-installs — collapses to a single version. React Native 0.83.6 (Expo SDK 55) supports React 19.2.x and ships scheduler 0.27.0, so bump these pins only alongside @sous/mobile's expo/react-native versions.",
+  "//security-overrides": "js-yaml/postcss/form-data/ws/uuid are forced to patched versions to clear known advisories without the breaking major bumps `npm audit fix --force` would apply (audit goes from 49 to 0). js-yaml 4.2.0 clears the react-native/expo/react-navigation cascade (load-nyc-config only uses .load(), present in v4); ws 8.21.0 clears the viem/clerk chain plus metro dev tooling; the rest are straightforward patch bumps. The expo/expo-font/@expo/metro-config/react-native-reanimated pins are NOT security fixes: they hold the tree on the Expo SDK 55 line, because several SDK packages declare loose peer ranges (expo:*, @expo/metro-config:>=54, expo-font:>=14) that otherwise let a clean re-resolve pull SDK 56 into the hoisted root next to the app's SDK 55 copy. reanimated is pinned to 4.2.1 to stay compatible with the worklets 0.7.4 peer. Bump these alongside @sous/mobile's expo/react-native versions.",
   "overrides": {
     "csstype": "3.2.3",
     "react": "$react",
@@ -56,6 +57,15 @@
     "expo-linking": "~55.0.14",
     "expo-secure-store": "~55.0.13",
     "expo-web-browser": "~55.0.14",
-    "lightningcss": "1.30.1"
+    "lightningcss": "1.30.1",
+    "expo": "~55.0.20",
+    "expo-font": "~55.0.6",
+    "@expo/metro-config": "~55.0.23",
+    "js-yaml": "^4.2.0",
+    "postcss": "$postcss",
+    "form-data": "^4.0.6",
+    "ws": "^8.21.0",
+    "uuid": "^11.1.1",
+    "react-native-reanimated": "4.2.1"
   }
 }

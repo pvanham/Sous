@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
+import { formatCalendarDate } from "@sous/types/utils/calendar-date";
 import { toast } from "sonner";
 import { Loader2, Check, X } from "lucide-react";
 
@@ -147,13 +148,13 @@ export function TimeOffRequestReviewDialog({
             <div>
               <span className="text-muted-foreground">Start Date</span>
               <p className="font-medium">
-                {format(new Date(request.startDate), "MMM d, yyyy")}
+                {formatCalendarDate(request.startDate)}
               </p>
             </div>
             <div>
               <span className="text-muted-foreground">End Date</span>
               <p className="font-medium">
-                {format(new Date(request.endDate), "MMM d, yyyy")}
+                {formatCalendarDate(request.endDate)}
               </p>
             </div>
           </div>

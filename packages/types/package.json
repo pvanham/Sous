@@ -7,7 +7,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./validations/*": "./src/validations/*"
+    "./validations/*": "./src/validations/*",
+    "./utils/*": "./src/utils/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

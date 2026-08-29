@@ -24,8 +24,9 @@ import type { CreateTimeOffRequestInput } from "@/types";
 //
 //   POST /time-off
 //     • Auth: Clerk JWT.
-//     • Body: { startDate, endDate, type, reason? } — staffId is
-//       resolved server-side, NOT sent by the client.
+//     • Body: { startDate, endDate, type, reason? } — dates are
+//       `YYYY-MM-DD` calendar days; staffId is resolved server-side,
+//       NOT sent by the client.
 //     • Server enforces `KitchenConfig.minTimeOffAdvanceDays` (the
 //       same rule the web `createTimeOffRequest` action applies).
 //     • 200 → TimeOffRequestDTO (status="pending")
@@ -76,11 +77,12 @@ export async function fetchTimeOffForWeek(
 }
 
 /**
- * Submit a new time-off request as the calling user. Sends the form
- * payload as JSON; Axios serialises `Date` fields as ISO strings and
- * the route handler re-parses them via `z.coerce.date()`. Returns the
- * created request (with `status="pending"`) so the screen can
- * optimistically update the list before the next refetch.
+ * Submit a new time-off request as the calling user. `startDate` and
+ * `endDate` travel as `YYYY-MM-DD` calendar days, not instants — sending
+ * the picker's local-midnight `Date` would store a different instant
+ * than the web dashboard does for the same day. Returns the created
+ * request (with `status="pending"`) so the screen can optimistically
+ * update the list before the next refetch.
  */
 export async function submitTimeOffRequest(
   input: CreateTimeOffRequestInput,
