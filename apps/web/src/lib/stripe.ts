@@ -14,8 +14,11 @@ export function getStripe(): Stripe {
         "STRIPE_SECRET_KEY is not set. Add it to .env.local from the Stripe Dashboard."
       );
     }
+    // Must match the API version the installed stripe SDK is pinned to —
+    // the v22 types hard-code it, so a mismatch is a compile error rather
+    // than a silent runtime drift. Bump both together.
     _stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: "2026-03-25.dahlia",
+      apiVersion: "2026-08-26.dahlia",
       typescript: true,
     });
   }

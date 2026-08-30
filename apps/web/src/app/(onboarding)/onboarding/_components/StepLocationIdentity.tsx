@@ -27,6 +27,22 @@ type StepLocationIdentityProps = {
   onNextAction: (payload: { name: string; timezone: string }) => Promise<void>;
 };
 
+function getSupportedTimezones(initialTimezone: string): string[] {
+  if (!("supportedValuesOf" in Intl)) {
+    return [initialTimezone];
+  }
+
+  try {
+    const values = Intl.supportedValuesOf("timeZone");
+    if (values.includes(initialTimezone)) {
+      return values;
+    }
+    return [initialTimezone, ...values];
+  } catch {
+    return [initialTimezone];
+  }
+}
+
 export function StepLocationIdentity({
   initialName,
   initialTimezone,
@@ -38,21 +54,10 @@ export function StepLocationIdentity({
   const [timezoneOpen, setTimezoneOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supportedTimezones = useMemo(() => {
-    if (!("supportedValuesOf" in Intl)) {
-      return [initialTimezone];
-    }
-
-    try {
-      const values = Intl.supportedValuesOf("timeZone");
-      if (values.includes(initialTimezone)) {
-        return values;
-      }
-      return [initialTimezone, ...values];
-    } catch {
-      return [initialTimezone];
-    }
-  }, [initialTimezone]);
+  const supportedTimezones = useMemo(
+    () => getSupportedTimezones(initialTimezone),
+    [initialTimezone]
+  );
 
   const canContinue =
     name.trim().length >= 2 && timezone.trim().length > 0 && !isSaving;

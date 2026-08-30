@@ -1,7 +1,7 @@
 import {
   streamText,
   convertToModelMessages,
-  stepCountIs,
+  isStepCount,
   type UIMessage,
 } from "ai";
 import mongoose from "mongoose";
@@ -165,11 +165,14 @@ export async function POST(req: Request) {
 
   const result = streamText({
     model: openai("gpt-4o"),
-    system: systemPrompt,
+    instructions: systemPrompt,
     messages: modelMessages,
     tools,
-    stopWhen: stepCountIs(MAX_TOOL_STEPS),
-    onFinish: async ({ text }) => {
+    stopWhen: isStepCount(MAX_TOOL_STEPS),
+    // `text` is the final step's text, which is what gets persisted as the
+    // assistant reply. Do not swap it for `content`, which concatenates every
+    // step and would fold intermediate tool-calling chatter into the history.
+    onEnd: async ({ text }) => {
       try {
         const now = new Date();
         const userMessage: ConversationMessage = {

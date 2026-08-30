@@ -6,8 +6,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { toast } from "sonner";
 import {
@@ -76,7 +76,11 @@ interface StaffTableProps {
   initialSkillChangeRequests: SkillChangeRequestDTO[];
 }
 
-const columnHelper = createColumnHelper<StaffDTO>();
+// Sorting, filtering and pagination are all server-side, so the table only
+// needs the core row model (always included in v9) and no registered features.
+const tableFeaturesConfig = tableFeatures({});
+
+const columnHelper = createColumnHelper<typeof tableFeaturesConfig, StaffDTO>();
 
 // Helper to render proficiency stars
 function ProficiencyStars({ level }: { level: number }) {
@@ -212,7 +216,7 @@ export function StaffTable({
   });
 
   // Define table columns
-  const columns = [
+  const columns = columnHelper.columns([
     columnHelper.accessor("name", {
       header: () => (
         <Button
@@ -438,12 +442,12 @@ export function StaffTable({
         );
       },
     }),
-  ];
+  ]);
 
-  const table = useReactTable({
+  const table = useTable({
+    features: tableFeaturesConfig,
     data: staff,
     columns,
-    getCoreRowModel: getCoreRowModel(),
   });
 
   return (
@@ -541,7 +545,7 @@ export function StaffTable({
                     !row.original.isActive && "bg-muted/30 opacity-75",
                   )}
                 >
-                  {row.getVisibleCells().map((cell) => (
+                  {row.getAllCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,

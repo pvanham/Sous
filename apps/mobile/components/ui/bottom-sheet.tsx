@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -62,12 +62,6 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const translateY = useSharedValue(0);
 
-  useEffect(() => {
-    if (visible) {
-      translateY.value = 0;
-    }
-  }, [visible, translateY]);
-
   const panGesture = Gesture.Pan()
     .onUpdate((e) => {
       translateY.value = Math.max(0, e.translationY);
@@ -79,6 +73,11 @@ export function BottomSheet({
       ) {
         translateY.value = withTiming(600, { duration: 180 }, () => {
           runOnJS(onClose)();
+          // Rewind for the next open. The modal is hidden by the time this
+          // runs, so the jump back to 0 is never visible. Every other dismiss
+          // path (backdrop tap, hardware back) leaves the sheet at 0 already,
+          // so this is the only place a reset is needed.
+          translateY.value = 0;
         });
       } else {
         translateY.value = withTiming(0, { duration: 160 });

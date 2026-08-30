@@ -6,8 +6,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { format } from "date-fns";
 import { formatCalendarDate } from "@sous/types/utils/calendar-date";
@@ -77,7 +77,14 @@ interface TimeOffRequestTableProps {
   minAdvanceDays: number;
 }
 
-const columnHelper = createColumnHelper<TimeOffRequestDTO>();
+// Status and staff filtering happen in a useMemo before the data reaches the
+// table, so only the core row model (always included in v9) is needed.
+const tableFeaturesConfig = tableFeatures({});
+
+const columnHelper = createColumnHelper<
+  typeof tableFeaturesConfig,
+  TimeOffRequestDTO
+>();
 
 export function TimeOffRequestTable({
   initialRequests,
@@ -154,7 +161,7 @@ export function TimeOffRequestTable({
 
   // Table columns
   const columns = useMemo(
-    () => [
+    () => columnHelper.columns([
       columnHelper.accessor("staffId", {
         header: "Staff Member",
         cell: (info) => staffNameMap.get(info.getValue()) ?? "Unknown",
@@ -242,14 +249,14 @@ export function TimeOffRequestTable({
           );
         },
       }),
-    ],
+    ]),
     [staffNameMap]
   );
 
-  const table = useReactTable({
+  const table = useTable({
+    features: tableFeaturesConfig,
     data: filteredRequests,
     columns,
-    getCoreRowModel: getCoreRowModel(),
   });
 
   // Staff name for the filtered view header
@@ -326,7 +333,7 @@ export function TimeOffRequestTable({
             <TableBody>
               {table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
+                  {row.getAllCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
