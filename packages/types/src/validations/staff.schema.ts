@@ -141,12 +141,33 @@ export const csvRowSchema = z.object({
 // Uses base schema without refinements since .omit() doesn't work on refined schemas
 export const importStaffSchema = z.array(staffBaseSchema.omit({ isActive: true }));
 
+export const STAFF_LIST_DEFAULTS = {
+  page: 1,
+  pageSize: 10,
+  sortOrder: "asc" as const,
+  status: "all" as const,
+  invitationStatus: "all" as const,
+};
+
 // Schema for paginated staff list params
 export const staffListParamsSchema = z.object({
-  page: z.number().int().min(1).default(1),
-  pageSize: z.number().int().min(1).max(100).default(10),
-  sortOrder: z.enum(["asc", "desc"]).default("asc"),
-  search: z.string().optional(),
+  page: z.number().int().min(1).default(STAFF_LIST_DEFAULTS.page),
+  pageSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(STAFF_LIST_DEFAULTS.pageSize),
+  sortOrder: z.enum(["asc", "desc"]).default(STAFF_LIST_DEFAULTS.sortOrder),
+  search: z.string().max(100).optional(),
+  status: z
+    .enum(["all", "active", "inactive"])
+    .default(STAFF_LIST_DEFAULTS.status),
+  role: z.string().min(1).optional(),
+  invitationStatus: z
+    .enum(["all", "not_invited", "pending", "accepted"])
+    .default(STAFF_LIST_DEFAULTS.invitationStatus),
+  station: z.string().min(1).optional(),
 });
 
 // Staff with invite schema with cross-field validation

@@ -10,9 +10,6 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.sous.mobile",
-      "associatedDomains": [
-        "applinks:localhost:3000"
-      ],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSPhotoLibraryUsageDescription": "Sous needs access to your photos so you can choose a profile picture.",

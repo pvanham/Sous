@@ -31,6 +31,11 @@ export interface IStaff {
   invitationStatus: import("@sous/types").InvitationStatus;
   onboardingCompletedAt?: Date | null;
   imageUrl?: string | null;
+  /**
+   * Lowercased last-name token used only for directory sort. Derived from
+   * `name` on write; never exposed on StaffDTO.
+   */
+  lastName?: string;
   createdAt: Date;
   updatedAt: Date;
 }

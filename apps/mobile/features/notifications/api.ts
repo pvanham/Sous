@@ -43,10 +43,16 @@ export async function patchNotificationPreferences(
  */
 export async function registerDeviceToken(
   input: RegisterDeviceTokenInput,
+  getToken: () => Promise<string | null>,
 ): Promise<{ id: string }> {
+  const token = await getToken();
+  if (!token) {
+    throw new Error("No Clerk session token available.");
+  }
   const response = await apiClient.post<{ id: string }>(
     "/me/notifications/devices",
     input,
+    { headers: { Authorization: `Bearer ${token}` } },
   );
   return response.data;
 }

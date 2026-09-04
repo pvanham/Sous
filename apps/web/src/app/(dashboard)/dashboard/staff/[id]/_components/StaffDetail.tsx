@@ -115,6 +115,7 @@ export function StaffDetail({
   });
 
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deactivateOpen, setDeactivateOpen] = useState(false);
 
   // Keep the staff record fresh after edits anywhere on the page. Keyed
   // under the shared "staff" namespace so list-level invalidations also
@@ -291,7 +292,13 @@ export function StaffDetail({
 
             <Button
               variant="outline"
-              onClick={() => toggleActiveMutation.mutate()}
+              onClick={() => {
+                if (staff.isActive) {
+                  setDeactivateOpen(true);
+                  return;
+                }
+                toggleActiveMutation.mutate();
+              }}
               disabled={toggleActiveMutation.isPending}
             >
               {toggleActiveMutation.isPending ? (
@@ -389,16 +396,48 @@ export function StaffDetail({
         </TabsContent>
       </Tabs>
 
+      <AlertDialog open={deactivateOpen} onOpenChange={setDeactivateOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Deactivate staff member</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deactivate <span className="font-medium">{staff.name}</span>? They
+              will be hidden from schedule generation until you activate them
+              again. Existing shifts are not deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={toggleActiveMutation.isPending}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                toggleActiveMutation.mutate();
+                setDeactivateOpen(false);
+              }}
+              disabled={toggleActiveMutation.isPending}
+            >
+              {toggleActiveMutation.isPending && (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              )}
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Delete confirmation */}
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete staff member</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to permanently delete{" "}
+              Permanently delete{" "}
               <span className="font-medium">{staff.name}</span>? This also
-              removes their shifts, availability, and time-off history. This
-              action cannot be undone.
+              removes their shifts, time-off requests, availability, shift
+              exchanges, and skill-change requests. This action cannot be
+              undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

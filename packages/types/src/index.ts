@@ -74,6 +74,10 @@ export interface StaffListParams {
   pageSize: number;
   sortOrder: "asc" | "desc";
   search?: string;
+  status: "all" | "active" | "inactive";
+  role?: string;
+  invitationStatus: "all" | "not_invited" | "pending" | "accepted";
+  station?: string;
 }
 
 export interface PaginatedStaffResult {

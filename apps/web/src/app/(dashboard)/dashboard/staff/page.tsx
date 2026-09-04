@@ -1,30 +1,47 @@
 import { listStaffPaginated } from "@/server/actions/staff.actions";
 import { listSkillChangeRequests } from "@/server/actions/skill-change-request.actions";
+import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
+import { parseStaffListSearchParams } from "@/lib/staff-list-params";
 import { StaffTable } from "./_components/StaffTable";
 import { StaffCsvUploadButton } from "./_components/StaffCsvUploadButton";
 import { AddStaffButton } from "./_components/AddStaffButton";
 import { Users } from "lucide-react";
 
-export default async function StaffPage() {
-  // Fetch initial paginated data (page 1, 10 per page, sorted A-Z) plus the
-  // pending self-service skill changes that surface inline on the table.
-  const [result, skillChangeResult] = await Promise.all([
-    listStaffPaginated({
-      page: 1,
-      pageSize: 10,
-      sortOrder: "asc",
-    }),
+type StaffPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+export default async function StaffPage({ searchParams }: StaffPageProps) {
+  const rawParams = searchParams ? await searchParams : undefined;
+  const listParams = parseStaffListSearchParams(rawParams);
+
+  const [result, skillChangeResult, configResult] = await Promise.all([
+    listStaffPaginated(listParams),
     listSkillChangeRequests({ status: "pending" }),
+    getKitchenConfig(),
   ]);
 
-  // Default empty result if fetch fails
+  const initialError = result.success ? null : result.error;
   const initialData = result.success
     ? result.data
-    : { staff: [], total: 0, page: 1, pageSize: 10, totalPages: 0 };
+    : {
+        staff: [],
+        total: 0,
+        page: listParams.page,
+        pageSize: listParams.pageSize,
+        totalPages: 0,
+      };
 
   const initialSkillChangeRequests = skillChangeResult.success
     ? skillChangeResult.data
     : [];
+
+  const roles =
+    configResult.success && configResult.data ? configResult.data.roles : [];
+  const stations =
+    configResult.success && configResult.data
+      ? configResult.data.stations
+      : [];
 
   return (
     <div className="space-y-6">
@@ -53,7 +70,11 @@ export default async function StaffPage() {
 
       <StaffTable
         initialData={initialData}
+        initialParams={listParams}
+        initialError={initialError}
         initialSkillChangeRequests={initialSkillChangeRequests}
+        roles={roles}
+        stations={stations}
       />
     </div>
   );

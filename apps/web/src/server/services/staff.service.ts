@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import Staff from "@/server/models/Staff";
 import type { StaffInput } from "@/lib/validations/staff.schema";
+import { escapeRegex } from "@/lib/utils";
 import {
   StaffDTO,
   InvitationStatus,
@@ -9,6 +10,33 @@ import {
   PaginatedStaffResult,
   toStaffDTO,
 } from "@/types/staff";
+
+const NAME_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+]);
+
+/**
+ * Lowercased last-name token used as the directory sort key.
+ * Strips common generational suffixes so "John Smith Jr." sorts as "smith".
+ */
+export function extractLastName(name: string): string {
+  const tokens = name
+    .trim()
+    .split(/\s+/)
+    .filter((token) => {
+      const normalized = token.toLowerCase().replace(/[.,]/g, "");
+      return normalized.length > 0 && !NAME_SUFFIXES.has(normalized);
+    });
+  const last = tokens[tokens.length - 1] ?? name.trim();
+  return last.toLowerCase().replace(/[.,]/g, "");
+}
 
 /**
  * StaffService - Service layer for Staff operations.
@@ -43,41 +71,82 @@ export const StaffService = {
     locationId: string,
     params: StaffListParams
   ): Promise<PaginatedStaffResult> {
-    const { page, pageSize, sortOrder, search } = params;
+    const {
+      page,
+      pageSize,
+      sortOrder,
+      search,
+      status = "all",
+      role,
+      invitationStatus = "all",
+      station,
+    } = params;
     const skip = (page - 1) * pageSize;
+    const orgObjectId = new Types.ObjectId(orgId);
+    const locationObjectId = new Types.ObjectId(locationId);
 
-    // Build match filter
+    await this.backfillLastNames(orgObjectId, locationObjectId);
+
     const matchFilter: Record<string, unknown> = {
-      orgId: new Types.ObjectId(orgId),
-      locationId: new Types.ObjectId(locationId),
+      orgId: orgObjectId,
+      locationId: locationObjectId,
     };
 
-    // Add search filter if provided
-    if (search && search.trim() !== "") {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
-      matchFilter.$or = [
+    if (status === "active") matchFilter.isActive = true;
+    if (status === "inactive") matchFilter.isActive = false;
+    if (role) matchFilter.roles = role;
+    if (invitationStatus !== "all") {
+      matchFilter.invitationStatus = invitationStatus;
+    }
+    if (station) matchFilter["skills.station"] = station;
+
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      const searchRegex = {
+        $regex: escapeRegex(trimmedSearch),
+        $options: "i",
+      };
+      const orFilters: Record<string, unknown>[] = [
         { name: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
       ];
+      const digits = trimmedSearch.replace(/\D/g, "");
+      if (digits.length >= 3) {
+        orFilters.push({
+          phone: { $regex: escapeRegex(digits), $options: "i" },
+        });
+      }
+      matchFilter.$or = orFilters;
     }
 
-    // Use aggregation to extract and sort by last name
     const pipeline = [
       { $match: matchFilter },
-      // Extract last name (last word in name)
       {
         $addFields: {
           lastName: {
-            $toLower: {
-              $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+            $let: {
+              vars: { stored: { $ifNull: ["$lastName", ""] } },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $strLenCP: "$$stored" }, 0] },
+                  then: "$$stored",
+                  else: {
+                    $toLower: {
+                      $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+                    },
+                  },
+                },
+              },
             },
           },
         },
       },
-      // Sort by lastName
-      { $sort: { lastName: sortOrder === "asc" ? 1 : -1 } as Record<string, 1 | -1> },
-      // Facet for pagination and total count
+      {
+        $sort: {
+          lastName: sortOrder === "asc" ? 1 : -1,
+        } as Record<string, 1 | -1>,
+      },
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: pageSize }],
@@ -99,6 +168,38 @@ export const StaffService = {
       pageSize,
       totalPages,
     };
+  },
+
+  /**
+   * Write `lastName` onto any location rows that predate the field so
+   * `$sort` can use the compound index.
+   */
+  async backfillLastNames(
+    orgId: Types.ObjectId,
+    locationId: Types.ObjectId
+  ): Promise<void> {
+    await Staff.collection.updateMany(
+      {
+        orgId,
+        locationId,
+        $or: [
+          { lastName: { $exists: false } },
+          { lastName: "" },
+          { lastName: null },
+        ],
+      },
+      [
+        {
+          $set: {
+            lastName: {
+              $toLower: {
+                $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+              },
+            },
+          },
+        },
+      ]
+    );
   },
 
   /**
@@ -187,6 +288,7 @@ export const StaffService = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
       name: data.name,
+      lastName: extractLastName(data.name),
       email: data.email.toLowerCase(),
       phone: data.phone,
       roles: data.roles,
@@ -221,7 +323,10 @@ export const StaffService = {
     const updateData: Record<string, unknown> = {};
     const unsetData: Record<string, unknown> = {};
 
-    if (data.name !== undefined) updateData.name = data.name;
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+      updateData.lastName = extractLastName(data.name);
+    }
     if (data.email !== undefined) updateData.email = data.email.toLowerCase();
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.roles !== undefined) updateData.roles = data.roles;
@@ -299,6 +404,7 @@ export const StaffService = {
       const update = {
         $set: {
           name: staff.name,
+          lastName: extractLastName(staff.name),
           phone: staff.phone,
           roles: staff.roles,
           skills,

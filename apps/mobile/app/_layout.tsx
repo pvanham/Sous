@@ -143,8 +143,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId) return;
     if (!membershipQuery.isSuccess) return;
-    void registerForPushNotifications();
-  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess]);
+    void registerForPushNotifications(getToken);
+  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess, getToken]);
 
   // Staff record drives the onboarding gate. We only treat the
   // returned DTO as authoritative once membership has been

@@ -67,9 +67,17 @@ export async function fetchMembership(
       err.message ||
       "Unknown error";
 
+    const baseURL = apiClient.defaults.baseURL ?? "unknown";
     console.warn(
-      `[mobile] /me/membership failed (status=${status ?? "network"}): ${detail}`,
+      `[mobile] /me/membership failed (status=${status ?? "network"}) ` +
+        `at ${baseURL}: ${detail}`,
     );
+    if (status == null) {
+      throw new Error(
+        `Can't reach the Sous API at ${baseURL}. ${detail}. ` +
+          "Confirm the web app is running on that port.",
+      );
+    }
     throw new Error(detail);
   }
 }

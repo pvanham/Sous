@@ -5,12 +5,10 @@ import { AcceptInviteScreen } from "@/features/auth/screens/accept-invite-screen
 /**
  * Universal Link / deep link landing route.
  *
- * Reached by:
- *   - iOS / Android: OS-level Universal Link interception of
- *     `https://<APP_DOMAIN>/invite?__clerk_ticket=…` (configured in
- *     `app.json` `associatedDomains` + Android `intentFilters`).
- *   - Local dev / fallback: `sous://invite?__clerk_ticket=…` via
- *     the existing `scheme: "sous"`.
+ * Reached by `sous://invite?__clerk_ticket=…` (`scheme: "sous"`).
+ * Universal Links (`ios.associatedDomains`) are omitted until a
+ * real public APP_DOMAIN exists — localhost is not a valid host
+ * and the Ad Hoc profile does not include that capability.
  *
  * The `AuthGate` in `app/_layout.tsx` exempts the `invite` segment
  * from its sign-in redirect so an unauthenticated invitee can reach

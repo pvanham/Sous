@@ -1,4 +1,7 @@
-import { dayOfWeekToIndex, type DayOfWeek } from "@sous/types";
+import {
+  dayOfWeekToIndex,
+  type DayOfWeek,
+} from "@sous/types/validations/kitchen-config.schema";
 
 // ─────────────────────────────────────────────────────────────
 // Mobile date helpers — week-boundary math anchored to the
