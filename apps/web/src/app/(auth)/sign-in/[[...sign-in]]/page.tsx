@@ -210,6 +210,7 @@ export default function SignInPage() {
               value={code}
               onChange={setCode}
               disabled={isLoading}
+              autoFocus
             />
             {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
             <Button
@@ -307,6 +308,7 @@ export default function SignInPage() {
               value={code}
               onChange={setCode}
               disabled={isLoading}
+              autoFocus
             />
             {error && <p className="text-destructive text-sm font-medium text-center">{error}</p>}
             <Button
