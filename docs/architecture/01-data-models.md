@@ -123,6 +123,7 @@ mobile app.
   hourlyRate: number,                  // used in labor-cost objective
   clerkUserId?: string | null,         // set when invitation is accepted
   invitationStatus: "not_invited" | "pending" | "accepted",
+  clerkInvitationId?: string | null,   // latest pending Clerk invitation id; server-only
   onboardingCompletedAt: Date | null,  // set when the staff member finishes the mobile wizard
   createdAt, updatedAt: Date,
 }
@@ -132,6 +133,14 @@ mobile app.
 derived from `name` on create/update (suffixes like Jr/Sr/II/III/IV
 are stripped) and is not part of `StaffDTO`. Older documents missing
 the field are backfilled the next time `listPaginated` runs.
+
+`clerkInvitationId` is the Clerk invitation id for the latest pending
+app invite. It is not part of `StaffDTO`. `inviteStaffToApp` writes it
+when the invitation is sent. `deleteStaff` revokes that invitation,
+along with any other pending invitation for the same staff email,
+before the staff record is removed. The field is cleared when the
+invite is accepted. Rows invited before the field existed are still
+revoked by looking the pending invitation up by email.
 
 `onboardingCompletedAt` is owned by the mobile onboarding flow:
 `null` while the wizard is still pending; a `Date` once the user

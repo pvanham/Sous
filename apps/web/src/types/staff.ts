@@ -29,6 +29,12 @@ export interface IStaff {
   address?: import("@sous/types").StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: import("@sous/types").InvitationStatus;
+  /**
+   * Clerk invitation id (`inv_...`) for the latest pending app invite.
+   * Server-only — not part of StaffDTO. Cleared when the invite is
+   * accepted or the Clerk user is unlinked.
+   */
+  clerkInvitationId?: string | null;
   onboardingCompletedAt?: Date | null;
   imageUrl?: string | null;
   /**

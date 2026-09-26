@@ -8,6 +8,7 @@ import {
 } from "@/lib/validations/invitation.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { StaffService } from "@/server/services/staff.service";
+import { revokePendingStaffInvitations } from "@/lib/clerk/revoke-staff-invitation";
 import { dbConnect } from "@/lib/db";
 import type { ActionResponse } from "@/lib/safe-action";
 
@@ -173,7 +174,18 @@ export async function inviteStaffToApp(
       };
     }
 
-    // 6. Send invitation via Clerk with staff-specific metadata
+    // 6. Read any invitation id already stored so a replacement invite
+    //    can revoke the previous one even if the email has changed.
+    const invitationHandle = await StaffService.getInvitationHandle(
+      ctx.orgId,
+      ctx.locationId,
+      staffId
+    );
+    if (!invitationHandle) {
+      return { success: false, error: "Staff member not found" };
+    }
+
+    // 7. Send invitation via Clerk with staff-specific metadata
     const client = await clerkClient();
     const invitation = await client.invitations.createInvitation({
       emailAddress: staffMember.email,
@@ -187,8 +199,48 @@ export async function inviteStaffToApp(
       },
     });
 
-    // 7. Mark the staff record as pending
-    await StaffService.setInvitationStatus(staffId, "pending");
+    // 8. Persist the invitation id before doing any further Clerk work.
+    //    If the staff row disappeared, revoke the invite we just sent
+    //    so it cannot be accepted against a missing record.
+    const updated = await StaffService.setPendingInvitation(
+      ctx.orgId,
+      ctx.locationId,
+      staffId,
+      invitation.id
+    );
+    if (!updated) {
+      try {
+        await revokePendingStaffInvitations({
+          staffId,
+          email: staffMember.email,
+          clerkInvitationId: invitation.id,
+        });
+      } catch (revokeError) {
+        console.error(
+          "inviteStaffToApp: invitation created but could not be revoked after the staff record disappeared:",
+          revokeError
+        );
+      }
+      return { success: false, error: "Staff member not found" };
+    }
+
+    // 9. Revoke invitations this one replaces (previous stored id, and
+    //    any other pending invite for this staff member at this email).
+    //    Failure here is logged: the new invite is already saved, and
+    //    delete still revokes whatever is left.
+    try {
+      await revokePendingStaffInvitations({
+        staffId,
+        email: staffMember.email,
+        clerkInvitationId: invitationHandle.clerkInvitationId,
+        exceptInvitationId: invitation.id,
+      });
+    } catch (revokeError) {
+      console.error(
+        "inviteStaffToApp: new invitation was sent, but a previous pending invitation could not be revoked:",
+        revokeError
+      );
+    }
 
     return {
       success: true,

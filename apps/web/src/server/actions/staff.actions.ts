@@ -15,6 +15,7 @@ import { StaffAvailabilityService } from "@/server/services/staff-availability.s
 import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
 import { SkillChangeRequestService } from "@/server/services/skill-change-request.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { revokePendingStaffInvitations } from "@/lib/clerk/revoke-staff-invitation";
 import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
@@ -503,7 +504,35 @@ export async function deleteStaff(
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 3. Cascade-delete all staff-scoped data before removing the staff record.
+    // 3. Revoke a pending Clerk invitation before any local deletes.
+    //    A failure leaves the staff record in place so a retry can
+    //    still find the invite.
+    const invitation = await StaffService.getInvitationHandle(
+      ctx.orgId,
+      ctx.locationId,
+      staffId
+    );
+    if (invitation?.invitationStatus === "pending") {
+      try {
+        await revokePendingStaffInvitations({
+          staffId,
+          email: invitation.email,
+          clerkInvitationId: invitation.clerkInvitationId,
+        });
+      } catch (revokeError) {
+        console.error(
+          "deleteStaff: failed to revoke Clerk invitation:",
+          revokeError
+        );
+        return {
+          success: false,
+          error:
+            "Couldn't revoke the pending app invitation. This staff member is still on the roster. Try again.",
+        };
+      }
+    }
+
+    // 4. Cascade-delete all staff-scoped data before removing the staff record.
     //    Run in parallel — none of these depend on each other.
     const [shiftsDeleted] = await Promise.all([
       ShiftService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
@@ -513,7 +542,7 @@ export async function deleteStaff(
       SkillChangeRequestService.deleteByStaffId(ctx.orgId, ctx.locationId, staffId),
     ]);
 
-    // 4. Delete the staff member
+    // 5. Delete the staff member
     const deleted = await StaffService.delete(
       ctx.orgId,
       ctx.locationId,

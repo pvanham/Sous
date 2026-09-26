@@ -954,6 +954,7 @@ export const StaffService = {
         $set: {
           clerkUserId,
           invitationStatus: "accepted" as InvitationStatus,
+          clerkInvitationId: null,
         },
       },
       { returnDocument: "after", runValidators: true }
@@ -964,18 +965,55 @@ export const StaffService = {
   },
 
   /**
-   * Update just the invitation status on a staff record.
-   * @param staffId - Staff document ID
-   * @param status - New invitation status
-   * @returns Updated StaffDTO or null if not found
+   * Fields needed to revoke a Clerk invitation without exposing the
+   * invitation id on StaffDTO.
    */
-  async setInvitationStatus(
+  async getInvitationHandle(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<{
+    email: string;
+    invitationStatus: InvitationStatus;
+    clerkInvitationId: string | null;
+  } | null> {
+    const doc = await Staff.findOne({
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .select("email invitationStatus clerkInvitationId")
+      .lean();
+    if (!doc) return null;
+    return {
+      email: doc.email,
+      invitationStatus: doc.invitationStatus ?? "not_invited",
+      clerkInvitationId: doc.clerkInvitationId ?? null,
+    };
+  },
+
+  /**
+   * Mark a staff member as invited and store the Clerk invitation id
+   * so a later delete can revoke that exact invitation.
+   */
+  async setPendingInvitation(
+    orgId: string,
+    locationId: string,
     staffId: string,
-    status: InvitationStatus
+    clerkInvitationId: string
   ): Promise<StaffDTO | null> {
-    const doc = await Staff.findByIdAndUpdate(
-      staffId,
-      { $set: { invitationStatus: status } },
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      {
+        $set: {
+          invitationStatus: "pending" as InvitationStatus,
+          clerkInvitationId,
+        },
+      },
       { returnDocument: "after", runValidators: true }
     ).lean();
 
@@ -1060,6 +1098,7 @@ export const StaffService = {
         $set: {
           clerkUserId: null,
           invitationStatus: "not_invited" as InvitationStatus,
+          clerkInvitationId: null,
         },
       }
     );

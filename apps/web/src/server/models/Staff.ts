@@ -167,6 +167,13 @@ const StaffSchema = new Schema<IStaffDocument>(
       enum: ["not_invited", "pending", "accepted"],
       default: "not_invited",
     },
+    // Latest pending Clerk invitation (`inv_...`). Stored so delete can
+    // revoke the invite even if the staff email changes afterwards.
+    // Null when no invite is outstanding.
+    clerkInvitationId: {
+      type: String,
+      default: null,
+    },
     // Set the first time a staff member finishes the mobile onboarding
     // wizard. `null` ⇒ wizard has not been completed yet; a `Date` ⇒
     // completed (AuthGate routes such users straight to the tabs). The
