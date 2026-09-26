@@ -17,10 +17,20 @@ import { Image } from "expo-image";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useSignOut } from "@/features/auth/use-sign-out";
+import { useAllowStaffToManageOwnSkills } from "@/features/auth/store";
 import { EditFieldSheet } from "../components/edit-field-sheet";
 import { AddressSheet } from "../components/address-sheet";
 import { SkillsSection } from "../components/skills-section";
-import { useMyStaff, useUpdateMyStaff } from "../hooks";
+import { AddSkillsSheet } from "../components/add-skills-sheet";
+import { RequestRemovalSheet } from "../components/request-removal-sheet";
+import {
+  useMyStaff,
+  useUpdateMyStaff,
+  useAvailableStations,
+  useMySkillRequests,
+  useProposeMySkill,
+  useRequestSkillRemoval,
+} from "../hooks";
 import { useProfileImage } from "../use-profile-image";
 
 const ICON_COLOR = "#78716c";
@@ -52,8 +62,16 @@ export function ProfileScreen() {
   const updateMyStaff = useUpdateMyStaff();
   const profileImage = useProfileImage();
 
+  const canManageSkills = useAllowStaffToManageOwnSkills();
+  const availableStationsQuery = useAvailableStations();
+  const skillRequestsQuery = useMySkillRequests();
+  const proposeSkill = useProposeMySkill();
+  const requestRemoval = useRequestSkillRemoval();
+
   type FieldKey = "firstName" | "lastName" | "phone" | "address";
   const [openField, setOpenField] = useState<FieldKey | null>(null);
+  const [addSkillsOpen, setAddSkillsOpen] = useState(false);
+  const [removalStation, setRemovalStation] = useState<string | null>(null);
 
   const handleBack = useCallback(() => {
     if (router.canGoBack()) {
@@ -103,6 +121,22 @@ export function ProfileScreen() {
   const lastName = user.lastName ?? "";
   const phone = staff?.phone ?? "";
   const address = staff?.address ?? null;
+
+  // Self-service skills: derive pending add / removal state from the
+  // caller's own skill change requests. Only show the management UI for
+  // staff who actually have a Staff row and whose location allows it.
+  const skillRequests = skillRequestsQuery.data ?? [];
+  const pendingAdditions = skillRequests
+    .filter((r) => r.status === "pending" && r.type === "add")
+    .map((r) => ({ station: r.station, proficiency: r.proficiency }));
+  const pendingAddStations = new Set(pendingAdditions.map((a) => a.station));
+  const pendingRemovalStations = new Set(
+    skillRequests
+      .filter((r) => r.status === "pending" && r.type === "remove")
+      .map((r) => r.station),
+  );
+  const activeStations = new Set((staff?.skills ?? []).map((s) => s.station));
+  const showSkillManagement = hasStaffRow && canManageSkills;
 
   // ── Mutations wired through the sheets ──────────────────────
 
@@ -246,7 +280,14 @@ export function ProfileScreen() {
 
             <SectionHeader label="Stations & Skills" />
             <View className="mb-6">
-              <SkillsSection skills={staff?.skills ?? []} />
+              <SkillsSection
+                skills={staff?.skills ?? []}
+                canManage={showSkillManagement}
+                pendingAdditions={pendingAdditions}
+                pendingRemovalStations={pendingRemovalStations}
+                onAddPress={() => setAddSkillsOpen(true)}
+                onRequestRemoval={(station) => setRemovalStation(station)}
+              />
             </View>
           </>
         ) : null}
@@ -333,6 +374,32 @@ export function ProfileScreen() {
         initialValue={address}
         onSubmit={updateAddress}
       />
+      {showSkillManagement ? (
+        <>
+          <AddSkillsSheet
+            visible={addSkillsOpen}
+            onClose={() => setAddSkillsOpen(false)}
+            availableStations={availableStationsQuery.data ?? []}
+            activeStations={activeStations}
+            pendingStations={pendingAddStations}
+            onSubmit={async (input) => {
+              await proposeSkill.mutateAsync(input);
+            }}
+          />
+          <RequestRemovalSheet
+            visible={removalStation !== null}
+            onClose={() => setRemovalStation(null)}
+            station={removalStation}
+            onSubmit={async (reason) => {
+              if (!removalStation) return;
+              await requestRemoval.mutateAsync({
+                station: removalStation,
+                reason,
+              });
+            }}
+          />
+        </>
+      ) : null}
     </View>
   );
 }

@@ -3,8 +3,7 @@ import { CalendarDays, Clock, Users, TrendingUp } from "lucide-react";
 import { computeAnnouncementLifecycle } from "@/types/announcement";
 import { currentUser } from "@clerk/nextjs/server";
 import { getWeekStart } from "@/lib/utils/date";
-import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
-import { getScheduleByWeek } from "@/server/actions/schedule.actions";
+import { getCurrentWeekStart, getScheduleByWeek } from "@/server/actions/schedule.actions";
 import { listShiftsForLocationWeek } from "@/server/actions/shift.actions";
 import { listStaff } from "@/server/actions/staff.actions";
 import { listAnnouncements } from "@/server/actions/announcement.actions";
@@ -28,12 +27,17 @@ export default async function DashboardPage() {
   // weekStart anchor — the schedule service rejects a misaligned date,
   // and the rest of the page (overview chart, metric labels) needs to
   // render against the same anchor for consistency.
-  const configResult = await getKitchenConfig();
-  const weekStartsOn =
-    configResult.success && configResult.data
-      ? configResult.data.weekStartsOn
-      : "monday";
-  const weekStart = getWeekStart(new Date(), weekStartsOn);
+  // Resolve the week anchor in the *location's* timezone. Anchoring to
+  // the server timezone (the old `getWeekStart(new Date(), …)`) produced
+  // a misaligned instant on a UTC deployment serving a non-UTC kitchen,
+  // which `assertWeekStartAligned` then rejected — silently emptying the
+  // shift + schedule reads below while time-off/announcements (no week
+  // alignment) still loaded.
+  const weekResult = await getCurrentWeekStart();
+  const weekStartsOn = weekResult.success ? weekResult.data.weekStartsOn : "monday";
+  const weekStart = weekResult.success
+    ? weekResult.data.weekStart
+    : getWeekStart(new Date(), weekStartsOn);
 
   // Read-only fetches. The dashboard is a pure read — visiting it
   // should never side-effect-create a Schedule doc, so we use

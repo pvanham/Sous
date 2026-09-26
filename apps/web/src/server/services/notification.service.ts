@@ -2,12 +2,16 @@ import { clerkClient } from "@clerk/nextjs/server";
 import type { ReactElement } from "react";
 
 import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
+import { WebNotificationPreferenceService } from "@/server/services/web-notification-preference.service";
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
 import { sendExpoPush, type ExpoPushPayload } from "@/lib/push/expo-push";
 import { sendEmailBatch, type SendEmailInput } from "@/lib/email/resend";
-import { inQuietHours } from "@/lib/notifications/quiet-hours";
+import {
+  isWebEmailCategory,
+  resolveChannelDecision,
+} from "@/lib/notifications/channel-decision";
 import type {
   NotificationCategory,
   NotificationPreferencesDTO,
@@ -79,6 +83,11 @@ export const NotificationService = {
       const pushQueue: ExpoPushPayload[] = [];
       const emailQueue: SendEmailInput[] = [];
 
+      // Manager/owner-facing categories route their *email* decision
+      // through the separate web preferences; everything else stays on
+      // the mobile matrix.
+      const needsWebPrefs = isWebEmailCategory(input.category);
+
       // Resolve preferences in parallel; the dispatcher is fire-and-
       // forget so we don't need transactional consistency, but we do
       // want one Mongo round-trip per recipient and not N^2.
@@ -87,7 +96,10 @@ export const NotificationService = {
           try {
             const prefs =
               await NotificationPreferenceService.getOrCreate(clerkUserId);
-            return { clerkUserId, prefs };
+            const webPrefs = needsWebPrefs
+              ? await WebNotificationPreferenceService.getOrCreate(clerkUserId)
+              : null;
+            return { clerkUserId, prefs, webPrefs };
           } catch (err) {
             console.error("[notify] failed to load prefs:", {
               category: input.category,
@@ -101,15 +113,13 @@ export const NotificationService = {
 
       for (const entry of prefsList) {
         if (!entry) continue;
-        const { clerkUserId, prefs } = entry;
-        const wantsPush =
-          prefs.channels.push &&
-          prefs.categories[input.category]?.push !== false &&
-          !inQuietHours(now, prefs.quietHours);
-        const wantsEmail =
-          prefs.channels.email &&
-          prefs.categories[input.category]?.email !== false &&
-          !inQuietHours(now, prefs.quietHours);
+        const { clerkUserId, prefs, webPrefs } = entry;
+        const { wantsPush, wantsEmail } = resolveChannelDecision({
+          category: input.category,
+          mobilePrefs: prefs,
+          webPrefs,
+          now,
+        });
 
         if (wantsPush) {
           await collectPushTargets(

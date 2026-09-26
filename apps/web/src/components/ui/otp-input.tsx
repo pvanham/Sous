@@ -8,10 +8,23 @@ interface OTPInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Focus the first cell when this field appears so typing can start immediately. */
+  autoFocus?: boolean;
 }
 
-function OTPInput({ length = 6, value, onChange, disabled = false }: OTPInputProps) {
+function OTPInput({
+  length = 6,
+  value,
+  onChange,
+  disabled = false,
+  autoFocus = false,
+}: OTPInputProps) {
   const inputRefs = React.useRef<(HTMLInputElement | null)[]>([]);
+
+  React.useEffect(() => {
+    if (!autoFocus || disabled) return;
+    inputRefs.current[0]?.focus();
+  }, [autoFocus, disabled]);
 
   // Split value into individual digits
   const digits = React.useMemo(() => {
@@ -94,7 +107,8 @@ function OTPInput({ length = 6, value, onChange, disabled = false }: OTPInputPro
             ref={(el) => { inputRefs.current[index] = el; }}
             type="text"
             inputMode="numeric"
-            autoComplete="one-time-code"
+            autoComplete={index === 0 ? "one-time-code" : "off"}
+            autoFocus={autoFocus && index === 0}
             maxLength={1}
             value={digit}
             disabled={disabled}

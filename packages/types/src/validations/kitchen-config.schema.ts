@@ -138,6 +138,11 @@ export const kitchenConfigSchema = z.object({
   managerRoles: z.array(z.string()),
   operatingHours: weeklyOperatingHoursSchema,
   minTimeOffAdvanceDays: z.number().int().min(0),
+  // When on, staff can propose their own skill changes from mobile.
+  // Both additions and removals still require manager approval. Legacy
+  // configs without the field are coalesced to `true` in the DTO mapper
+  // and the Mongoose default, so the form always supplies a boolean.
+  allowStaffToManageOwnSkills: z.boolean(),
   aiSettings: aiSettingsSchema,
   // Calendar day each new weekly schedule starts on. Owner-only edit at
   // the action layer; existing schedules keep their stored weekStartDate
@@ -174,6 +179,7 @@ export const defaultKitchenConfigValues: KitchenConfigInput = {
     sunday: { isOpen: false, open: "09:00", close: "22:00" },
   },
   minTimeOffAdvanceDays: 7,
+  allowStaffToManageOwnSkills: true,
   aiSettings: {
     monthlyGenerationLimit: 50,
     subscriptionTier: "free",

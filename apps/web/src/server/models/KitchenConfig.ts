@@ -45,6 +45,7 @@ export interface IKitchenConfig {
   managerRoles: string[];
   operatingHours: IWeeklyOperatingHours;
   minTimeOffAdvanceDays: number;
+  allowStaffToManageOwnSkills: boolean;
   aiSettings: IAISettings;
   scheduleGenerationSettings: IScheduleGenerationSettings;
   weekStartsOn: DayOfWeek;
@@ -119,6 +120,13 @@ const KitchenConfigSchema = new Schema<IKitchenConfigDocument>(
       type: Number,
       default: 7,
       min: 0,
+    },
+    // When on, staff can propose their own skill changes from the mobile
+    // app (both additions and removals still require manager approval).
+    // Defaults on to reduce onboarding friction for new owners.
+    allowStaffToManageOwnSkills: {
+      type: Boolean,
+      default: true,
     },
     aiSettings: {
       type: new Schema<IAISettings>(

@@ -11,7 +11,10 @@ export default async function SettingsLayout({
   if (!userId) return null;
 
   const ctx = await getLocationContext(userId);
-  ensureRole(ctx, ["owner", "manager"]);
+  // Shift leads are a manager-equivalent notification audience, so they need
+  // the notifications page to opt out of those emails. Every other settings
+  // page guards itself against them individually.
+  ensureRole(ctx, ["owner", "manager", "shift_lead"]);
 
   return (
     <div className="flex gap-8">

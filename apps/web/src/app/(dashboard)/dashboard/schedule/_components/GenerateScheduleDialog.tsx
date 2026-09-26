@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2,
@@ -97,17 +97,51 @@ export function GenerateScheduleDialog({
   const [step, setStep] = useState<DialogStep>("readiness");
   const [generatedSchedule, setGeneratedSchedule] =
     useState<GeneratedSchedule | null>(null);
+  const [generationSettled, setGenerationSettled] = useState<
+    "idle" | "success" | "error"
+  >("idle");
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
       if (!isOpen) {
         setStep("readiness");
         setGeneratedSchedule(null);
+        setGenerationSettled("idle");
       }
       onOpenChange(isOpen);
     },
     [onOpenChange]
   );
+
+  // Called by GeneratingStep after the bar animates to 100%.
+  const handleGenerationComplete = useCallback(() => {
+    if (generationSettled === "error") {
+      setStep("failure");
+      return;
+    }
+    if (!generatedSchedule) {
+      setStep("failure");
+      return;
+    }
+    const trueTotalRequired = generatedSchedule.days.reduce(
+      (sum, day) =>
+        sum +
+        day.assignments.length +
+        day.unfilledSlots.reduce((s, slot) => s + slot.needed, 0),
+      0
+    );
+    if (trueTotalRequired === 0) {
+      setStep("fully-scheduled");
+    } else {
+      const totalFilled = generatedSchedule.metadata.totalShiftsCreated;
+      const fillRate = totalFilled / trueTotalRequired;
+      if (totalFilled === 0 || fillRate < 0.5) {
+        setStep("failure");
+      } else {
+        setStep("preview");
+      }
+    }
+  }, [generationSettled, generatedSchedule]);
 
   // ── Readiness check query ──
   const {
@@ -138,32 +172,14 @@ export function GenerateScheduleDialog({
       return result.data;
     },
     onSuccess: (data) => {
+      // Store the result but do NOT call setStep here.
+      // GeneratingStep will animate the bar to 100% and then call
+      // handleGenerationComplete, which performs the step transition.
       setGeneratedSchedule(data);
-
-      const trueTotalRequired =
-        data.days.reduce(
-          (sum, day) =>
-            sum +
-            day.assignments.length +
-            day.unfilledSlots.reduce((s, slot) => s + slot.needed, 0),
-          0
-        );
-
-      if (trueTotalRequired === 0) {
-        setStep("fully-scheduled");
-      } else {
-        const totalFilled = data.metadata.totalShiftsCreated;
-        const fillRate = totalFilled / trueTotalRequired;
-
-        if (totalFilled === 0 || fillRate < 0.5) {
-          setStep("failure");
-        } else {
-          setStep("preview");
-        }
-      }
+      setGenerationSettled("success");
     },
     onError: () => {
-      setStep("failure");
+      setGenerationSettled("error");
     },
   });
 
@@ -201,12 +217,14 @@ export function GenerateScheduleDialog({
   // ── Handlers ──
 
   const handleGenerate = () => {
+    setGenerationSettled("idle");
     setStep("generating");
     generateMutation.mutate();
   };
 
   const handleRegenerate = () => {
     setGeneratedSchedule(null);
+    setGenerationSettled("idle");
     setStep("generating");
     generateMutation.mutate();
   };
@@ -264,7 +282,11 @@ export function GenerateScheduleDialog({
         )}
 
         {step === "generating" && (
-          <GeneratingStep weekLabel={weekLabel} />
+          <GeneratingStep
+            weekLabel={weekLabel}
+            settled={generationSettled !== "idle"}
+            onComplete={handleGenerationComplete}
+          />
         )}
 
         {step === "preview" && generatedSchedule && (
@@ -435,59 +457,77 @@ function ReadinessStep({
 // Step 2: Generating
 // ────────────────────────────────────────────────────────────
 
-interface GeneratingStepProps {
-  weekLabel: string;
-}
-
+// Threshold-based step messages (elapsed ms when each message activates).
+// Thresholds are spread across the realistic 0–30s solve window.
 const GENERATION_STEPS = [
-  { message: "Analyzing labor requirements...", duration: 800 },
-  { message: "Checking staff availability...", duration: 800 },
-  { message: "Loading kitchen configuration...", duration: 600 },
-  { message: "Running constraints solver...", duration: 1500 },
-  { message: "Balancing schedule constraints...", duration: 1500 },
-  { message: "Optimizing shift assignments...", duration: 1500 },
-  { message: "Finalizing schedule...", duration: 1000 },
+  { message: "Analyzing labor requirements...", threshold: 0 },
+  { message: "Checking staff availability...", threshold: 3_000 },
+  { message: "Loading kitchen configuration...", threshold: 7_000 },
+  { message: "Running constraints solver...", threshold: 12_000 },
+  { message: "Balancing schedule constraints...", threshold: 20_000 },
+  { message: "Optimizing shift assignments...", threshold: 28_000 },
 ];
 
-function GeneratingStep({ weekLabel }: GeneratingStepProps) {
+// Exponential approach: progress = CEILING * (1 - e^(-elapsed / TAU))
+// TAU = 11 000 ms → ~34% at 5 s, ~69% at 15 s, ~86% at 30 s.
+// The bar is always increasing — no hardcoded ceiling that causes flatline.
+const PROGRESS_CEILING = 92;
+const PROGRESS_TAU = 11_000;
+
+interface GeneratingStepProps {
+  weekLabel: string;
+  /** True once the mutation has resolved (success or error). */
+  settled: boolean;
+  /** Called after the bar finishes animating to 100%. */
+  onComplete: () => void;
+}
+
+function GeneratingStep({ weekLabel, settled, onComplete }: GeneratingStepProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [progress, setProgress] = useState(0);
 
+  // Keep a stable ref so the settle timeout always calls the latest onComplete
+  // without needing it in the effect dep array (avoids teardown/restart).
+  const onCompleteRef = useRef(onComplete);
   useEffect(() => {
-    let currentStep = 0;
-    
-    // Total estimated time to reach 95%
-    const totalEstimatedTime = GENERATION_STEPS.reduce((sum, step) => sum + step.duration, 0);
+    onCompleteRef.current = onComplete;
+  });
+
+  // Asymptotic progress animation while the solver is running.
+  // Cleans up (stops the interval) as soon as settled becomes true.
+  useEffect(() => {
+    if (settled) return;
 
     const startTime = Date.now();
-
     const interval = setInterval(() => {
       const elapsed = Date.now() - startTime;
-      
-      // Calculate progress (cap at 98% until actually finished)
-      const newProgress = Math.min((elapsed / totalEstimatedTime) * 100, 98);
-      setProgress(newProgress);
 
-      // Determine current step
-      let stepTime = 0;
-      let nextStepIndex = 0;
+      setProgress(PROGRESS_CEILING * (1 - Math.exp(-elapsed / PROGRESS_TAU)));
+
+      // Advance the step label based on elapsed time thresholds.
+      let activeStep = 0;
       for (let i = 0; i < GENERATION_STEPS.length; i++) {
-        stepTime += GENERATION_STEPS[i].duration;
-        if (elapsed > stepTime) {
-          nextStepIndex = i + 1;
-        } else {
-          break;
-        }
+        if (elapsed >= GENERATION_STEPS[i].threshold) activeStep = i;
       }
-      
-      if (nextStepIndex < GENERATION_STEPS.length && nextStepIndex !== currentStep) {
-        currentStep = nextStepIndex;
-        setStepIndex(currentStep);
-      }
+      setStepIndex(activeStep);
     }, 100);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [settled]);
+
+  // When settled, fill the bar to 100% then transition to the next dialog step.
+  // setProgress is called inside rAF (not the effect body) to satisfy the linter.
+  useEffect(() => {
+    if (!settled) return;
+
+    const frame = requestAnimationFrame(() => setProgress(100));
+    const timeout = setTimeout(() => onCompleteRef.current(), 450);
+
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timeout);
+    };
+  }, [settled]);
 
   return (
     <>
@@ -516,7 +556,7 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
         <div className="w-full max-w-sm space-y-3">
           <div className="flex justify-between text-sm font-medium">
             <span className="text-muted-foreground animate-pulse">
-              {GENERATION_STEPS[stepIndex]?.message || "Refining schedule..."}
+              {GENERATION_STEPS[stepIndex]?.message ?? "Optimizing shift assignments..."}
             </span>
             <span className="text-amber-600 dark:text-amber-500 font-mono">
               {Math.round(progress)}%
@@ -524,8 +564,12 @@ function GeneratingStep({ weekLabel }: GeneratingStepProps) {
           </div>
           
           <div className="h-2.5 w-full bg-muted rounded-full overflow-hidden border shadow-inner">
-            <div 
-              className="h-full ai-gradient transition-all duration-200 ease-out relative"
+            <div
+              className={`h-full ai-gradient relative ${
+                settled
+                  ? "transition-all duration-500 ease-out"
+                  : "transition-all duration-200 ease-out"
+              }`}
               style={{ width: `${progress}%` }}
             >
               <div className="absolute inset-0 bg-white/20 w-full animate-[shimmer_2s_infinite] -translate-x-full" 

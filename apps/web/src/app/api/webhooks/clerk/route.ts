@@ -1,18 +1,18 @@
-import { Webhook } from "svix";
-import { headers } from "next/headers";
-import { WebhookEvent } from "@clerk/nextjs/server";
+import { verifyWebhook } from "@clerk/nextjs/webhooks";
+import type { NextRequest } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
+import { WebNotificationPreferenceService } from "@/server/services/web-notification-preference.service";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import { clerkClient } from "@clerk/nextjs/server";
 
 const VALID_INVITED_ROLES: MemberRole[] = ["manager", "shift_lead", "staff"];
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   // You can find this in the Clerk Dashboard -> Webhooks -> choose the webhook
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
 
@@ -22,35 +22,13 @@ export async function POST(req: Request) {
     );
   }
 
-  // Get the headers
-  const headerPayload = await headers();
-  const svix_id = headerPayload.get("svix-id");
-  const svix_timestamp = headerPayload.get("svix-timestamp");
-  const svix_signature = headerPayload.get("svix-signature");
+  // `verifyWebhook` reads the raw request body itself, which is what the
+  // signature is computed over. It defaults to CLERK_WEBHOOK_SIGNING_SECRET,
+  // so the secret is passed explicitly to keep our env var name.
+  let evt: Awaited<ReturnType<typeof verifyWebhook>>;
 
-  // If there are no headers, error out
-  if (!svix_id || !svix_timestamp || !svix_signature) {
-    return new Response("Error occured -- no svix headers", {
-      status: 400,
-    });
-  }
-
-  // Get the body
-  const payload = await req.json();
-  const body = JSON.stringify(payload);
-
-  // Create a new Svix instance with your secret.
-  const wh = new Webhook(WEBHOOK_SECRET);
-
-  let evt: WebhookEvent;
-
-  // Verify the payload with the headers
   try {
-    evt = wh.verify(body, {
-      "svix-id": svix_id,
-      "svix-timestamp": svix_timestamp,
-      "svix-signature": svix_signature,
-    }) as WebhookEvent;
+    evt = await verifyWebhook(req, { signingSecret: WEBHOOK_SECRET });
   } catch (err) {
     console.error("Error verifying webhook:", err);
     return new Response("Error occured", {
@@ -184,6 +162,7 @@ export async function POST(req: Request) {
             clerkUserIdsToClean.flatMap((id) => [
               DeviceTokenService.deleteAllByClerkUserId(id),
               NotificationPreferenceService.deleteAllByClerkUserId(id),
+              WebNotificationPreferenceService.deleteAllByClerkUserId(id),
             ]),
           );
 
@@ -198,6 +177,7 @@ export async function POST(req: Request) {
             StaffService.unlinkClerkUser(userId),
             DeviceTokenService.deleteAllByClerkUserId(userId),
             NotificationPreferenceService.deleteAllByClerkUserId(userId),
+            WebNotificationPreferenceService.deleteAllByClerkUserId(userId),
           ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
@@ -206,6 +186,7 @@ export async function POST(req: Request) {
           await Promise.all([
             DeviceTokenService.deleteAllByClerkUserId(userId),
             NotificationPreferenceService.deleteAllByClerkUserId(userId),
+            WebNotificationPreferenceService.deleteAllByClerkUserId(userId),
           ]);
           await OrganizationMemberService.delete(membership.id);
           console.log(`Deleted ${membership.role} membership ${membership.id}`);

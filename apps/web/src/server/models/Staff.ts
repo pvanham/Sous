@@ -84,6 +84,14 @@ const StaffSchema = new Schema<IStaffDocument>(
       minlength: 2,
       maxlength: 100,
     },
+    // Derived sort key (lowercase last token of `name`). Set on write by
+    // StaffService; self-healed for older rows in listPaginated.
+    lastName: {
+      type: String,
+      default: "",
+      lowercase: true,
+      trim: true,
+    },
     email: {
       type: String,
       required: true,
@@ -159,6 +167,13 @@ const StaffSchema = new Schema<IStaffDocument>(
       enum: ["not_invited", "pending", "accepted"],
       default: "not_invited",
     },
+    // Latest pending Clerk invitation (`inv_...`). Stored so delete can
+    // revoke the invite even if the staff email changes afterwards.
+    // Null when no invite is outstanding.
+    clerkInvitationId: {
+      type: String,
+      default: null,
+    },
     // Set the first time a staff member finishes the mobile onboarding
     // wizard. `null` ⇒ wizard has not been completed yet; a `Date` ⇒
     // completed (AuthGate routes such users straight to the tabs). The
@@ -193,6 +208,9 @@ StaffSchema.index({ orgId: 1, locationId: 1, phone: 1 });
 
 // Sparse index for Clerk user linkage
 StaffSchema.index({ clerkUserId: 1 }, { sparse: true });
+
+// Directory sort by last name within a location
+StaffSchema.index({ orgId: 1, locationId: 1, lastName: 1 });
 
 // Singleton pattern for Next.js HMR compatibility
 const Staff: Model<IStaffDocument> =

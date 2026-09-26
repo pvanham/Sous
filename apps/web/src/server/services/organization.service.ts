@@ -96,7 +96,7 @@ export const OrganizationService = {
     const doc = await Organization.findByIdAndUpdate(
       orgId,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -130,7 +130,7 @@ export const OrganizationService = {
     const doc = await Organization.findByIdAndUpdate(
       orgId,
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;

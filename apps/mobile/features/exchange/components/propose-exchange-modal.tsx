@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { View, Pressable, TextInput, ScrollView } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import type { ShiftDTO } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -118,7 +119,7 @@ export function ProposeExchangeModal({
       <StyledText variant="label" className="mb-1.5">
         Reason (optional)
       </StyledText>
-      <TextInput
+      <AppTextInput
         value={reason}
         onChangeText={setReason}
         placeholder="Optional — let the team know why"

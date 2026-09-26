@@ -1,6 +1,7 @@
 import { Types } from "mongoose";
 import Staff from "@/server/models/Staff";
 import type { StaffInput } from "@/lib/validations/staff.schema";
+import { escapeRegex } from "@/lib/utils";
 import {
   StaffDTO,
   InvitationStatus,
@@ -9,6 +10,33 @@ import {
   PaginatedStaffResult,
   toStaffDTO,
 } from "@/types/staff";
+
+const NAME_SUFFIXES = new Set([
+  "jr",
+  "jr.",
+  "sr",
+  "sr.",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+]);
+
+/**
+ * Lowercased last-name token used as the directory sort key.
+ * Strips common generational suffixes so "John Smith Jr." sorts as "smith".
+ */
+export function extractLastName(name: string): string {
+  const tokens = name
+    .trim()
+    .split(/\s+/)
+    .filter((token) => {
+      const normalized = token.toLowerCase().replace(/[.,]/g, "");
+      return normalized.length > 0 && !NAME_SUFFIXES.has(normalized);
+    });
+  const last = tokens[tokens.length - 1] ?? name.trim();
+  return last.toLowerCase().replace(/[.,]/g, "");
+}
 
 /**
  * StaffService - Service layer for Staff operations.
@@ -43,41 +71,82 @@ export const StaffService = {
     locationId: string,
     params: StaffListParams
   ): Promise<PaginatedStaffResult> {
-    const { page, pageSize, sortOrder, search } = params;
+    const {
+      page,
+      pageSize,
+      sortOrder,
+      search,
+      status = "all",
+      role,
+      invitationStatus = "all",
+      station,
+    } = params;
     const skip = (page - 1) * pageSize;
+    const orgObjectId = new Types.ObjectId(orgId);
+    const locationObjectId = new Types.ObjectId(locationId);
 
-    // Build match filter
+    await this.backfillLastNames(orgObjectId, locationObjectId);
+
     const matchFilter: Record<string, unknown> = {
-      orgId: new Types.ObjectId(orgId),
-      locationId: new Types.ObjectId(locationId),
+      orgId: orgObjectId,
+      locationId: locationObjectId,
     };
 
-    // Add search filter if provided
-    if (search && search.trim() !== "") {
-      const searchRegex = { $regex: search.trim(), $options: "i" };
-      matchFilter.$or = [
+    if (status === "active") matchFilter.isActive = true;
+    if (status === "inactive") matchFilter.isActive = false;
+    if (role) matchFilter.roles = role;
+    if (invitationStatus !== "all") {
+      matchFilter.invitationStatus = invitationStatus;
+    }
+    if (station) matchFilter["skills.station"] = station;
+
+    const trimmedSearch = search?.trim();
+    if (trimmedSearch) {
+      const searchRegex = {
+        $regex: escapeRegex(trimmedSearch),
+        $options: "i",
+      };
+      const orFilters: Record<string, unknown>[] = [
         { name: searchRegex },
         { email: searchRegex },
         { phone: searchRegex },
       ];
+      const digits = trimmedSearch.replace(/\D/g, "");
+      if (digits.length >= 3) {
+        orFilters.push({
+          phone: { $regex: escapeRegex(digits), $options: "i" },
+        });
+      }
+      matchFilter.$or = orFilters;
     }
 
-    // Use aggregation to extract and sort by last name
     const pipeline = [
       { $match: matchFilter },
-      // Extract last name (last word in name)
       {
         $addFields: {
           lastName: {
-            $toLower: {
-              $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+            $let: {
+              vars: { stored: { $ifNull: ["$lastName", ""] } },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $strLenCP: "$$stored" }, 0] },
+                  then: "$$stored",
+                  else: {
+                    $toLower: {
+                      $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+                    },
+                  },
+                },
+              },
             },
           },
         },
       },
-      // Sort by lastName
-      { $sort: { lastName: sortOrder === "asc" ? 1 : -1 } as Record<string, 1 | -1> },
-      // Facet for pagination and total count
+      {
+        $sort: {
+          lastName: sortOrder === "asc" ? 1 : -1,
+        } as Record<string, 1 | -1>,
+      },
       {
         $facet: {
           data: [{ $skip: skip }, { $limit: pageSize }],
@@ -99,6 +168,38 @@ export const StaffService = {
       pageSize,
       totalPages,
     };
+  },
+
+  /**
+   * Write `lastName` onto any location rows that predate the field so
+   * `$sort` can use the compound index.
+   */
+  async backfillLastNames(
+    orgId: Types.ObjectId,
+    locationId: Types.ObjectId
+  ): Promise<void> {
+    await Staff.collection.updateMany(
+      {
+        orgId,
+        locationId,
+        $or: [
+          { lastName: { $exists: false } },
+          { lastName: "" },
+          { lastName: null },
+        ],
+      },
+      [
+        {
+          $set: {
+            lastName: {
+              $toLower: {
+                $arrayElemAt: [{ $split: ["$name", " "] }, -1],
+              },
+            },
+          },
+        },
+      ]
+    );
   },
 
   /**
@@ -187,6 +288,7 @@ export const StaffService = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
       name: data.name,
+      lastName: extractLastName(data.name),
       email: data.email.toLowerCase(),
       phone: data.phone,
       roles: data.roles,
@@ -221,7 +323,10 @@ export const StaffService = {
     const updateData: Record<string, unknown> = {};
     const unsetData: Record<string, unknown> = {};
 
-    if (data.name !== undefined) updateData.name = data.name;
+    if (data.name !== undefined) {
+      updateData.name = data.name;
+      updateData.lastName = extractLastName(data.name);
+    }
     if (data.email !== undefined) updateData.email = data.email.toLowerCase();
     if (data.phone !== undefined) updateData.phone = data.phone;
     if (data.roles !== undefined) updateData.roles = data.roles;
@@ -257,7 +362,7 @@ export const StaffService = {
         locationId: new Types.ObjectId(locationId),
       },
       mutation,
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -299,6 +404,7 @@ export const StaffService = {
       const update = {
         $set: {
           name: staff.name,
+          lastName: extractLastName(staff.name),
           phone: staff.phone,
           roles: staff.roles,
           skills,
@@ -356,7 +462,7 @@ export const StaffService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { isActive } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!doc) return null;
@@ -574,6 +680,78 @@ export const StaffService = {
   },
 
   /**
+   * Add (or replace) a single station skill on a staff member. Used by
+   * the skill-change approval flow when a manager approves a staff
+   * member's self-proposed addition. Idempotent on `station`: any
+   * existing entry for the station is replaced so an approval can also
+   * adjust the proficiency.
+   *
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param staffId - Staff document ID
+   * @param skill - Station + proficiency to set
+   * @returns Updated StaffDTO or null if the staff member was not found
+   */
+  async addSkill(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    skill: { station: string; proficiency: 1 | 2 | 3 | 4 | 5 }
+  ): Promise<StaffDTO | null> {
+    const filter = {
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    };
+
+    // Drop any stale entry for this station first so the push can also
+    // serve as a proficiency update without creating a duplicate row.
+    await Staff.updateOne(filter, {
+      $pull: { skills: { station: skill.station } },
+    });
+
+    const doc = await Staff.findOneAndUpdate(
+      filter,
+      { $push: { skills: { station: skill.station, proficiency: skill.proficiency } } },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * Remove a single station skill from a staff member. Used by the
+   * skill-change approval flow when a manager approves a removal
+   * request.
+   *
+   * @param orgId - Organization ID (ownership check)
+   * @param locationId - Location ID (ownership check)
+   * @param staffId - Staff document ID
+   * @param station - Station name to remove from skills
+   * @returns Updated StaffDTO or null if the staff member was not found
+   */
+  async removeSkill(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    station: string
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $pull: { skills: { station } } },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
    * Count staff who have any of the specified stations in their preferredStations array.
    * Used for impact analysis when removing stations from kitchen config.
    * @param orgId - Organization ID
@@ -776,9 +954,10 @@ export const StaffService = {
         $set: {
           clerkUserId,
           invitationStatus: "accepted" as InvitationStatus,
+          clerkInvitationId: null,
         },
       },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -786,19 +965,56 @@ export const StaffService = {
   },
 
   /**
-   * Update just the invitation status on a staff record.
-   * @param staffId - Staff document ID
-   * @param status - New invitation status
-   * @returns Updated StaffDTO or null if not found
+   * Fields needed to revoke a Clerk invitation without exposing the
+   * invitation id on StaffDTO.
    */
-  async setInvitationStatus(
+  async getInvitationHandle(
+    orgId: string,
+    locationId: string,
+    staffId: string
+  ): Promise<{
+    email: string;
+    invitationStatus: InvitationStatus;
+    clerkInvitationId: string | null;
+  } | null> {
+    const doc = await Staff.findOne({
+      _id: staffId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+    })
+      .select("email invitationStatus clerkInvitationId")
+      .lean();
+    if (!doc) return null;
+    return {
+      email: doc.email,
+      invitationStatus: doc.invitationStatus ?? "not_invited",
+      clerkInvitationId: doc.clerkInvitationId ?? null,
+    };
+  },
+
+  /**
+   * Mark a staff member as invited and store the Clerk invitation id
+   * so a later delete can revoke that exact invitation.
+   */
+  async setPendingInvitation(
+    orgId: string,
+    locationId: string,
     staffId: string,
-    status: InvitationStatus
+    clerkInvitationId: string
   ): Promise<StaffDTO | null> {
-    const doc = await Staff.findByIdAndUpdate(
-      staffId,
-      { $set: { invitationStatus: status } },
-      { new: true, runValidators: true }
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      {
+        $set: {
+          invitationStatus: "pending" as InvitationStatus,
+          clerkInvitationId,
+        },
+      },
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -856,7 +1072,7 @@ export const StaffService = {
     const updated = await Staff.findOneAndUpdate(
       { ...tenantFilter, onboardingCompletedAt: null },
       { $set: { onboardingCompletedAt: new Date() } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (updated) return toStaffDTO(updated);
@@ -882,6 +1098,7 @@ export const StaffService = {
         $set: {
           clerkUserId: null,
           invitationStatus: "not_invited" as InvitationStatus,
+          clerkInvitationId: null,
         },
       }
     );

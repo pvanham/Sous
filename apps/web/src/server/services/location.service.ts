@@ -110,7 +110,7 @@ export const LocationService = {
     const doc = await Location.findOneAndUpdate(
       { _id: locationId, orgId: new Types.ObjectId(orgId) },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;

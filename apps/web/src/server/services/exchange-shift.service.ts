@@ -330,7 +330,7 @@ export const ExchangeShiftService = {
           pickedUpByName: picker.name,
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
@@ -430,7 +430,7 @@ export const ExchangeShiftService = {
           approvedAt: new Date(),
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
@@ -510,7 +510,7 @@ export const ExchangeShiftService = {
           managerNotes: notes ?? "",
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
@@ -825,7 +825,7 @@ export const ExchangeShiftService = {
           pickedUpByName: null,
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
@@ -903,7 +903,7 @@ export const ExchangeShiftService = {
           pickedUpByName: null,
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {
@@ -995,7 +995,7 @@ export const ExchangeShiftService = {
           pickedUpByName: null,
         },
       },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     if (!updated) {

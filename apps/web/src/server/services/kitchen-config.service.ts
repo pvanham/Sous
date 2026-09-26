@@ -61,6 +61,7 @@ export const KitchenConfigService = {
       managerRoles: (data.managerRoles ?? []).filter((mr) => filteredRoles.includes(mr)),
       operatingHours: data.operatingHours,
       minTimeOffAdvanceDays: data.minTimeOffAdvanceDays ?? 7,
+      allowStaffToManageOwnSkills: data.allowStaffToManageOwnSkills,
       weekStartsOn: data.weekStartsOn,
     };
 
@@ -76,7 +77,7 @@ export const KitchenConfigService = {
       { orgId: orgObjectId, locationId: locationObjectId },
       updateData,
       {
-        new: true, // Return the updated document
+        returnDocument: "after", // Return the updated document
         upsert: true, // Create if doesn't exist
         runValidators: true, // Run Mongoose validators
       }
@@ -107,7 +108,7 @@ export const KitchenConfigService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { aiSettings: data } },
-      { new: true, upsert: false }
+      { returnDocument: "after", upsert: false }
     ).lean();
 
     if (!doc) {
@@ -135,7 +136,7 @@ export const KitchenConfigService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { scheduleGenerationSettings: data } },
-      { new: true, upsert: false }
+      { returnDocument: "after", upsert: false }
     ).lean();
 
     if (!doc) {

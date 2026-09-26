@@ -199,6 +199,42 @@ malformed the screen falls back to system theme rather than crashing.
 
 ---
 
+## 5b. Web (manager / owner) preferences
+
+The mobile preference matrix (§2.1) governs **push** for everyone and
+**email** for staff-facing categories. The web dashboard cannot deliver
+push and is used by owners / managers, so it has its **own, separate**
+email-only preference surface:
+
+- Schema: `packages/types/src/validations/web-notification.schema.ts`
+  (`webNotificationCategoryValues`, a `satisfies`-checked subset of the
+  global categories) + `WebNotificationPreferencesDTO` /
+  `defaultWebNotificationPreferences` in `packages/types/src/index.ts`.
+- Model: `apps/web/src/server/models/WebNotificationPreference.ts`
+  (collection `webnotificationpreferences`, keyed by `clerkUserId` —
+  the same user-scoped tenancy exception as `NotificationPreference`).
+- Service: `apps/web/src/server/services/web-notification-preference.service.ts`.
+- Actions: `apps/web/src/server/actions/notification-preference.actions.ts`.
+- UI: `apps/web/src/app/(dashboard)/dashboard/settings/notifications/`.
+
+The covered categories are the **manager / owner-facing** ones:
+`time_off_submitted`, `exchange_pending_approval`,
+`manager_coverage_gap`, `skill_change_submitted`,
+`schedule_generation_async`, `billing_alerts` (owner-only).
+
+**Dispatcher behaviour.** For these categories the dispatcher gates the
+**email** channel through the web preferences (master `email` switch +
+per-category toggle), *not* the mobile matrix — and it does **not**
+apply quiet hours to web email, since quiet hours is a mobile/push
+concept. Push for the same category still follows the mobile matrix.
+Every other (staff-facing) category keeps email on the mobile matrix as
+before. Defaults are opt-in, so a manager who never opens the page still
+receives every web email.
+
+This is the separation called out in SHI-48: a manager can silence the
+mobile "time off" decision push without losing the web email that fires
+when a staff member *submits* a request, and vice-versa.
+
 ## 6. Adding a new category
 
 1. Append the literal to `notificationCategoryValues` in
@@ -219,7 +255,15 @@ malformed the screen falls back to system theme rather than crashing.
    `apps/mobile/features/settings/screens/notifications-screen.tsx`,
    marking it `managerOnly: true` if the dispatcher only delivers it
    to manager-equivalent roles.
-6. Update the table in §1 of this document.
+6. If the category is **manager / owner-facing** and you want web
+   managers to be able to toggle its email, also add the literal to
+   `webNotificationCategoryValues`
+   (`packages/types/src/validations/web-notification.schema.ts`), the
+   `for` loop in `defaultWebNotificationPreferences()`
+   (`packages/types/src/index.ts`), and a row in `CATEGORY_META` in
+   `apps/web/src/app/(dashboard)/dashboard/settings/_components/NotificationSettingsForm.tsx`.
+   See §5b.
+7. Update the table in §1 of this document.
 
 ---
 

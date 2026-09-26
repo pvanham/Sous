@@ -2,11 +2,11 @@ import { useCallback, useState } from "react";
 import {
   View,
   ScrollView,
-  TextInput,
   Pressable,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import { useUser, isClerkAPIResponseError } from "@clerk/clerk-expo";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -186,7 +186,7 @@ function PasswordField({
         {label}
       </StyledText>
       <View className="flex-row items-center bg-background border border-border rounded-md">
-        <TextInput
+        <AppTextInput
           value={value}
           onChangeText={onChangeText}
           secureTextEntry={!show}

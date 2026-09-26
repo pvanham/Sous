@@ -4,11 +4,13 @@ import { NotificationService } from "@/server/services/notification.service";
 import { NotificationEmail } from "@/lib/email/templates/NotificationEmail";
 import { AnnouncementEmail } from "@/lib/email/templates/AnnouncementEmail";
 import { tiptapBodyToPlainText } from "@/lib/announcement/composer-defaults";
+import { formatCalendarRange } from "@sous/types/utils/calendar-date";
 import type {
   AnnouncementDTO,
   ExchangeShiftDTO,
   ScheduleDTO,
   ShiftDTO,
+  SkillChangeRequestDTO,
   TimeOffRequestDTO,
 } from "@sous/types";
 
@@ -235,7 +237,7 @@ export const NotificationEvents = {
     locationId: string;
   }): Promise<void> {
     const title = `Time-off request from ${staffName}`;
-    const body = `${formatRange(request.startDate, request.endDate)} • ${request.type}`;
+    const body = `${formatCalendarRange(request.startDate, request.endDate)} • ${request.type}`;
     return NotificationService.notify({
       recipients: { managersOf: { orgId, locationId } },
       category: "time_off_submitted",
@@ -255,7 +257,7 @@ export const NotificationEvents = {
             preview: body,
             heading: title,
             paragraphs: [
-              `${staffName} submitted a time-off request for ${formatRange(request.startDate, request.endDate)}.`,
+              `${staffName} submitted a time-off request for ${formatCalendarRange(request.startDate, request.endDate)}.`,
               request.reason
                 ? `Reason: "${request.reason}"`
                 : "No reason provided.",
@@ -285,7 +287,7 @@ export const NotificationEvents = {
           ? "denied"
           : null;
     if (!decision) return Promise.resolve();
-    const range = formatRange(request.startDate, request.endDate);
+    const range = formatCalendarRange(request.startDate, request.endDate);
     const title = `Time-off ${decision}`;
     const body = `${range}`;
     return NotificationService.notify({
@@ -572,15 +574,102 @@ export const NotificationEvents = {
       },
     });
   },
-};
 
-function formatRange(start: Date, end: Date): string {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-  if (start.toDateString() === end.toDateString()) {
-    return fmt.format(start);
-  }
-  return `${fmt.format(start)} – ${fmt.format(end)}`;
-}
+  skillChangeSubmitted({
+    request,
+    orgId,
+    locationId,
+  }: {
+    request: SkillChangeRequestDTO;
+    orgId: string;
+    locationId: string;
+  }): Promise<void> {
+    const verb = request.type === "add" ? "wants to add" : "wants to remove";
+    const title = `Skill change from ${request.staffName}`;
+    const body = `${request.staffName} ${verb} ${request.station}`;
+    return NotificationService.notify({
+      recipients: { managersOf: { orgId, locationId } },
+      category: "skill_change_submitted",
+      orgId,
+      locationId,
+      payload: {
+        title,
+        body,
+        data: {
+          url: "sous://profile",
+          requestId: request.id,
+          category: "skill_change_submitted",
+        },
+        email: {
+          subject: title,
+          react: createElement(NotificationEmail, {
+            preview: body,
+            heading: title,
+            paragraphs: [
+              `${request.staffName} ${verb} the "${request.station}" skill.`,
+              request.type === "remove" && request.reason
+                ? `Reason: "${request.reason}"`
+                : "",
+              request.type === "add"
+                ? "The skill is not active until you approve it."
+                : "The skill stays active until you approve the removal.",
+            ].filter(Boolean),
+            cta: {
+              label: "Review on the staff page",
+              url: `${APP_URL}/dashboard/staff`,
+            },
+          }),
+        },
+      },
+    });
+  },
+
+  skillChangeDecision({
+    request,
+    requesterClerkUserId,
+    orgId,
+    locationId,
+  }: {
+    request: SkillChangeRequestDTO;
+    requesterClerkUserId: string;
+    orgId: string;
+    locationId: string;
+  }): Promise<void> {
+    const decision =
+      request.status === "approved"
+        ? "approved"
+        : request.status === "denied"
+          ? "denied"
+          : null;
+    if (!decision) return Promise.resolve();
+    const action = request.type === "add" ? "addition" : "removal";
+    const title = `Skill ${action} ${decision}`;
+    const body = `${request.station}`;
+    return NotificationService.notify({
+      recipients: { clerkUserIds: [requesterClerkUserId] },
+      category: "skill_change_decision",
+      orgId,
+      locationId,
+      payload: {
+        title,
+        body,
+        data: {
+          url: "sous://profile",
+          requestId: request.id,
+          category: "skill_change_decision",
+        },
+        email: {
+          subject: `Your skill ${action} was ${decision}`,
+          react: createElement(NotificationEmail, {
+            preview: body,
+            heading: title,
+            paragraphs: [
+              `Your request to ${request.type} the "${request.station}" skill was ${decision} by your manager.`,
+              request.reviewNotes ? `Note: "${request.reviewNotes}"` : "",
+            ].filter(Boolean),
+          }),
+        },
+      },
+    });
+  },
+};

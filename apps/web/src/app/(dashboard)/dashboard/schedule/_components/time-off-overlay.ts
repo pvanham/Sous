@@ -1,16 +1,18 @@
+import {
+  toCalendarDateString,
+  toLocalCalendarDateString,
+} from "@sous/types/utils/calendar-date";
+
 import type { TimeOffRequestDTO } from "@/types/time-off-request";
 
 /**
- * Local-day comparison used by the grid overlays: a time-off request
- * applies to a given day when the day falls between the request's
- * start and end (inclusive) using the browser's local calendar. We
- * deliberately compare on calendar fields rather than UTC instants so a
- * request seeded as midnight-UTC (the legacy normalization) still
- * matches the day a manager sees on the grid.
+ * The two sides of this comparison are different kinds of Date, so they
+ * are keyed differently. A grid `day` is an instant anchored to the
+ * location's week start, and the manager reads it off the column header
+ * in local time. A request boundary is a canonical calendar date stored
+ * at UTC midnight. Both reduce to "YYYY-MM-DD", which compares
+ * lexicographically.
  */
-function calendarDayKey(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-}
 
 /**
  * Return the most relevant time-off overlay for a (staff, day) cell:
@@ -28,14 +30,14 @@ export function findTimeOffOverlay(
   day: Date,
 ): TimeOffRequestDTO | undefined {
   if (!timeOff || timeOff.length === 0) return undefined;
-  const dayKey = calendarDayKey(day);
+  const dayKey = toLocalCalendarDateString(day);
   let approved: TimeOffRequestDTO | undefined;
   let pending: TimeOffRequestDTO | undefined;
 
   for (const request of timeOff) {
     if (request.staffId !== staffId) continue;
-    const start = calendarDayKey(new Date(request.startDate));
-    const end = calendarDayKey(new Date(request.endDate));
+    const start = toCalendarDateString(request.startDate);
+    const end = toCalendarDateString(request.endDate);
     if (dayKey < start || dayKey > end) continue;
 
     if (request.status === "approved") {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { UtensilsCrossed, Bot, Calendar, Users, MapPin, CreditCard } from "lucide-react";
+import { UtensilsCrossed, Bot, Calendar, Users, MapPin, CreditCard, Bell } from "lucide-react";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 
 const baseNavItems = [
@@ -13,15 +13,20 @@ const baseNavItems = [
   { href: "/dashboard/settings/schedule-generation", label: "Schedule Generation", icon: Calendar },
 ];
 
+const notificationsItem = { href: "/dashboard/settings/notifications", label: "Notifications", icon: Bell };
+
 const billingItem = { href: "/dashboard/settings/billing", label: "Billing", icon: CreditCard };
 
 export function SettingsNav({ role }: { role: MemberRole }) {
   const pathname = usePathname();
 
-  // Billing is only visible to owners
-  const navItems = role === "owner"
-    ? [...baseNavItems, billingItem]
-    : baseNavItems;
+  // Shift leads only get notifications; billing is owner-only.
+  const navItems =
+    role === "shift_lead"
+      ? [notificationsItem]
+      : role === "owner"
+        ? [...baseNavItems, notificationsItem, billingItem]
+        : [...baseNavItems, notificationsItem];
 
   return (
     <nav className="w-48 shrink-0 border-r border-stone-300 dark:border-white/10 pr-6">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView } from "react-native";
 import * as Notifications from "expo-notifications";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useAuth } from "@clerk/clerk-expo";
 
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const ICON_COLOR = "#78716c";
  * the user enables it from Settings → Notifications.
  */
 export function NotificationsStepScreen() {
+  const { getToken } = useAuth();
   const { goNext } = useOnboardingNav("notifications");
   const updatePrefs = useUpdateNotificationPreferencesMutation();
   const [busy, setBusy] = useState(false);
@@ -48,7 +50,7 @@ export function NotificationsStepScreen() {
       // denies, we still update the channel preference so the
       // server intent is clear and they can flip it on later from
       // Settings → Notifications.
-      await registerForPushNotifications();
+      await registerForPushNotifications(getToken);
       await updatePrefs.mutateAsync({ channels: { push: true } });
       goToDone();
     } catch (err) {
@@ -60,7 +62,7 @@ export function NotificationsStepScreen() {
     } finally {
       setBusy(false);
     }
-  }, [updatePrefs, goToDone]);
+  }, [getToken, updatePrefs, goToDone]);
 
   const handleSkip = useCallback(async () => {
     // Don't fire the permission prompt — just mark the preference

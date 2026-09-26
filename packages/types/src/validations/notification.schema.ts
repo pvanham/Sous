@@ -21,6 +21,8 @@ export const notificationCategoryValues = [
   "exchange_new_drop",
   "exchange_pending_approval",
   "exchange_decision",
+  "skill_change_submitted",
+  "skill_change_decision",
   "announcements",
   "schedule_generation_async",
   "billing_alerts",

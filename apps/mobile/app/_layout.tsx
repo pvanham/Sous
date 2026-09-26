@@ -13,7 +13,11 @@ import { useEffect, useRef } from "react";
 import { Appearance, View, ActivityIndicator, Linking } from "react-native";
 // eslint-disable-next-line import/no-duplicates
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
+import {
+  SafeAreaProvider,
+  initialWindowMetrics,
+} from "react-native-safe-area-context";
+import { DarkTheme, DefaultTheme, ThemeProvider } from "expo-router/react-navigation";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import "react-native-reanimated";
@@ -31,6 +35,7 @@ import {
   attachNotificationTapHandler,
   registerForPushNotifications,
 } from "@/lib/notifications";
+import { OfflineBanner } from "@/components/offline-banner";
 import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
 import { useSettingsPreferences } from "@/features/settings/preferences-store";
 import { fetchMembership } from "@/features/auth/api";
@@ -138,8 +143,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isLoaded || !isSignedIn || !userId) return;
     if (!membershipQuery.isSuccess) return;
-    void registerForPushNotifications();
-  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess]);
+    void registerForPushNotifications(getToken);
+  }, [isLoaded, isSignedIn, userId, membershipQuery.isSuccess, getToken]);
 
   // Staff record drives the onboarding gate. We only treat the
   // returned DTO as authoritative once membership has been
@@ -351,6 +356,13 @@ export default function RootLayout() {
   const colorScheme = useEffectiveColorScheme();
 
   useEffect(() => {
+    // react-native-web does not implement `Appearance.setColorScheme`, so
+    // guard the call to avoid a hard crash on the web target (used by cloud
+    // agents to preview the app). On web, NativeWind's `prefers-color-scheme`
+    // media query already tracks the system theme, so skipping is safe.
+    if (typeof Appearance.setColorScheme !== "function") {
+      return;
+    }
     // When the user is on "system", clear any override so the OS
     // signal is authoritative. Otherwise, pin Appearance to the
     // explicit choice — this flips NativeWind's media query
@@ -364,41 +376,49 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ClerkProvider tokenCache={tokenCache} publishableKey={clerkPublishableKey}>
-        <ClerkLoaded>
-          <QueryClientProvider client={queryClient}>
-            <ThemeProvider
-              value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
-            >
-              <AuthGate>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="(auth)" />
-                  <Stack.Screen name="(tabs)" />
-                  <Stack.Screen name="(onboarding)" />
-                  <Stack.Screen name="invite" />
-                  <Stack.Screen
-                    name="profile"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="settings"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="announcements/index"
-                    options={{ presentation: "card" }}
-                  />
-                  <Stack.Screen
-                    name="announcements/[id]"
-                    options={{ presentation: "card" }}
-                  />
-                </Stack>
-              </AuthGate>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </QueryClientProvider>
-        </ClerkLoaded>
-      </ClerkProvider>
+      <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+        <ClerkProvider
+          tokenCache={tokenCache}
+          publishableKey={clerkPublishableKey}
+        >
+          <ClerkLoaded>
+            <QueryClientProvider client={queryClient}>
+              <ThemeProvider
+                value={colorScheme === "dark" ? DarkTheme : DefaultTheme}
+              >
+                <AuthGate>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="(auth)" />
+                    <Stack.Screen name="(tabs)" />
+                    <Stack.Screen name="(onboarding)" />
+                    <Stack.Screen name="invite" />
+                    <Stack.Screen
+                      name="profile"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="settings"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="announcements/index"
+                      options={{ presentation: "card" }}
+                    />
+                    <Stack.Screen
+                      name="announcements/[id]"
+                      options={{ presentation: "card" }}
+                    />
+                  </Stack>
+                </AuthGate>
+                {/* Global connectivity banner — rendered above the
+                    navigator so it overlays every screen. */}
+                <OfflineBanner />
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </QueryClientProvider>
+          </ClerkLoaded>
+        </ClerkProvider>
+      </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }

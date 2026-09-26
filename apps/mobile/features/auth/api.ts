@@ -3,9 +3,16 @@ import type { Membership } from "./store";
 
 type TokenGetter = () => Promise<string | null>;
 
-/** Server response shape — `weekStartsOn` may be absent on older builds. */
-type MembershipResponse = Omit<Membership, "weekStartsOn"> & {
+/**
+ * Server response shape — `weekStartsOn` and `allowStaffToManageOwnSkills`
+ * may be absent on older builds.
+ */
+type MembershipResponse = Omit<
+  Membership,
+  "weekStartsOn" | "allowStaffToManageOwnSkills"
+> & {
   weekStartsOn?: Membership["weekStartsOn"];
+  allowStaffToManageOwnSkills?: Membership["allowStaffToManageOwnSkills"];
 };
 
 /**
@@ -35,11 +42,13 @@ export async function fetchMembership(
         headers: { Authorization: `Bearer ${token}` },
       },
     );
-    // Defensive default: the field was added later, so a stale server
-    // build could still respond without it.
+    // Defensive defaults: these fields were added later, so a stale
+    // server build could still respond without them.
     return {
       ...response.data,
       weekStartsOn: response.data.weekStartsOn ?? "monday",
+      allowStaffToManageOwnSkills:
+        response.data.allowStaffToManageOwnSkills ?? true,
     };
   } catch (error) {
     const err = error as {
@@ -58,9 +67,17 @@ export async function fetchMembership(
       err.message ||
       "Unknown error";
 
+    const baseURL = apiClient.defaults.baseURL ?? "unknown";
     console.warn(
-      `[mobile] /me/membership failed (status=${status ?? "network"}): ${detail}`,
+      `[mobile] /me/membership failed (status=${status ?? "network"}) ` +
+        `at ${baseURL}: ${detail}`,
     );
+    if (status == null) {
+      throw new Error(
+        `Can't reach the Sous API at ${baseURL}. ${detail}. ` +
+          "Confirm the web app is running on that port.",
+      );
+    }
     throw new Error(detail);
   }
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import type { ComponentProps } from "react";
-import { View, TextInput, Pressable, ScrollView } from "react-native";
+import { View, Pressable, ScrollView } from "react-native";
+import type { TextInputProps } from "react-native";
+import { AppTextInput } from "@/components/ui/text-input";
 import type { StaffAddress } from "@sous/types";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
 import { StyledText } from "@/components/ui/text";
@@ -251,10 +252,10 @@ interface SheetFieldProps {
   value: string;
   onChangeText: (value: string) => void;
   placeholder?: string;
-  autoCapitalize?: ComponentProps<typeof TextInput>["autoCapitalize"];
-  autoComplete?: ComponentProps<typeof TextInput>["autoComplete"];
-  textContentType?: ComponentProps<typeof TextInput>["textContentType"];
-  keyboardType?: ComponentProps<typeof TextInput>["keyboardType"];
+  autoCapitalize?: TextInputProps["autoCapitalize"];
+  autoComplete?: TextInputProps["autoComplete"];
+  textContentType?: TextInputProps["textContentType"];
+  keyboardType?: TextInputProps["keyboardType"];
   maxLength?: number;
 }
 
@@ -274,7 +275,7 @@ function SheetField({
       <StyledText variant="label" className="mb-1.5">
         {label}
       </StyledText>
-      <TextInput
+      <AppTextInput
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

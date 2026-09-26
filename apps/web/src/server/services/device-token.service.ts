@@ -47,7 +47,7 @@ export const DeviceTokenService = {
         },
       },
       {
-        new: true,
+        returnDocument: "after",
         upsert: true,
         setDefaultsOnInsert: true,
         runValidators: true,

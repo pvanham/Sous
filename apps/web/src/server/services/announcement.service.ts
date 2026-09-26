@@ -192,7 +192,7 @@ export const AnnouncementService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     return doc ? toAnnouncementDTO(doc) : null;

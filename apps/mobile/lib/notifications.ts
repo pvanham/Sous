@@ -109,8 +109,15 @@ async function ensurePermission(): Promise<boolean> {
  * (no permission, simulator, no project id, network error). Callers
  * should treat the absence of a token as "this device just won't
  * receive push" — never as an error to surface to the user.
+ *
+ * `getToken` is required (same reason as `fetchMembership`): Clerk's
+ * middleware turns an unauthenticated `/api/*` call into an HTML 404,
+ * and the Axios interceptor can still be unwired on the first boot
+ * after sign-in.
  */
-export async function registerForPushNotifications(): Promise<string | null> {
+export async function registerForPushNotifications(
+  getToken: () => Promise<string | null>,
+): Promise<string | null> {
   setHandlerOnce();
 
   if (!Device.isDevice) {
@@ -146,7 +153,10 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const platform = Platform.OS === "ios" ? "ios" : "android";
     const deviceName =
       Device.deviceName ?? `${Device.modelName ?? "Unknown"} (${Device.osName ?? platform})`;
-    await registerDeviceToken({ expoPushToken: token, platform, deviceName });
+    await registerDeviceToken(
+      { expoPushToken: token, platform, deviceName },
+      getToken,
+    );
     lastRegisteredToken = token;
     return token;
   } catch (error) {

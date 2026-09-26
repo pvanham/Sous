@@ -94,6 +94,8 @@ export function KitchenConfigForm({
         managerRoles: initialConfig.managerRoles || [],
         operatingHours: initialConfig.operatingHours,
         minTimeOffAdvanceDays: initialConfig.minTimeOffAdvanceDays ?? 7,
+        allowStaffToManageOwnSkills:
+          initialConfig.allowStaffToManageOwnSkills ?? true,
         aiSettings: initialConfig.aiSettings ?? {
           monthlyGenerationLimit: 50,
           subscriptionTier: "free",
@@ -118,9 +120,11 @@ export function KitchenConfigForm({
     name: "roles" as never,
   });
 
-  // Reset form to original/default values
+  // Revert to the last saved values. A bare `reset()` uses the form's
+  // current defaults, which `onSuccess` re-points at the saved data —
+  // `initialConfig` is a server-component prop and goes stale after a save.
   const resetFormToOriginal = () => {
-    form.reset(defaultValues);
+    form.reset();
   };
 
   // Mutation for previewing changes
@@ -149,8 +153,10 @@ export function KitchenConfigForm({
       }
       return result.data;
     },
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       toast.success("Kitchen configuration saved successfully!");
+      // Reset form to the saved values so isDirty becomes false and the banner disappears
+      form.reset(variables.data);
       // Clear pending data first so the dialog close handler knows it was a success (not cancel)
       setPendingData(null);
       setImpactData(null);
@@ -483,6 +489,38 @@ export function KitchenConfigForm({
                 </FormItem>
               )}
             />
+        </div>
+
+        {/* Staff Permissions */}
+        <div className="space-y-4 rounded-lg border p-6">
+          <div className="space-y-0.5">
+            <h3 className="text-lg font-medium">Staff Permissions</h3>
+            <p className="text-sm text-muted-foreground">
+              Control what staff can manage themselves from the mobile app.
+            </p>
+          </div>
+          <FormField
+            control={form.control}
+            name="allowStaffToManageOwnSkills"
+            render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                <div className="space-y-0.5 pr-4">
+                  <FormLabel>Let staff propose their own skills</FormLabel>
+                  <FormDescription>
+                    Staff can propose adding or removing their station skills
+                    during onboarding and from their profile. Both additions
+                    and removals require your approval before they take effect.
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
         </div>
 
         {/* Week Start (owner-only) */}

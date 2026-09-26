@@ -9,6 +9,8 @@ const isPublicRoute = createRouteMatcher([
   "/",
   "/pricing",
   "/features",
+  "/privacy",
+  "/terms",
   "/sso-callback(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
@@ -36,7 +38,9 @@ function deriveNeedsOnboarding(
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {
-    await auth.protect();
+    await auth.protect({
+      unauthenticatedUrl: new URL("/sign-in", request.url).toString(),
+    });
   }
 
   const { userId, sessionClaims } = await auth();

@@ -1,13 +1,13 @@
-import { createMaterialTopTabNavigator } from "@react-navigation/material-top-tabs";
-import type {
-  MaterialTopTabBarProps,
-  MaterialTopTabNavigationEventMap,
-  MaterialTopTabNavigationOptions,
-} from "@react-navigation/material-top-tabs";
+import {
+  createMaterialTopTabNavigator,
+  type MaterialTopTabNavigationEventMap,
+  type MaterialTopTabNavigationOptions,
+} from "expo-router/js-top-tabs";
+
 import type {
   ParamListBase,
   TabNavigationState,
-} from "@react-navigation/native";
+} from "expo-router/react-navigation";
 import { withLayoutContext } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
@@ -22,7 +22,7 @@ import { useExchangeBadge } from "@/features/exchange/use-exchange-badge";
 /**
  * Expo Router ships a bottom-tab navigator out of the box, but it has
  * no swipe gesture between tabs. To get a native swipe + slide
- * transition, we mount `@react-navigation/material-top-tabs` (backed
+ * transition, we mount `expo-router/js-top-tabs` (backed
  * by `react-native-pager-view`) through `withLayoutContext`, pin the
  * tab bar to the bottom, and render our own bar so it looks identical
  * to the bottom-tab design.
@@ -81,7 +81,7 @@ export default function TabLayout() {
           lazy: true,
           lazyPreloadDistance: 1,
         }}
-        tabBar={(props) => (
+        tabBar={(props: TopTabBarRenderProps) => (
           <CustomTabBar
             {...props}
             palette={palette}
@@ -107,7 +107,26 @@ export default function TabLayout() {
  * bottom inset and fire haptic feedback on press — both things the
  * default `MaterialTopTabBar` doesn't give us for free.
  */
-type CustomTabBarProps = MaterialTopTabBarProps & {
+/**
+ * expo-router 56 declares `MaterialTopTabBarProps` as `any & { … }`, which
+ * collapses to `any` and silently erases the types of everything the tab bar
+ * destructures. We spell out the props the navigator actually hands us instead,
+ * using the exports that are correctly typed.
+ */
+type TopTabBarRenderProps = {
+  state: TabNavigationState<ParamListBase>;
+  descriptors: Record<string, { options: MaterialTopTabNavigationOptions }>;
+  navigation: {
+    emit(event: {
+      type: "tabPress";
+      target: string;
+      canPreventDefault: true;
+    }): { defaultPrevented: boolean };
+    navigate(name: string, params?: object): void;
+  };
+};
+
+type CustomTabBarProps = TopTabBarRenderProps & {
   palette: (typeof Colors)[keyof typeof Colors];
   bottomInset: number;
 };

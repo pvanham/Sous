@@ -195,7 +195,7 @@ export const ShiftService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: updateData },
-      { new: true, runValidators: true }
+      { returnDocument: "after", runValidators: true }
     ).lean();
 
     if (!doc) return null;
@@ -222,7 +222,7 @@ export const ShiftService = {
         locationId: new Types.ObjectId(locationId),
       },
       { $set: { staffId: new Types.ObjectId(targetStaffId) } },
-      { new: true }
+      { returnDocument: "after" }
     ).lean();
 
     return doc ? toShiftDTO(doc) : null;
