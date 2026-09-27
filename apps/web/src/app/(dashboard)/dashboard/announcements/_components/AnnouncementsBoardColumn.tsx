@@ -48,7 +48,8 @@ export function AnnouncementsBoardColumn({
           No announcements in this stage.
         </div>
       ) : (
-        <div className="relative flex flex-col [&>*+*]:-mt-3">
+        <div className="relative isolate flex flex-col [&>*+*]:-mt-3">
+          {/* isolate contains card z-index so expanded cards cannot cover portaled menus. */}
           {announcements.map((announcement, index) => (
             <AnnouncementCard
               key={announcement.id}

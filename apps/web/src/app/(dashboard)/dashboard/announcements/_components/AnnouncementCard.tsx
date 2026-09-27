@@ -32,7 +32,8 @@ export function AnnouncementCard({
   const style = LIFECYCLE_STYLE[lifecycle];
   const isUrgent = announcement.priority === "Urgent";
   const baseZ = stackSize - stackIndex;
-  const zIndex = isExpanded ? stackSize + 100 : baseZ;
+  // Above sibling cards only. A larger boost paints over portaled menus (z-50).
+  const zIndex = isExpanded ? stackSize + 1 : baseZ;
 
   const handleHeaderKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -52,17 +53,19 @@ export function AnnouncementCard({
       )}
     >
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onToggle}
-        onKeyDown={handleHeaderKeyDown}
-        aria-expanded={isExpanded}
         className={cn(
-          "flex w-full cursor-pointer justify-between gap-1.5 pl-4 pr-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "flex w-full gap-1.5 pl-4 pr-2 transition-colors hover:bg-muted/40",
           isExpanded ? "min-h-11 items-start py-3" : "h-11 items-center",
         )}
       >
-        <div className="flex min-w-0 items-center gap-2">
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onToggle}
+          onKeyDown={handleHeaderKeyDown}
+          aria-expanded={isExpanded}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        >
           {isUrgent && (
             <span
               aria-label="Urgent"
@@ -85,17 +88,11 @@ export function AnnouncementCard({
           )}
         </div>
 
-        <span
-          className="shrink-0"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <AnnouncementActionsMenu
-            announcementId={announcement.id}
-            announcementTitle={announcement.title}
-            lifecycle={lifecycle}
-          />
-        </span>
+        <AnnouncementActionsMenu
+          announcementId={announcement.id}
+          announcementTitle={announcement.title}
+          lifecycle={lifecycle}
+        />
       </div>
 
       {isExpanded ? (
