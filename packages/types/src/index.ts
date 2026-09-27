@@ -15,11 +15,11 @@ export interface StaffSkill {
 }
 
 /**
- * Physical mailing address attached to a staff record. Populated by
- * the staff member from the mobile profile screen; managers do not
- * currently see or edit this on the web dashboard. All fields are
- * required when the address is present — to "remove" an address,
- * callers send `address: null` (or `undefined`) to the patch route.
+ * Physical mailing address attached to a staff record. Staff members
+ * set it from the mobile profile screen, and managers can view and
+ * edit it on the web staff detail page. All fields are required when
+ * the address is present — to remove an address, callers send
+ * `address: null`. Omitting `address` leaves the stored value unchanged.
  */
 export interface StaffAddress {
   line1: string;

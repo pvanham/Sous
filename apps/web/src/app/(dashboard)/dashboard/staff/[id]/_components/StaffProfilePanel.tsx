@@ -5,6 +5,7 @@ import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { z } from "zod";
 import { Loader2, Plus, Save, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -30,9 +31,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { staffSchema, type StaffFormValues } from "@/lib/validations/staff.schema";
+import {
+  staffSchema,
+  type AddressInput,
+  type StaffFormValues,
+} from "@/lib/validations/staff.schema";
 import { updateStaff } from "@/server/actions/staff.actions";
-import type { StaffDTO } from "@/types/staff";
+import type { StaffAddress, StaffDTO } from "@/types/staff";
 
 interface StaffProfilePanelProps {
   staff: StaffDTO;
@@ -40,7 +45,102 @@ interface StaffProfilePanelProps {
   stations: string[];
 }
 
-function toFormValues(staff: StaffDTO): StaffFormValues {
+type AddressDraft = {
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  postalCode: string;
+};
+
+type ProfileFormValues = StaffFormValues & {
+  address: AddressDraft;
+};
+
+const EMPTY_ADDRESS: AddressDraft = {
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+};
+
+function toAddressDraft(
+  address: StaffAddress | null | undefined,
+): AddressDraft {
+  if (!address) return EMPTY_ADDRESS;
+  return {
+    line1: address.line1 ?? "",
+    line2: address.line2 ?? "",
+    city: address.city ?? "",
+    state: address.state ?? "",
+    postalCode: address.postalCode ?? "",
+  };
+}
+
+/** Blank drafts become `null` so `updateStaff` unsets the address. */
+function normalizeAddress(draft: AddressDraft): AddressInput | null {
+  const line1 = draft.line1.trim();
+  const line2 = draft.line2.trim();
+  const city = draft.city.trim();
+  const state = draft.state.trim().toUpperCase();
+  const postalCode = draft.postalCode.trim();
+  if (!line1 && !line2 && !city && !state && !postalCode) return null;
+  return {
+    line1,
+    ...(line2 ? { line2 } : {}),
+    city,
+    state,
+    postalCode,
+  };
+}
+
+// Draft strings stay on the form so inputs can be empty. Validation runs
+// the shared staff schema against the normalized address (`null` when
+// every field is blank) and copies those issues onto the draft paths.
+const profileFormSchema = z
+  .object({
+    name: z.string(),
+    email: z.string(),
+    phone: z.string(),
+    roles: z.array(z.string()),
+    skills: z.array(
+      z.object({
+        station: z.string(),
+        proficiency: z.number(),
+      }),
+    ),
+    isActive: z.boolean(),
+    sendInvite: z.boolean().optional(),
+    maxHoursPerWeek: z.number().optional(),
+    minHoursPerWeek: z.number().optional(),
+    preferredStations: z.array(z.string()).optional(),
+    certifications: z.array(z.string()).optional(),
+    hourlyRate: z.number().optional(),
+    address: z.object({
+      line1: z.string(),
+      line2: z.string(),
+      city: z.string(),
+      state: z.string(),
+      postalCode: z.string(),
+    }),
+  })
+  .superRefine((values, ctx) => {
+    const parsed = staffSchema.safeParse({
+      ...values,
+      address: normalizeAddress(values.address),
+    });
+    if (parsed.success) return;
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue({
+        code: "custom",
+        message: issue.message,
+        path: issue.path,
+      });
+    }
+  });
+
+function toFormValues(staff: StaffDTO): ProfileFormValues {
   return {
     name: staff.name,
     email: staff.email,
@@ -52,6 +152,7 @@ function toFormValues(staff: StaffDTO): StaffFormValues {
     minHoursPerWeek: staff.minHoursPerWeek ?? 0,
     hourlyRate: staff.hourlyRate ?? 0,
     preferredStations: staff.preferredStations ?? [],
+    address: toAddressDraft(staff.address),
   };
 }
 
@@ -62,8 +163,8 @@ export function StaffProfilePanel({
 }: StaffProfilePanelProps) {
   const queryClient = useQueryClient();
 
-  const form = useForm<StaffFormValues>({
-    resolver: zodResolver(staffSchema),
+  const form = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileFormSchema),
     defaultValues: toFormValues(staff),
   });
 
@@ -83,8 +184,11 @@ export function StaffProfilePanel({
   }, [staff, form]);
 
   const saveMutation = useMutation({
-    mutationFn: async (values: StaffFormValues) => {
-      const result = await updateStaff(staff.id, values);
+    mutationFn: async (values: ProfileFormValues) => {
+      const result = await updateStaff(staff.id, {
+        ...values,
+        address: normalizeAddress(values.address),
+      });
       if (!result.success) throw new Error(result.error);
       return result.data;
     },
@@ -126,7 +230,7 @@ export function StaffProfilePanel({
 
   const isDirty = form.formState.isDirty;
 
-  const onSubmit = (values: StaffFormValues) => saveMutation.mutate(values);
+  const onSubmit = (values: ProfileFormValues) => saveMutation.mutate(values);
 
   return (
     <Form {...form}>
@@ -183,6 +287,102 @@ export function StaffProfilePanel({
                   </FormItem>
                 )}
               />
+              <div className="space-y-3 border-t pt-4">
+                <div className="space-y-1">                  
+                </div>
+                <FormField
+                  control={form.control}
+                  name="address.line1"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Street address</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="123 Main St"
+                          autoComplete="street-address"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="address.line2"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Apt / suite</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Optional"
+                          autoComplete="address-line2"
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_5rem_7rem]">
+                  <FormField
+                    control={form.control}
+                    name="address.city"
+                    render={({ field }) => (
+                      <FormItem className="min-w-0">
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="City"
+                            autoComplete="address-level2"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="address.state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="NY"
+                            maxLength={3}
+                            autoComplete="address-level1"
+                            {...field}
+                            onChange={(event) =>
+                              field.onChange(event.target.value.toUpperCase())
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="address.postalCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ZIP</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="10001"
+                            maxLength={10}
+                            autoComplete="postal-code"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
               <FormField
                 control={form.control}
                 name="roles"
