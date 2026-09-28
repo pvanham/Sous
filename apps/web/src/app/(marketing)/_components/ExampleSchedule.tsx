@@ -117,16 +117,19 @@ function ShiftChip({ station, time }: ShiftCell) {
 export function ExampleSchedule() {
   return (
     <figure
-      className="border border-border bg-card"
+      className="min-w-0 max-w-full border border-border bg-card"
       aria-label="Example draft schedule for a fictional kitchen, North and Main, March 2 through 8."
     >
       <figcaption className="flex items-start justify-between gap-3 border-b border-border px-3 py-2.5 sm:px-4">
         <div className="min-w-0">
           <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            Example draft · not a customer
+            Example
           </p>
           <p className="mt-0.5 truncate text-sm font-medium text-foreground">
             North & Main · Staff view
+          </p>
+          <p className="mt-1 font-mono text-[10px] text-muted-foreground sm:hidden">
+            Swipe for the rest of the week.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -139,7 +142,7 @@ export function ExampleSchedule() {
       </figcaption>
 
       <div
-        className="overflow-x-auto"
+        className="max-w-full overflow-x-auto"
         tabIndex={0}
         aria-label="Example schedule. Scroll sideways on a small screen."
       >

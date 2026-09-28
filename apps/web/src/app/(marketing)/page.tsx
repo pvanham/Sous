@@ -94,7 +94,7 @@ const PLANS = [
       "Up to 3 kitchens",
       "Manager invitations",
     ],
-    cta: "Start Pro",
+    cta: "Get started",
     href: "/sign-up",
     featured: true,
   },
@@ -146,8 +146,8 @@ export default function LandingPage() {
   return (
     <div className="bg-background text-foreground">
       <section className="border-b border-border">
-        <div className="mx-auto grid max-w-6xl gap-10 px-6 py-14 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-end lg:gap-12 lg:py-20">
-          <div>
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 py-14 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-end lg:gap-12 lg:py-20">
+          <div className="min-w-0">
             <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">
               Kitchen scheduling
             </p>
@@ -174,7 +174,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="relative">
+          <div className="relative min-w-0">
             <div
               className="absolute -left-3 top-6 hidden h-[calc(100%-3rem)] w-px bg-primary lg:block"
               aria-hidden
