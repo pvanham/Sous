@@ -1,254 +1,432 @@
-"use client";
-
+import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
+import { Check } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
-import { 
-  Bot, 
-  Store, 
-  Clock, 
-  CalendarClock,
-  ArrowRight
-} from "lucide-react";
+
+import { ExampleSchedule } from "./_components/ExampleSchedule";
+
+export const metadata: Metadata = {
+  title: "Sous — Weekly schedules for restaurant kitchens",
+  description:
+    "Build a kitchen week by hand, or generate a draft from stations, skills, time off, and hour limits. Review it, edit it, then publish it to your staff.",
+};
+
+const FAILURES = [
+  {
+    title: "Skills live in your head.",
+    body: "Maya is the only person on sauté, and she is off Thursday. A grid of names will not catch that. Sous will, because the station is on her profile.",
+  },
+  {
+    title: "Time off lives in a text thread.",
+    body: "An approved request should already be a blocked day. On the board it shows as time off, and a generated draft will not schedule over it.",
+  },
+  {
+    title: "Overtime shows up on Monday.",
+    body: "Weekly hour caps, and a 10-hour gap between a close and the next open, are limits. A draft that breaks them is not saved.",
+  },
+];
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Set the coverage you actually need.",
+    body: "Stations, the hours you are open, and how many people each part of the day needs. That demand is what the week has to cover.",
+  },
+  {
+    n: "02",
+    title: "Keep the roster honest.",
+    body: "Skills, hourly rates, minimum and maximum hours, days someone would rather work, and days they cannot. Staff request time off in the phone app. A manager approves it.",
+  },
+  {
+    n: "03",
+    title: "Draft the week, or place every shift yourself.",
+    body: "On Pro, generation returns a draft: a score out of 100, total hours, and warnings when someone lands under their minimum. If the rules cannot be met, Sous says why — a missing skill, too much time off, an hour cap — instead of inventing a shift. On the free plan you build the same board by hand, in three views: by person, by time, and by station.",
+  },
+  {
+    n: "04",
+    title: "Publish when you will stand behind it.",
+    body: "Change any shift on the draft. Publishing is a separate step, and the floor does not see the week before that. Staff open their shifts on the phone and can propose a swap; a swap waits for a manager. A second restaurant is a second board, not a second tab on the same one.",
+  },
+];
+
+const WILL_NOT = [
+  "Schedule someone on approved time off",
+  "Schedule a day they marked unavailable",
+  "Put them on a station they are not trained for",
+  "Double-book them",
+  "Push them past their weekly hour cap",
+  "Give them a clopen with under 10 hours between shifts",
+];
+
+const TRIES = [
+  "Use stations they prefer",
+  "Honor days they would rather work",
+  "Keep people near their minimum hours",
+  "Hold labor cost down, using the rates on the roster",
+];
+
+const PLANS = [
+  {
+    name: "Free",
+    price: "$0",
+    period: "per location / month",
+    detail: "One kitchen, built by hand.",
+    features: [
+      "Up to 15 people",
+      "Manual schedule board",
+      "Time-off requests",
+      "1 kitchen",
+    ],
+    cta: "Start free",
+    href: "/sign-up",
+    featured: false,
+  },
+  {
+    name: "Pro",
+    price: "$49",
+    period: "per location / month",
+    detail: "The plan that writes the draft.",
+    features: [
+      "Up to 50 people per location",
+      "Generated schedules",
+      "Labor cost on the week",
+      "Up to 3 kitchens",
+      "Manager invitations",
+    ],
+    cta: "Get started",
+    href: "/sign-up",
+    featured: true,
+  },
+  {
+    name: "Enterprise",
+    price: "$199",
+    period: "per location / month",
+    detail: "For groups with more than three kitchens.",
+    features: [
+      "Unlimited people",
+      "Unlimited kitchens",
+      "Custom optimization weights",
+      "SSO and API access",
+    ],
+    cta: "Create an account",
+    href: "/sign-up",
+    featured: false,
+  },
+];
+
+const QUESTIONS: { q: string; a: string }[] = [
+  {
+    q: "Will a schedule go out before I have seen it?",
+    a: "No. A generated week is saved as a draft. Publishing is a separate action. Until you publish, staff do not see that week.",
+  },
+  {
+    q: "What if Saturday grill cannot be covered?",
+    a: "Generation tells you the week is not feasible and points at the constraint: not enough people trained on that station, too much approved time off, or the hour cap. You change a rule, move a request, or place the shift yourself. It does not invent a cook.",
+  },
+  {
+    q: "Can I still build the week by hand?",
+    a: "Yes. The board has a staff view, a time view, and a day-and-station view. You can add, edit, and remove shifts whether or not you generated the week. The free plan is this board, without generation.",
+  },
+  {
+    q: "Do cooks need an account?",
+    a: "Staff use the mobile app for their shifts, time-off requests, and swap proposals. Managers and owners work in the web dashboard. A staff account that opens the dashboard is asked to use the phone app instead.",
+  },
+  {
+    q: "We have two restaurants.",
+    a: "Each location has its own roster and its own week. A manager sees the kitchens they are assigned to. An owner can switch locations. The free plan is one kitchen. Pro includes three. Enterprise does not cap locations.",
+  },
+  {
+    q: "Is a chatbot guessing the shifts?",
+    a: "The week itself comes from a constraint solver. It searches for an assignment that satisfies your rules, and it either returns one or it reports that it cannot. The chat assistant can ask for a generation or propose other changes, and those proposals wait until you confirm them. Nothing from the chat is written onto a published week on its own.",
+  },
+];
 
 export default function LandingPage() {
   return (
-    <div className="flex flex-col w-full text-stone-900 dark:text-stone-50 overflow-hidden">
-      
-      {/* HERO SECTION */}
-      <section className="relative bg-background">
-        <div className="absolute inset-0 bg-[#0f1115] bg-[radial-gradient(ellipse_20%_50%_at_50%_-20%,rgba(120,119,198,0.3),rgba(255,255,255,0))] dark:block hidden pointer-events-none" />
-        <div className="mx-auto max-w-7xl px-6 py-24 sm:py-32 lg:px-8 relative z-10 flex flex-col items-center text-center">
-          
-          <motion.h1 
-            className="max-w-4xl text-5xl font-bold tracking-tight sm:text-7xl mb-6 bg-clip-text text-transparent bg-gradient-to-r from-stone-900 to-stone-500 dark:from-white dark:to-stone-400"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut" }}
-          >
-            The intelligent operating system for modern kitchens.
-          </motion.h1>
-          
-          <motion.p 
-            className="max-w-2xl text-lg leading-8 text-stone-600 dark:text-stone-300 mb-10"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-          >
-            Sous eliminates scheduling chaos, auto-optimizes labor costs, and seamlessly scales multi-location kitchen operations using advanced AI constraints.
-          </motion.p>
-          
-          <motion.div 
-            className="flex items-center gap-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: "easeOut", delay: 0.4 }}
-          >
-            <Button size="lg" className="rounded-full shadow-lg" asChild>
-              <Link href="/sign-up">Start for free</Link>
-            </Button>
-            <Button size="lg" variant="outline" className="rounded-full bg-background/50 backdrop-blur-sm shadow-sm" asChild>
-              <Link href="/features">Explore features</Link>
-            </Button>
-          </motion.div>
-          
-          <motion.div 
-            className="mt-16 w-full max-w-5xl rounded-2xl p-2 bg-gradient-to-b from-stone-200 to-stone-100 dark:from-white/10 dark:to-white/5 border border-stone-200 dark:border-white/10 shadow-2xl relative"
-            initial={{ opacity: 0, scale: 0.95, y: 40 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            transition={{ duration: 1, ease: "easeOut", delay: 0.6 }}
-          >
-            <div className="relative aspect-[16/9] w-full rounded-xl overflow-hidden shadow-inner bg-stone-900">
-              <Image 
-                src="/images/marketing/hero-v2.png" 
-                alt="High-tech futuristic kitchen interface"
-                fill
-                priority
-                className="object-cover transition-transform duration-1000 hover:scale-[1.02]"
-              />
-            </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* VALUE PROPS */}
-      <section className="py-24 bg-stone-50 dark:bg-[#0a0a0c]">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          <motion.div 
-            className="mx-auto max-w-2xl lg:text-center mb-16"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-100px" }}
-            transition={{ duration: 0.6 }}
-          >
-            <h2 className="text-base font-semibold leading-7 text-stone-500 dark:text-stone-400">Faster, Smarter, Better</h2>
-            <p className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl text-stone-900 dark:text-white">
-              Everything you need to orchestrate the back of house.
+    <div className="bg-background text-foreground">
+      <section className="border-b border-border">
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-6 py-14 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-end lg:gap-12 lg:py-20">
+          <div className="min-w-0">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-primary">
+              Kitchen scheduling
             </p>
-          </motion.div>
-          <div className="mx-auto max-w-2xl lg:max-w-none">
-            <dl className="grid max-w-xl grid-cols-1 gap-x-8 gap-y-16 lg:max-w-none lg:grid-cols-4">
-              {[
-                {
-                  name: "AI Auto-Scheduling",
-                  description: "Solve complex labor requirements using constraints logic to generate optimal schedules in seconds.",
-                  icon: Bot,
-                },
-                {
-                  name: "Multi-Location Native",
-                  description: "Manage global managers, staff, and shifts efficiently across one or one thousand kitchens seamlessly.",
-                  icon: Store,
-                },
-                {
-                  name: "Time-Off Management",
-                  description: "Employees can submit time off directly; the scheduler engine automatically routes around missing staff.",
-                  icon: CalendarClock,
-                },
-                {
-                  name: "Cost Optimization",
-                  description: "Fine-tune cost weights versus employee preferences to always keep labor margins highly profitable.",
-                  icon: Clock,
-                },
-              ].map((feature, idx) => (
-                <motion.div 
-                  key={feature.name} 
-                  className="flex flex-col items-center lg:items-start lg:text-left text-center"
-                  initial={{ opacity: 0, y: 30 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true, margin: "-50px" }}
-                  transition={{ duration: 0.6, delay: idx * 0.15 }}
-                >
-                  <div className="mb-6 flex h-12 w-12 items-center justify-center rounded-xl bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm">
-                    <feature.icon className="h-6 w-6" aria-hidden="true" />
-                  </div>
-                  <dt className="text-lg font-semibold leading-7 text-stone-900 dark:text-white">
-                    {feature.name}
-                  </dt>
-                  <dd className="mt-2 flex flex-auto flex-col text-base leading-7 text-stone-600 dark:text-stone-400">
-                    <p className="flex-auto">{feature.description}</p>
-                  </dd>
-                </motion.div>
-              ))}
-            </dl>
+            <h1 className="mt-3 text-[2.35rem] font-semibold leading-[1.05] tracking-tight text-foreground sm:text-5xl">
+              Fill next week from who can actually work it.
+            </h1>
+            <p className="mt-5 text-base leading-7 text-muted-foreground">
+              Sous is the board for a restaurant week. Place shifts yourself,
+              or generate a draft from your stations, the coverage you need,
+              who is trained, and who is already off. You edit it. You publish
+              it. The floor does not see it before that.
+            </p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Button size="lg" asChild>
+                <Link href="/sign-up">Start free</Link>
+              </Button>
+              <Button size="lg" variant="outline" asChild>
+                <Link href="#how-a-week-gets-made">How a week gets made</Link>
+              </Button>
+            </div>
+            <p className="mt-4 max-w-sm text-sm leading-6 text-muted-foreground">
+              Free is one kitchen, 15 people, and a manual board. Generating a
+              draft is $49 per location on Pro.
+            </p>
+          </div>
+
+          <div className="relative min-w-0">
+            <div
+              className="absolute -left-3 top-6 hidden h-[calc(100%-3rem)] w-px bg-primary lg:block"
+              aria-hidden
+            />
+            <ExampleSchedule />
           </div>
         </div>
       </section>
 
-      {/* TWO COLUMN FEATURE SHOWCASE */}
-      <section className="py-24 bg-background overflow-hidden relative">
-        <div className="mx-auto max-w-7xl px-6 lg:px-8">
-          
-          {/* Feature 1 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center mb-32">
-            <motion.div
-              initial={{ opacity: 0, x: -50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            >
-              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl mb-6 text-stone-900 dark:text-white">
-                The constraint-based AI engine.
-              </h2>
-              <p className="text-lg text-stone-600 dark:text-stone-400 mb-8">
-                Sous relies on an advanced CP-SAT solver built into the cloud. It perfectly balances business requirements, fair shift distribution, labor costs, and staff time-off limits so you never have to play sudoku with spreadsheets again.
-              </p>
-              <Button variant="link" className="p-0 h-auto text-stone-900 dark:text-white font-semibold" asChild>
-                <Link href="/features" className="flex items-center gap-1 group">
-                  See how it works <ArrowRight className="h-4 w-4 transform group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </Button>
-            </motion.div>
-            
-            <motion.div 
-              className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-2xl p-1 bg-gradient-to-tr from-stone-200 to-stone-100 dark:from-white/10 dark:to-transparent border border-white/5"
-              initial={{ opacity: 0, scale: 0.9, x: 50 }}
-              whileInView={{ opacity: 1, scale: 1, x: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-            >
-              <div className="relative w-full h-full rounded-xl overflow-hidden bg-stone-950">
-                <Image 
-                  src="/images/marketing/feature-scheduling-v2.png" 
-                  alt="AI Scheduling Node Network"
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  className="object-cover opacity-90 transition-transform duration-1000 hover:scale-105"
-                />
-              </div>
-            </motion.div>
+      <section className="border-b border-border">
+        <div className="mx-auto max-w-6xl px-6 py-14 lg:py-16">
+          <div className="max-w-xl">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              Where weeks fall apart
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+              The spreadsheet does not know your line.
+            </h2>
           </div>
-
-          {/* Feature 2 */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center lg:flex-row-reverse">
-            <motion.div 
-              className="lg:order-last"
-              initial={{ opacity: 0, x: 50 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.8, ease: "easeOut" }}
-            >
-              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl mb-6 text-stone-900 dark:text-white">
-                Synchronized across all your locations.
-              </h2>
-              <p className="text-lg text-stone-600 dark:text-stone-400 mb-8">
-                Designed for franchises and rapid-growth restaurant groups, our B2B architecture lets you invite managers and restrict their access purely to their own kitchen, while giving owners a bird&apos;s-eye view of everything from a single pane of glass.
-              </p>
-              <Button variant="link" className="p-0 h-auto text-stone-900 dark:text-white font-semibold" asChild>
-                <Link href="/features" className="flex items-center gap-1 group">
-                  Explore Enterprise scale <ArrowRight className="h-4 w-4 transform group-hover:translate-x-1 transition-transform" />
-                </Link>
-              </Button>
-            </motion.div>
-
-            <motion.div 
-              className="relative aspect-square w-full rounded-2xl overflow-hidden shadow-2xl p-1 bg-gradient-to-bl from-stone-200 to-stone-100 dark:from-white/10 dark:to-transparent border border-white/5 lg:order-first"
-              initial={{ opacity: 0, scale: 0.9, x: -50 }}
-              whileInView={{ opacity: 1, scale: 1, x: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.8, ease: "easeOut", delay: 0.2 }}
-            >
-               <div className="relative w-full h-full rounded-xl overflow-hidden bg-stone-950">
-                <Image 
-                  src="/images/marketing/feature-sync-v2.png" 
-                  alt="Global multi-location synchronization"
-                  fill
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  className="object-cover opacity-90 hover:scale-105 transition-transform duration-1000"
-                />
-              </div>
-            </motion.div>
-          </div>
+          <ol className="mt-10 grid gap-8 sm:grid-cols-3 sm:gap-6">
+            {FAILURES.map((item, index) => (
+              <li key={item.title}>
+                <p className="font-mono text-xs text-primary">
+                  0{index + 1}
+                </p>
+                <h3 className="mt-2 text-base font-semibold text-foreground">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {item.body}
+                </p>
+              </li>
+            ))}
+          </ol>
         </div>
       </section>
 
-      {/* CALL TO ACTION */}
-      <section className="py-24 bg-stone-900 dark:bg-stone-50 overflow-hidden relative xl:mx-10 mb-12 lg:rounded-3xl shadow-xl">
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 mix-blend-overlay pointer-events-none"></div>
-        <motion.div 
-          className="relative mx-auto max-w-4xl text-center z-10 px-6"
-          initial={{ opacity: 0, y: 40 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ duration: 0.8, ease: "easeOut" }}
-        >
-          <h2 className="text-3xl font-bold tracking-tight text-white dark:text-stone-900 sm:text-5xl mb-6">
-            Ready to stop playing guessing games with your schedule?
-          </h2>
-          <p className="mx-auto max-w-2xl text-lg text-stone-300 dark:text-stone-600 mb-10">
-            Join the hundreds of modern kitchens using Sous to radically reduce labor costs and increase employee satisfaction.
+      <section
+        id="how-a-week-gets-made"
+        className="scroll-mt-16 border-b border-border"
+      >
+        <div className="mx-auto max-w-6xl px-6 py-14 lg:py-16">
+          <div className="max-w-xl">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              The week, in order
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+              How a week gets made.
+            </h2>
+          </div>
+          <ol className="mt-10 divide-y divide-border border-y border-border">
+            {STEPS.map((step) => (
+              <li
+                key={step.n}
+                className="grid gap-2 py-6 sm:grid-cols-[4.5rem_minmax(0,1fr)] sm:gap-8 sm:py-7"
+              >
+                <p className="font-mono text-sm text-primary">{step.n}</p>
+                <div className="max-w-2xl">
+                  <h3 className="text-base font-semibold text-foreground">
+                    {step.title}
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {step.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-6 max-w-2xl border-l-2 border-primary pl-4 text-sm leading-6 text-foreground">
+            Generation proposes a draft. It does not publish, and it does not
+            get the last word. You do.
           </p>
-          <div className="flex items-center justify-center gap-x-6">
-            <Button size="lg" className="bg-white text-stone-900 hover:bg-stone-100 dark:bg-stone-900 dark:text-white dark:hover:bg-stone-800 rounded-full" asChild>
-              <Link href="/sign-up">Start your 14-day free trial</Link>
+        </div>
+      </section>
+
+      <section className="border-b border-border">
+        <div className="mx-auto max-w-6xl px-6 py-14 lg:py-16">
+          <div className="max-w-xl">
+            <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              On a generated week
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Rules the draft is not allowed to break.
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              These are the checks that run before a draft is saved. After
+              that, the board is yours to edit.
+            </p>
+          </div>
+          <div className="mt-8 grid border border-border sm:grid-cols-2">
+            <div className="border-b border-border p-5 sm:border-b-0 sm:border-r sm:p-6">
+              <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-foreground">
+                It will not
+              </h3>
+              <ul className="mt-4 space-y-2.5">
+                {WILL_NOT.map((rule) => (
+                  <li
+                    key={rule}
+                    className="flex gap-2.5 text-sm leading-6 text-muted-foreground"
+                  >
+                    <span
+                      className="mt-2 h-1 w-1 shrink-0 bg-primary"
+                      aria-hidden
+                    />
+                    {rule}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="bg-card p-5 sm:p-6">
+              <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-foreground">
+                It tries to
+              </h3>
+              <ul className="mt-4 space-y-2.5">
+                {TRIES.map((rule) => (
+                  <li
+                    key={rule}
+                    className="flex gap-2.5 text-sm leading-6 text-muted-foreground"
+                  >
+                    <span
+                      className="mt-2 h-1 w-1 shrink-0 bg-foreground/40"
+                      aria-hidden
+                    />
+                    {rule}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-border" id="pricing">
+        <div className="mx-auto max-w-6xl px-6 py-14 lg:py-16">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="max-w-xl">
+              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                Pricing
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+                Start on the free board. Generate weeks when you want them written.
+              </h2>
+            </div>
+            <Link
+              href="/pricing"
+              className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Full plan comparison
+            </Link>
+          </div>
+
+          <div className="mt-8 grid gap-px border border-border bg-border md:grid-cols-3">
+            {PLANS.map((plan) => (
+              <article
+                key={plan.name}
+                className="flex flex-col bg-background p-5 sm:p-6"
+              >
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-base font-semibold">{plan.name}</h3>
+                  {plan.featured ? (
+                    <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">
+                      Generates drafts
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-4 flex items-baseline gap-2">
+                  <span className="font-mono text-3xl tracking-tight text-foreground">
+                    {plan.price}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {plan.period}
+                  </span>
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">{plan.detail}</p>
+                <ul className="mt-5 flex-1 space-y-2">
+                  {plan.features.map((feature) => (
+                    <li
+                      key={feature}
+                      className="flex gap-2 text-sm leading-6 text-foreground"
+                    >
+                      <Check
+                        className="mt-1 h-3.5 w-3.5 shrink-0 text-primary"
+                        aria-hidden
+                      />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+                <Button
+                  className="mt-6 w-full"
+                  variant={plan.featured ? "default" : "outline"}
+                  asChild
+                >
+                  <Link href={plan.href}>{plan.cta}</Link>
+                </Button>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="border-b border-border">
+        <div className="mx-auto grid max-w-6xl gap-8 px-6 py-14 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] lg:py-16">
+          <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            Before you open an account.
+          </h2>
+          <div>
+            {QUESTIONS.map((item) => (
+              <details
+                key={item.q}
+                className="group border-b border-border py-4 first:border-t"
+              >
+                <summary className="flex cursor-pointer list-none items-start justify-between gap-6 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                  {item.q}
+                  <span
+                    className="mt-0.5 inline-block font-mono text-base leading-none text-muted-foreground transition-transform group-open:rotate-45"
+                    aria-hidden
+                  >
+                    +
+                  </span>
+                </summary>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
+                  {item.a}
+                </p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-16 sm:flex-row sm:items-end sm:justify-between lg:py-20">
+          <div className="max-w-xl">
+            <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              Put this week on the board.
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-muted-foreground">
+              Open a kitchen, add the people who work it, and start with the
+              free board. Move to Pro when you want the draft written from
+              your rules.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Button size="lg" asChild>
+              <Link href="/sign-up">Start free</Link>
             </Button>
-            <Button variant="link" className="text-white dark:text-stone-900 hover:text-stone-300 dark:hover:text-stone-600" asChild>
-              <Link href="/pricing">View our plans</Link>
+            <Button size="lg" variant="outline" asChild>
+              <Link href="/pricing">See pricing</Link>
             </Button>
           </div>
-        </motion.div>
+        </div>
       </section>
-      
     </div>
   );
 }

@@ -2,7 +2,7 @@ import Link from "next/link";
 
 export function MarketingFooter() {
   return (
-    <footer className="border-t border-stone-200 dark:border-white/10 bg-background">
+    <footer className="border-t border-border bg-background">
       <div className="mx-auto max-w-6xl px-6 py-12 md:flex md:items-center md:justify-between">
         <div className="flex justify-center space-x-6 md:order-2">
           <Link href="/features" className="text-sm text-stone-500 hover:text-stone-900 dark:hover:text-stone-300">
