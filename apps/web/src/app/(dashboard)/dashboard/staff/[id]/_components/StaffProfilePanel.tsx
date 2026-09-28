@@ -268,8 +268,19 @@ export function StaffProfilePanel({
                         type="email"
                         placeholder="john@example.com"
                         {...field}
+                        disabled={Boolean(staff.clerkUserId)}
                       />
                     </FormControl>
+                    {staff.clerkUserId ? (
+                      <FormDescription>
+                        This person changes their email from their account.
+                        The roster updates after they verify the new address.
+                      </FormDescription>
+                    ) : staff.invitationStatus === "pending" ? (
+                      <FormDescription>
+                        Changing this email cancels the current app invite.
+                      </FormDescription>
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}

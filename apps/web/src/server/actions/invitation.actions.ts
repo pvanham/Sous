@@ -7,29 +7,10 @@ import {
   inviteStaffSchema,
 } from "@/lib/validations/invitation.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
-import { StaffService } from "@/server/services/staff.service";
+import { splitName, StaffService } from "@/server/services/staff.service";
 import { revokePendingStaffInvitations } from "@/lib/clerk/revoke-staff-invitation";
 import { dbConnect } from "@/lib/db";
 import type { ActionResponse } from "@/lib/safe-action";
-
-/**
- * Split a stored full name (Staff records keep a single `name` field)
- * into the `firstName` / `lastName` pair the sign-up form expects.
- * The first whitespace-delimited token is the first name; everything
- * after it is the last name. A single-token name yields an empty last
- * name (the form then leaves that field editable so it can still be
- * filled in before submitting).
- */
-function splitName(full: string): { firstName: string; lastName: string } {
-  const trimmed = full.trim().replace(/\s+/g, " ");
-  if (!trimmed) return { firstName: "", lastName: "" };
-  const idx = trimmed.indexOf(" ");
-  if (idx === -1) return { firstName: trimmed, lastName: "" };
-  return {
-    firstName: trimmed.slice(0, idx),
-    lastName: trimmed.slice(idx + 1),
-  };
-}
 
 /**
  * Extract the Clerk invitation id from a `__clerk_ticket` JWT without

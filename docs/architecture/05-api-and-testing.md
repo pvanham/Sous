@@ -100,7 +100,12 @@ export async function POST(req: Request) {
 ### Clerk webhook specifics
 
 `/api/webhooks/clerk` provisions `OrganizationMember` rows on
-`user.created` and cascades deletions on `user.deleted`. See
+`user.created` and cascades deletions on `user.deleted`. `user.created`
+also links the staff row and mirrors the new account's name and
+verified primary email onto it. `user.updated` mirrors the profile
+photo, and the same account name and verified primary email, onto
+every linked staff row. A metadata-only update no-ops when those
+values already match. See
 `apps/web/src/app/api/webhooks/clerk/route.ts` for the canonical
 implementation. Self-healing logic (creating a missing member row for a
 pre-existing Clerk user) is handled by

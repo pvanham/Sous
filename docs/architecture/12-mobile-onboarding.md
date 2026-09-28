@@ -133,6 +133,11 @@ server directly so a mid-flow crash never loses progress.
 | `notifications` | `expo-notifications` permission + `PATCH /me/notifications/preferences` | tap "Enable" or "Not now" |
 | `done` | `POST /me/onboarding/complete` | tap "Get started" |
 
+The profile step writes the name to Clerk only. `user.updated` (and
+`GET /api/me/staff`, which heals a missed webhook) copies that name
+onto `staff.name`, so the roster matches the account. Phone stays on
+the staff row.
+
 ## Completion contract
 
 `POST /api/me/onboarding/complete` (handled by

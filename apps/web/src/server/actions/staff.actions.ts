@@ -1,13 +1,13 @@
 "use server";
 
-import { auth } from "@clerk/nextjs/server";
+import { auth, clerkClient } from "@clerk/nextjs/server";
 import {
   staffWithInviteSchema,
   staffUpdateSchema,
   importStaffSchema,
   staffListParamsSchema,
 } from "@/lib/validations/staff.schema";
-import { StaffService } from "@/server/services/staff.service";
+import { splitName, StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
@@ -47,8 +47,17 @@ export async function getStaffById(
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
 
-    // 3. Service call
-    const staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+    // 3. Service call. A linked row is refreshed from Clerk here, and
+    //    only here — list and schedule reads stay on the Mongo copy.
+    let staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+    if (staff?.clerkUserId) {
+      try {
+        await StaffService.mirrorAccountFromClerk(staff.clerkUserId);
+        staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+      } catch (mirrorError) {
+        console.error("getStaffById account mirror failed:", mirrorError);
+      }
+    }
 
     // 4. Return response
     return { success: true, data: staff };
@@ -347,6 +356,7 @@ export async function updateStaff(
   staffId: string,
   input: unknown
 ): Promise<ActionResponse<StaffDTO>> {
+  let inviteRevoked = false;
   try {
     // 1. Auth check
     const { userId } = await auth();
@@ -406,19 +416,111 @@ export async function updateStaff(
       }
     }
 
-    // 5. Service call
-    const staff = await StaffService.update(
+    // 5. A linked account owns name and email. Push a name change
+    //    through Clerk and let the mirror write Mongo. Reject an email
+    //    change. A pending invite's email change revokes that invite
+    //    before the roster address is saved.
+    const existing = await StaffService.getById(
       ctx.orgId,
       ctx.locationId,
       staffId,
-      updateData
     );
+    if (!existing) {
+      return { success: false, error: "Staff member not found" };
+    }
+
+    const nextEmail = updateData.email?.toLowerCase();
+    const emailChanging =
+      nextEmail !== undefined && nextEmail !== existing.email.toLowerCase();
+    const normalizedName = updateData.name?.trim().replace(/\s+/g, " ");
+    const nameChanging =
+      normalizedName !== undefined &&
+      normalizedName !== existing.name.trim().replace(/\s+/g, " ");
+
+    if (existing.clerkUserId && emailChanging) {
+      return {
+        success: false,
+        error:
+          "This person changes their email from their account. The roster updates after they verify the new address.",
+      };
+    }
+
+    if (existing.clerkUserId && nameChanging && normalizedName) {
+      const { firstName, lastName } = splitName(normalizedName);
+      try {
+        const client = await clerkClient();
+        await client.users.updateUser(existing.clerkUserId, {
+          firstName,
+          lastName,
+        });
+        await StaffService.mirrorAccountFromClerk(existing.clerkUserId);
+      } catch (clerkError) {
+        const message =
+          clerkError instanceof Error
+            ? clerkError.message
+            : "Failed to update name";
+        return { success: false, error: message };
+      }
+      delete updateData.name;
+    }
+
+    if (
+      !existing.clerkUserId &&
+      existing.invitationStatus === "pending" &&
+      emailChanging
+    ) {
+      const handle = await StaffService.getInvitationHandle(
+        ctx.orgId,
+        ctx.locationId,
+        staffId,
+      );
+      if (!handle) {
+        return { success: false, error: "Staff member not found" };
+      }
+      try {
+        await revokePendingStaffInvitations({
+          staffId,
+          email: existing.email,
+          clerkInvitationId: handle.clerkInvitationId,
+        });
+      } catch (revokeError) {
+        console.error("updateStaff: failed to revoke pending invite:", revokeError);
+        return {
+          success: false,
+          error:
+            "Couldn't cancel the pending invite, so the email was not changed. Try again.",
+        };
+      }
+      inviteRevoked = true;
+    }
+
+    // 6. Service call. Name on a linked row was already mirrored.
+    let staff: StaffDTO | null;
+    if (Object.keys(updateData).length > 0) {
+      staff = await StaffService.update(
+        ctx.orgId,
+        ctx.locationId,
+        staffId,
+        updateData,
+      );
+    } else {
+      staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+    }
 
     if (!staff) {
       return { success: false, error: "Staff member not found" };
     }
 
-    // 6. Reconcile any open self-service skill requests the manager just
+    if (inviteRevoked) {
+      const cleared = await StaffService.clearPendingInvitation(
+        ctx.orgId,
+        ctx.locationId,
+        staffId,
+      );
+      if (cleared) staff = cleared;
+    }
+
+    // 7. Reconcile any open self-service skill requests the manager just
     // satisfied by editing skills directly (e.g. they added a station a
     // staff member had proposed, or removed one a staff member wanted
     // gone). Best-effort — never block the update on this.
@@ -436,11 +538,35 @@ export async function updateStaff(
       }
     }
 
-    // 7. Return response
+    // 8. Return response
     return { success: true, data: staff };
   } catch (error) {
+    if (inviteRevoked) {
+      try {
+        const { userId } = await auth();
+        if (userId) {
+          const ctx = await getLocationContext(userId);
+          await StaffService.clearPendingInvitation(
+            ctx.orgId,
+            ctx.locationId,
+            staffId,
+          );
+        }
+      } catch (clearError) {
+        console.error(
+          "updateStaff: invite revoked but status could not be cleared:",
+          clearError,
+        );
+      }
+    }
     const message =
       error instanceof Error ? error.message : "Failed to update staff";
+    if (message.includes("duplicate key") || message.includes("E11000")) {
+      return {
+        success: false,
+        error: "A staff member with this email already exists",
+      };
+    }
     return { success: false, error: message };
   }
 }
