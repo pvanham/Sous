@@ -236,7 +236,17 @@ class _FlatSlot:
 
 
 class _StaffEntry:
-    __slots__ = ("idx", "staff_id", "staff_name", "max_minutes", "min_minutes", "existing_minutes", "resolved_rate", "is_manager")
+    __slots__ = (
+        "idx",
+        "staff_id",
+        "staff_name",
+        "max_minutes",
+        "min_minutes",
+        "existing_minutes",
+        "resolved_rate",
+        "actual_rate",
+        "is_manager",
+    )
 
     def __init__(
         self,
@@ -247,6 +257,7 @@ class _StaffEntry:
         min_minutes: int,
         existing_minutes: int,
         resolved_rate: float,
+        actual_rate: float,
         is_manager: bool,
     ):
         self.idx = idx
@@ -255,7 +266,11 @@ class _StaffEntry:
         self.max_minutes = max_minutes
         self.min_minutes = min_minutes
         self.existing_minutes = existing_minutes
+        # Rate used by the objective. May be a role average when hourlyRate is missing.
         self.resolved_rate = resolved_rate
+        # Rate reported as labor cost. Missing hourly rates stay $0 so the
+        # figure matches the schedule page.
+        self.actual_rate = actual_rate
         self.is_manager = is_manager
 
 
@@ -314,6 +329,7 @@ def _transform_input(
     global_avg = global_sum / global_count if global_count > 0 else 15.00
 
     resolved_rates: dict[str, float] = {}
+    actual_rates: dict[str, float] = {}
     for cand_id, cand in unique_candidates.items():
         if cand.hourlyRate is None or cand.hourlyRate <= 0:
             fallback_rates_used = True
@@ -330,8 +346,10 @@ def _transform_input(
             else:
                 rate_to_use = global_avg
             resolved_rates[cand_id] = rate_to_use
+            actual_rates[cand_id] = 0.0
         else:
             resolved_rates[cand_id] = cand.hourlyRate
+            actual_rates[cand_id] = cand.hourlyRate
 
     for day in req.days:
         for sc in day.slots:
@@ -359,6 +377,7 @@ def _transform_input(
                                 req.existingWeekHours.get(cand.staffId, 0) * 60
                             ),
                             resolved_rate=resolved_rates[cand.staffId],
+                            actual_rate=actual_rates[cand.staffId],
                             is_manager=is_mgr,
                         )
                     )
@@ -805,8 +824,9 @@ def _solve_schedule(req: SolveRequest) -> SolveResponse:
     for staff in staff_entries:
         val = solver.value(h[staff.idx])
         overtime_summary[staff.staff_id] = max(0, val - threshold_minutes)
-        # Calculate final cost
-        total_cost_cents += int((val / 60) * staff.resolved_rate * 100)
+        # Full week hours (existing + newly assigned) at the real hourly
+        # rate. Fallback averages stay on the objective only.
+        total_cost_cents += int(round((val / 60.0) * staff.actual_rate * 100))
 
     return SolveResponse(
         status=status_label,

@@ -12,6 +12,7 @@ import {
   getWeekEnd,
   calculateShiftDuration,
 } from "@/lib/utils/date";
+import { estimateAcceptedWeekLaborCost } from "@/lib/utils/labor-cost";
 import { CandidateService } from "@/server/services/candidate.service";
 import { CPSolverService } from "@/server/services/cp-solver.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
@@ -515,6 +516,37 @@ function assignmentToSyntheticShift(
     createdAt: new Date(),
     updatedAt: new Date(),
   };
+}
+
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Labor cost the schedule page will show after these assignments are
+ * accepted. Uses the same week window and staff list as that page, not
+ * the solver's stand-in rates.
+ */
+async function projectWeekLaborCost(
+  context: SchedulingContext,
+  days: GeneratedDaySchedule[],
+): Promise<{ cost: number; missingHourlyRate: boolean }> {
+  const weekStart = new Date(context.weekStart);
+  const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
+  const [staff, existingShifts] = await Promise.all([
+    StaffService.list(context.orgId, context.locationId),
+    ShiftService.getByLocationAndDateRange(
+      context.orgId,
+      context.locationId,
+      weekStart,
+      weekEnd,
+    ),
+  ]);
+
+  return estimateAcceptedWeekLaborCost({
+    weekStart,
+    existingShifts,
+    generatedDays: days,
+    staff,
+  });
 }
 
 function initWeekHoursFromShifts(
@@ -1416,6 +1448,7 @@ export const SchedulingAgentService = {
     allWarnings.push(...overtimeWarnings);
 
     const totalElapsed = Date.now() - startTime;
+    const labor = await projectWeekLaborCost(context, dayResults);
     const metadata: GenerationMetadata = {
       totalShiftsCreated,
       totalUnfilledSlots,
@@ -1428,8 +1461,8 @@ export const SchedulingAgentService = {
       preferredStationMatches: totalPreferredStationMatches,
       totalAssignmentsWithPreference,
       aiOptimized: false,
-      totalEstimatedCost: base.totalCostCents / 100,
-      fallbackRatesUsed: base.fallbackRatesUsed,
+      totalEstimatedCost: labor.cost,
+      fallbackRatesUsed: labor.missingHourlyRate,
     };
 
     const summaryParts: string[] = [];
@@ -1495,7 +1528,7 @@ export const SchedulingAgentService = {
     };
 
     const base = await prefetchAndSolve(context);
-    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator, totalCostCents, fallbackRatesUsed } = base;
+    const { weekDays, allDayCandidates, dayContextMap, weekBaseMap, weekHoursAccumulator } = base;
 
     let accumulatedShifts: ShiftDTO[] = [...context.existingShifts];
     let totalTokenUsage = emptyTokenUsage();
@@ -1733,6 +1766,7 @@ export const SchedulingAgentService = {
 
     const totalElapsed = Date.now() - startTime;
     const optimizerDaysRun = optimizerStats.aiImproved + optimizerStats.usedBase;
+    const labor = await projectWeekLaborCost(context, dayResults);
     const metadata: GenerationMetadata = {
       totalShiftsCreated,
       totalUnfilledSlots,
@@ -1745,8 +1779,8 @@ export const SchedulingAgentService = {
       preferredStationMatches: totalPreferredStationMatches,
       totalAssignmentsWithPreference,
       aiOptimized: true,
-      totalEstimatedCost: totalCostCents / 100,
-      fallbackRatesUsed: fallbackRatesUsed || usedFallbackAnyDay,
+      totalEstimatedCost: labor.cost,
+      fallbackRatesUsed: labor.missingHourlyRate,
     };
 
     const summaryParts: string[] = [];

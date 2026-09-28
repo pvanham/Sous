@@ -3,6 +3,7 @@
 import { Clock, Users, CalendarDays, DollarSign } from "lucide-react";
 
 import { Card, CardContent } from "@/components/ui/card";
+import { calculateLaborCost, formatLaborCost } from "@/lib/utils/labor-cost";
 import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
 
@@ -35,22 +36,6 @@ function calculateTotalHours(shifts: ShiftDTO[]): number {
 function countUniqueStaff(shifts: ShiftDTO[]): number {
   const uniqueStaffIds = new Set(shifts.map((shift) => shift.staffId));
   return uniqueStaffIds.size;
-}
-
-/**
- * Calculates the total labor cost based on shifts and staff hourly rates.
- */
-function calculateLaborCost(shifts: ShiftDTO[], staff: StaffDTO[] = []): number {
-  const staffMap = new Map(staff.map((s) => [s.id, s]));
-  const totalCost = shifts.reduce((acc, shift) => {
-    const start = new Date(shift.start).getTime();
-    const end = new Date(shift.end).getTime();
-    const hours = (end - start) / (1000 * 60 * 60);
-    const hourlyRate = staffMap.get(shift.staffId)?.hourlyRate || 0;
-    return acc + (hours * hourlyRate);
-  }, 0);
-
-  return totalCost;
 }
 
 /**
@@ -135,11 +120,7 @@ export function WeekSummary({ shifts, staff }: WeekSummaryProps) {
                   Total Cost
                 </p>
                 <p className="text-2xl font-mono font-semibold tabular-nums text-stone-900 dark:text-stone-100">
-                  {new Intl.NumberFormat("en-US", {
-                    style: "currency",
-                    currency: "USD",
-                    maximumFractionDigits: 0,
-                  }).format(laborCost)}
+                  {formatLaborCost(laborCost)}
                 </p>
               </div>
             </div>

@@ -168,9 +168,17 @@ and async-task mechanics.
 - `AIUsageLog` captures any LLM calls made during generation (prompts
   for the optimizer narrative and the infeasibility analyzer). These
   count against the org's monthly allotment via `ai-usage.service.ts`.
-- Solver costs are **not** LLM costs — they're reported only in
-  `AsyncTask.result.totalCostCents` (i.e. the projected **labor** cost
-  of the generated schedule).
+- Solver costs are **not** LLM costs. The preview's estimated week cost
+  (`GenerationMetadata.totalEstimatedCost`) is hours × each staff
+  member's real `hourlyRate` (a missing rate counts as $0), including
+  shifts already on the week. That is the same formula as the schedule
+  page total, so the number does not change when the draft is accepted.
+  The solver still substitutes a role-average rate inside its objective
+  so profiles with no rate are not treated as free labor; that substitute
+  is not shown in the preview. Assignments accept would skip because they
+  overlap an existing shift for the same person are left out of the
+  preview total. `AsyncTask.result.totalCostCents` is the solver's
+  actual-rate figure for the async path.
 
 ---
 
