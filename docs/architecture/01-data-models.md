@@ -132,7 +132,18 @@ mobile app.
 `lastName` is a server-only sort key for the staff directory. It is
 derived from `name` on create/update (suffixes like Jr/Sr/II/III/IV
 are stripped) and is not part of `StaffDTO`. Older documents missing
-the field are backfilled the next time `listPaginated` runs.
+the field are backfilled the next time `listPaginated` runs. It is
+also refreshed whenever a linked account's name is mirrored from Clerk.
+
+Until `clerkUserId` is set, the manager owns `name` and `email`. After
+the invite is accepted, Clerk owns the account name and the verified
+primary email, and `StaffService.mirrorAccountFromClerk` copies them
+onto the staff row (the same pattern as `imageUrl`). A manager name
+edit on a linked row is pushed to Clerk first. A manager cannot change
+that row's email; the person does it from their account, and the
+mirror runs after the new address is verified. Changing the email on
+a still-pending invite revokes the invitation. CSV import does not
+overwrite `name` on a linked row.
 
 `clerkInvitationId` is the Clerk invitation id for the latest pending
 app invite. It is not part of `StaffDTO`. `inviteStaffToApp` writes it

@@ -68,15 +68,26 @@ export async function POST(req: NextRequest) {
         if (resolvedRole === "staff" && locationId) {
           const staffId = publicMetadata.staffId as string | undefined;
           try {
-            if (staffId) {
-              await StaffService.linkClerkUser(orgId, locationId, staffId, userId);
-              console.log(`Linked clerk user ${userId} to staff ${staffId}`);
-            } else {
-              // Fallback: match by email
-              const staffByEmail = await StaffService.getByEmail(orgId, locationId, email);
-              if (staffByEmail) {
-                await StaffService.linkClerkUser(orgId, locationId, staffByEmail.id, userId);
-                console.log(`Linked clerk user ${userId} to staff ${staffByEmail.id} via email`);
+            const linkedId = staffId
+              ? staffId
+              : (
+                  await StaffService.getByEmail(orgId, locationId, email)
+                )?.id;
+            if (linkedId) {
+              await StaffService.linkClerkUser(
+                orgId,
+                locationId,
+                linkedId,
+                userId,
+              );
+              console.log(`Linked clerk user ${userId} to staff ${linkedId}`);
+              try {
+                await StaffService.mirrorAccountFromClerk(userId);
+              } catch (mirrorError) {
+                console.error(
+                  "Failed to mirror account onto staff (non-fatal):",
+                  mirrorError,
+                );
               }
             }
           } catch (linkError) {
@@ -118,6 +129,15 @@ export async function POST(req: NextRequest) {
         console.error("Failed to sync profile image on user.updated:", error);
         // Non-fatal: returning 200 keeps Clerk from retrying forever
         // for transient Mongo issues. Webhook can be re-fired manually.
+      }
+
+      // Name and verified primary email follow the same mirror. A
+      // metadata-only update no-ops inside the service when nothing
+      // changed. Failure stays non-fatal for the same retry reason.
+      try {
+        await StaffService.mirrorAccountFromClerk(userId);
+      } catch (error) {
+        console.error("Failed to mirror account on user.updated:", error);
       }
     }
   }

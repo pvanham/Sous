@@ -112,7 +112,7 @@ export async function GET(): Promise<Response> {
     await dbConnect();
     const ctx = await getLocationContext(userId);
 
-    const staff = await StaffService.getByClerkUserId(
+    let staff = await StaffService.getByClerkUserId(
       ctx.orgId,
       ctx.locationId,
       userId,
@@ -123,6 +123,19 @@ export async function GET(): Promise<Response> {
         { error: "No staff record linked to this account." },
         { status: 404 },
       );
+    }
+
+    // Heal a missed webhook. One Clerk read for the signed-in user.
+    try {
+      await StaffService.mirrorAccountFromClerk(userId);
+      staff =
+        (await StaffService.getByClerkUserId(
+          ctx.orgId,
+          ctx.locationId,
+          userId,
+        )) ?? staff;
+    } catch (mirrorError) {
+      console.error("[api/me/staff GET] account mirror failed:", mirrorError);
     }
 
     return NextResponse.json(staff);

@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { clerkClient } from "@clerk/nextjs/server";
 import Staff from "@/server/models/Staff";
 import type { StaffInput } from "@/lib/validations/staff.schema";
 import { escapeRegex } from "@/lib/utils";
@@ -36,6 +37,62 @@ export function extractLastName(name: string): string {
     });
   const last = tokens[tokens.length - 1] ?? name.trim();
   return last.toLowerCase().replace(/[.,]/g, "");
+}
+
+/**
+ * Split a roster name into the first / last pair Clerk's sign-up and
+ * user APIs expect. The first token is the first name; everything
+ * after it is the last name. A single token leaves the last name
+ * empty so the invite form can still collect it.
+ */
+export function splitName(full: string): { firstName: string; lastName: string } {
+  const trimmed = full.trim().replace(/\s+/g, " ");
+  if (!trimmed) return { firstName: "", lastName: "" };
+  const idx = trimmed.indexOf(" ");
+  if (idx === -1) return { firstName: trimmed, lastName: "" };
+  return {
+    firstName: trimmed.slice(0, idx),
+    lastName: trimmed.slice(idx + 1),
+  };
+}
+
+/**
+ * Roster display name for a Clerk account. Empty parts are dropped so
+ * a missing last name does not leave a trailing space. An empty result
+ * means the caller must leave the existing roster name alone.
+ */
+export function composeAccountName(
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): string {
+  return [firstName, lastName]
+    .map((part) => (part ?? "").trim())
+    .filter((part) => part.length > 0)
+    .join(" ");
+}
+
+function isDuplicateKeyError(error: unknown): boolean {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    if ((error as { code?: unknown }).code === 11000) return true;
+  }
+  const message = error instanceof Error ? error.message : "";
+  return message.includes("E11000") || message.includes("duplicate key");
+}
+
+function verifiedPrimaryEmail(user: {
+  primaryEmailAddressId: string | null;
+  emailAddresses: Array<{
+    id: string;
+    emailAddress: string;
+    verification: { status: string | null } | null;
+  }>;
+}): string | null {
+  const primary = user.emailAddresses.find(
+    (address) => address.id === user.primaryEmailAddressId,
+  );
+  if (!primary || primary.verification?.status !== "verified") return null;
+  const email = primary.emailAddress.trim().toLowerCase();
+  return email.length > 0 ? email : null;
 }
 
 /**
@@ -389,6 +446,19 @@ export const StaffService = {
     const orgObjectId = new Types.ObjectId(orgId);
     const locationObjectId = new Types.ObjectId(locationId);
 
+    // A linked row's name is owned by Clerk. Matching a CSV row must
+    // not write `name` back over that mirror. Email is the match key,
+    // so an import cannot change it either.
+    const linkedDocs = await Staff.find({
+      orgId: orgObjectId,
+      locationId: locationObjectId,
+      email: { $in: staffData.map((staff) => staff.email.toLowerCase()) },
+      clerkUserId: { $type: "string" },
+    })
+      .select("email")
+      .lean();
+    const linkedEmails = new Set(linkedDocs.map((doc) => doc.email));
+
     const bulkOps = staffData.map((staff) => {
       // Cast skills to match Mongoose schema expectations
       const skills = (staff.skills || []).map((s) => ({
@@ -396,30 +466,34 @@ export const StaffService = {
         proficiency: s.proficiency as 1 | 2 | 3 | 4 | 5,
       }));
 
+      const email = staff.email.toLowerCase();
       const filter = {
         orgId: orgObjectId,
         locationId: locationObjectId,
-        email: staff.email.toLowerCase(),
+        email,
       };
+      const setFields: Record<string, unknown> = {
+        phone: staff.phone,
+        roles: staff.roles,
+        skills,
+        isActive: true,
+        // Phase 3: Staff constraints for AI scheduling
+        maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
+        minHoursPerWeek: staff.minHoursPerWeek ?? 0,
+        preferredStations: staff.preferredStations ?? [],
+        certifications: staff.certifications ?? [],
+        hourlyRate: staff.hourlyRate ?? 0,
+      };
+      if (!linkedEmails.has(email)) {
+        setFields.name = staff.name;
+        setFields.lastName = extractLastName(staff.name);
+      }
       const update = {
-        $set: {
-          name: staff.name,
-          lastName: extractLastName(staff.name),
-          phone: staff.phone,
-          roles: staff.roles,
-          skills,
-          isActive: true,
-          // Phase 3: Staff constraints for AI scheduling
-          maxHoursPerWeek: staff.maxHoursPerWeek ?? 40,
-          minHoursPerWeek: staff.minHoursPerWeek ?? 0,
-          preferredStations: staff.preferredStations ?? [],
-          certifications: staff.certifications ?? [],
-          hourlyRate: staff.hourlyRate ?? 0,
-        },
+        $set: setFields,
         $setOnInsert: {
           orgId: orgObjectId,
           locationId: locationObjectId,
-          email: staff.email.toLowerCase(),
+          email,
         },
       };
 
@@ -1083,6 +1157,89 @@ export const StaffService = {
     const existing = await Staff.findOne(tenantFilter).lean();
     if (!existing) return null;
     return toStaffDTO(existing);
+  },
+
+  /**
+   * Copy Clerk's account name and verified primary email onto every
+   * staff row linked to this user. A metadata-only Clerk event (such
+   * as switching location) no-ops when both values already match, so
+   * `updatedAt` stays put. An empty Clerk name does not blank the
+   * roster. An unverified primary address is ignored. A unique-index
+   * collision on email keeps the existing roster address and still
+   * updates the name.
+   */
+  async mirrorAccountFromClerk(clerkUserId: string): Promise<void> {
+    const client = await clerkClient();
+    const user = await client.users.getUser(clerkUserId);
+    const composed = composeAccountName(user.firstName, user.lastName);
+    const verifiedEmail = verifiedPrimaryEmail(user);
+
+    const docs = await Staff.find({ clerkUserId })
+      .select("name email")
+      .lean();
+
+    for (const doc of docs) {
+      const nextName = composed.length > 0 ? composed : doc.name;
+      const nextEmail = verifiedEmail ?? doc.email;
+      const nameChanged = nextName !== doc.name;
+      const emailChanged = nextEmail !== doc.email;
+      if (!nameChanged && !emailChanged) continue;
+
+      const nameSet = nameChanged
+        ? { name: nextName, lastName: extractLastName(nextName) }
+        : {};
+
+      if (emailChanged) {
+        try {
+          await Staff.updateOne(
+            { _id: doc._id },
+            { $set: { ...nameSet, email: nextEmail } },
+          );
+          continue;
+        } catch (error) {
+          if (!isDuplicateKeyError(error)) throw error;
+          console.error(
+            "[mirrorAccountFromClerk] email already used at this location; kept the roster email",
+            { clerkUserId, staffId: String(doc._id) },
+          );
+          if (!nameChanged) continue;
+        }
+      }
+
+      await Staff.updateOne({ _id: doc._id }, { $set: nameSet });
+    }
+  },
+
+  /**
+   * Drop a pending app invite after its email was changed, so the
+   * roster does not stay "pending" against a revoked Clerk invitation.
+   * Does nothing when the row is no longer pending (for example it
+   * was accepted between the revoke and this write).
+   */
+  async clearPendingInvitation(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+        invitationStatus: "pending",
+        clerkUserId: null,
+      },
+      {
+        $set: {
+          invitationStatus: "not_invited" as InvitationStatus,
+          clerkInvitationId: null,
+        },
+      },
+      { returnDocument: "after" },
+    ).lean();
+
+    if (doc) return toStaffDTO(doc);
+    return this.getById(orgId, locationId, staffId);
   },
 
   /**
