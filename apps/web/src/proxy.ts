@@ -4,6 +4,7 @@ import {
   createRouteMatcher,
 } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { findInvitedMembership } from "@/lib/auth/membership-metadata";
 
 const isPublicRoute = createRouteMatcher([
   "/",
@@ -74,6 +75,19 @@ export default clerkMiddleware(async (auth, request) => {
         "[middleware] failed to fetch fresh Clerk user metadata; using JWT claims",
         err,
       );
+    }
+  }
+
+  // Metadata alone can't tell a new owner from an invited member whose
+  // metadata is empty. The membership row decides; the dashboard layout
+  // then routes staff to /staff-blocked.
+  if (userId && isDashboardPath && needsOnboarding) {
+    try {
+      if (await findInvitedMembership(userId)) {
+        needsOnboarding = false;
+      }
+    } catch (err) {
+      console.error("[middleware] membership lookup failed", err);
     }
   }
 

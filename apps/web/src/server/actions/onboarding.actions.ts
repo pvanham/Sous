@@ -28,6 +28,25 @@ function parseValidationError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+const INVITED_MEMBER_ERROR =
+  "This account already belongs to a team. Only a new owner can set up an organization.";
+
+/**
+ * True when the caller is an invited member, by membership row or by
+ * invitation metadata the webhook has not turned into a row yet. Those
+ * callers must never provision or complete owner onboarding.
+ */
+async function isInvitedMember(userId: string): Promise<boolean> {
+  const memberships = await OrganizationMemberService.listByUserId(userId);
+  if (memberships.some((m) => m.role !== "owner")) return true;
+  if (memberships.length > 0) return false;
+
+  const client = await clerkClient();
+  const user = await client.users.getUser(userId);
+  const role = (user.publicMetadata as Record<string, unknown> | undefined)?.role;
+  return role === "manager" || role === "shift_lead" || role === "staff";
+}
+
 async function getOwnerMembership(userId: string) {
   const membership = await OrganizationMemberService.getFirstByUserId(userId);
   if (!membership) return null;
@@ -64,23 +83,38 @@ export async function provisionOrganizationAndLocation(
 
     await dbConnect();
 
+    if (await isInvitedMember(userId)) {
+      return { success: false, error: INVITED_MEMBER_ERROR };
+    }
+
     const existingContext = await getOwnerContext(userId);
     if (existingContext) {
       return { success: true, data: existingContext };
     }
 
-    const org = await OrganizationService.create(userId, parsed.data);
-    const location = await LocationService.create(org.id, {
-      name: "Main Location",
-      timezone: "America/New_York",
-    });
+    // Reuse an org from an earlier partial run (owner membership missing
+    // or no location yet) so a retry never creates a second org.
+    const ownerMembership = await getOwnerMembership(userId);
+    const org =
+      (ownerMembership && (await OrganizationService.getById(ownerMembership.orgId))) ||
+      (await OrganizationService.getByOwnerId(userId)) ||
+      (await OrganizationService.create(userId, parsed.data));
 
-    await OrganizationMemberService.create({
-      orgId: org.id,
-      locationId: null,
-      clerkUserId: userId,
-      role: "owner",
-    });
+    const location =
+      (await LocationService.getDefaultByOrgId(org.id)) ||
+      (await LocationService.create(org.id, {
+        name: "Main Location",
+        timezone: "America/New_York",
+      }));
+
+    if (!ownerMembership) {
+      await OrganizationMemberService.create({
+        orgId: org.id,
+        locationId: null,
+        clerkUserId: userId,
+        role: "owner",
+      });
+    }
 
     revalidatePath("/", "layout");
 
@@ -235,6 +269,28 @@ export async function completeOnboarding(): Promise<ActionResponse<{ completed: 
     const { userId } = await auth();
     if (!userId) {
       return { success: false, error: "Unauthorized" };
+    }
+
+    await dbConnect();
+
+    if (await isInvitedMember(userId)) {
+      return { success: false, error: INVITED_MEMBER_ERROR };
+    }
+
+    const ownerContext = await getOwnerContext(userId);
+    const org = ownerContext
+      ? await OrganizationService.getById(ownerContext.orgId)
+      : null;
+    if (!ownerContext || !org) {
+      return { success: false, error: "Organization not found. Complete step 1 first." };
+    }
+
+    const kitchenConfig = await KitchenConfigService.getByLocation(
+      ownerContext.orgId,
+      ownerContext.locationId,
+    );
+    if (!kitchenConfig) {
+      return { success: false, error: "Save your kitchen setup before finishing onboarding." };
     }
 
     const client = await clerkClient();

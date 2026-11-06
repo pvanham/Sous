@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { auth, clerkClient } from "@clerk/nextjs/server";
+import { findInvitedMembership } from "@/lib/auth/membership-metadata";
 import { OnboardingWizard } from "./_components/OnboardingWizard";
 
 // Owner onboarding wizard entry point.
@@ -10,13 +11,21 @@ import { OnboardingWizard } from "./_components/OnboardingWizard";
 // `provisionOrganizationAndLocation`, which would create an orphaned
 // org for any invitee who lands here.
 //
-// We re-check the role server-side (publicMetadata, then pending
-// invitation by email as a fallback) so a stale session JWT can't sneak
-// an invitee past the gate.
+// We re-check the role server-side (membership row, then publicMetadata,
+// then pending invitation by email as a fallback) so stale or empty Clerk
+// metadata can't sneak an invitee past the gate.
 export default async function OnboardingPage() {
   const { userId } = await auth();
   if (!userId) {
     redirect("/sign-in");
+  }
+
+  const membership = await findInvitedMembership(userId);
+  if (membership?.role === "staff") {
+    redirect("/staff-blocked");
+  }
+  if (membership) {
+    redirect("/dashboard");
   }
 
   const client = await clerkClient();

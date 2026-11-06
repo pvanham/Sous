@@ -28,7 +28,8 @@ export interface LocationContext {
  * Current behavior:
  * - Requires an existing OrganizationMember row for the Clerk user
  * - For org-wide memberships (`locationId = null`), uses Clerk
- *   `publicMetadata.activeLocationId` and falls back to the default location
+ *   `publicMetadata.activeLocationId` when it belongs to the membership's
+ *   org, and falls back to the default location otherwise
  *
  * @param clerkUserId - Clerk user ID from auth()
  * @returns LocationContext with orgId, locationId, and role
@@ -52,10 +53,16 @@ export async function getLocationContext(
     if (!locationId) {
       const client = await clerkClient();
       const user = await client.users.getUser(clerkUserId);
-      const activeLocationId = user.publicMetadata?.activeLocationId as string | undefined;
+      const activeLocationId = user.publicMetadata?.activeLocationId;
 
-      if (activeLocationId) {
-        locationId = activeLocationId;
+      // Metadata is client-influenced; only honor a location in this org.
+      const activeLocation =
+        typeof activeLocationId === "string" && /^[0-9a-f]{24}$/i.test(activeLocationId)
+          ? await LocationService.getByOrgAndId(membership.orgId, activeLocationId)
+          : null;
+
+      if (activeLocation) {
+        locationId = activeLocation.id;
       } else {
         const defaultLocation = await LocationService.getDefaultByOrgId(
           membership.orgId
