@@ -1,4 +1,4 @@
-import { getStripe } from "@/lib/stripe";
+import { getStripe, tierForPriceId, type PaidTier } from "@/lib/stripe";
 import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
@@ -21,17 +21,16 @@ async function getOwnerClerkUserIds(orgId: string): Promise<string[]> {
   }
 }
 
-/**
- * Maps Stripe price IDs to subscription tiers.
- * Update these values after creating products in the Stripe Dashboard.
- */
-const PRICE_TO_TIER: Record<string, "pro" | "enterprise"> = {
-  [process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID!]: "pro",
-  [process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID!]: "enterprise",
-};
+function tierForSubscription(subscription: Stripe.Subscription): PaidTier | null {
+  return tierForPriceId(subscription.items.data[0]?.price?.id);
+}
 
-function getTierFromPriceId(priceId: string): "pro" | "enterprise" {
-  return PRICE_TO_TIER[priceId] || "pro";
+function logUnknownPrice(orgId: string, subscription: Stripe.Subscription): void {
+  console.error("[Stripe] Ignoring subscription with an unconfigured price", {
+    orgId,
+    subscriptionId: subscription.id,
+    priceId: subscription.items.data[0]?.price?.id ?? null,
+  });
 }
 
 /**
@@ -85,8 +84,11 @@ export async function POST(req: Request) {
         const subscription = await getStripe().subscriptions.retrieve(
           session.subscription as string
         );
-        const priceId = subscription.items.data[0]?.price?.id;
-        const tier = priceId ? getTierFromPriceId(priceId) : "pro";
+        const tier = tierForSubscription(subscription);
+        if (!tier) {
+          logUnknownPrice(orgId, subscription);
+          break;
+        }
         const customerId = session.customer as string;
 
         // Safety net: cancel any other active subscriptions for this customer
@@ -128,11 +130,16 @@ export async function POST(req: Request) {
           status: "active",
         });
 
-        if (activeSubs.data.length > 0) {
-          // There's still an active subscription — update to its tier instead
-          const remainingSub = activeSubs.data[0];
-          const priceId = remainingSub.items.data[0]?.price?.id;
-          const tier = priceId ? getTierFromPriceId(priceId) : "pro";
+        // Only a remaining subscription on a configured price keeps a
+        // paid tier; anything else falls through to the free downgrade.
+        const remaining = activeSubs.data
+          .map((sub) => ({ sub, tier: tierForSubscription(sub) }))
+          .find((entry): entry is { sub: Stripe.Subscription; tier: PaidTier } =>
+            entry.tier !== null
+          );
+
+        if (remaining) {
+          const { sub: remainingSub, tier } = remaining;
 
           await OrganizationService.updateSubscription(orgId, {
             stripeSubscriptionId: remainingSub.id,
@@ -172,10 +179,11 @@ export async function POST(req: Request) {
       const orgId = (customer as Stripe.Customer).metadata?.orgId;
 
       if (orgId) {
-        const priceId = subscription.items.data[0]?.price?.id;
-        const tier = priceId ? getTierFromPriceId(priceId) : "pro";
+        const tier = tierForSubscription(subscription);
 
-        if (subscription.status === "active") {
+        if (subscription.status === "active" && !tier) {
+          logUnknownPrice(orgId, subscription);
+        } else if (subscription.status === "active" && tier) {
           const willCancel =
             subscription.cancel_at_period_end || subscription.cancel_at !== null;
           await OrganizationService.updateSubscription(orgId, {

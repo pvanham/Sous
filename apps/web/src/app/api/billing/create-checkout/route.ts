@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, tierForPriceId } from "@/lib/stripe";
 import { dbConnect } from "@/lib/db";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { OrganizationService } from "@/server/services/organization.service";
@@ -23,9 +23,24 @@ export async function POST(req: Request) {
     return Response.json({ error: "Organization not found" }, { status: 404 });
   }
 
-  const { priceId } = await req.json();
-  if (!priceId) {
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Request body must be valid JSON" }, { status: 400 });
+  }
+  const priceId =
+    typeof body === "object" && body !== null && "priceId" in body
+      ? (body as { priceId: unknown }).priceId
+      : undefined;
+  if (typeof priceId !== "string" || !priceId) {
     return Response.json({ error: "priceId is required" }, { status: 400 });
+  }
+  if (!tierForPriceId(priceId)) {
+    return Response.json(
+      { error: "That plan is not available for checkout" },
+      { status: 400 }
+    );
   }
 
   // Get or create Stripe customer
