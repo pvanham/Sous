@@ -1,6 +1,86 @@
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
-import { startOfWeek } from "date-fns";
+import { addDays, startOfWeek } from "date-fns";
 import { dayOfWeekToIndex, type DayOfWeek } from "@sous/types";
+
+function localFieldsToIsoDate(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+}
+
+/** The `YYYY-MM-DD` calendar date an instant falls on in the given timezone. */
+export function isoDateInTz(date: Date, timezone: string): string {
+  return localFieldsToIsoDate(toZonedTime(date, timezone));
+}
+
+/** Midnight, in the given timezone, of the calendar day the instant falls on. */
+export function startOfDayInTz(date: Date, timezone: string): Date {
+  return weekStartInLocationTz(isoDateInTz(date, timezone), timezone);
+}
+
+/**
+ * Wall-clock `HH:mm` on calendar date `YYYY-MM-DD` in the given timezone,
+ * as a UTC instant. Unlike `combineDateTime(parseDateString(...))`, the
+ * result does not depend on the server's timezone.
+ */
+export function zonedDateTime(isoDate: string, time: string, timezone: string): Date {
+  return fromZonedTime(`${isoDate}T${time}:00.000`, timezone);
+}
+
+/**
+ * Week-start instant (location-tz midnight) for the week containing the
+ * calendar date `YYYY-MM-DD`. Pure calendar math, so it is the same on a
+ * UTC server and a developer laptop.
+ */
+export function weekStartForIsoDateInTz(
+  isoDate: string,
+  weekStartsOn: DayOfWeek,
+  timezone: string,
+): Date {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const anchor = startOfWeek(new Date(year, month - 1, day), {
+    weekStartsOn: dayOfWeekToIndex(weekStartsOn),
+  });
+  return weekStartInLocationTz(localFieldsToIsoDate(anchor), timezone);
+}
+
+/**
+ * Week-start instant for an AI- or client-supplied week reference: either a
+ * `YYYY-MM-DD` calendar date or a full ISO timestamp. Returns null when the
+ * value does not parse.
+ */
+export function weekStartFromInputInTz(
+  value: string,
+  weekStartsOn: DayOfWeek,
+  timezone: string,
+): Date | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return weekStartForIsoDateInTz(value, weekStartsOn, timezone);
+  }
+  const instant = new Date(value);
+  if (isNaN(instant.getTime())) return null;
+  return weekStartForIsoDateInTz(isoDateInTz(instant, timezone), weekStartsOn, timezone);
+}
+
+/**
+ * Move a week-start instant by `weeks` on the location's calendar and
+ * re-anchor to `weekStartsOn`. Stepping by calendar days (not 7 * 24h)
+ * keeps the anchor on local midnight across DST changes, and stays
+ * correct when the browser's timezone differs from the location's.
+ */
+export function addWeeksInTz(
+  weekStart: Date,
+  weeks: number,
+  weekStartsOn: DayOfWeek,
+  timezone: string,
+): Date {
+  const zoned = toZonedTime(weekStart, timezone);
+  return weekStartForIsoDateInTz(
+    localFieldsToIsoDate(addDays(zoned, weeks * 7)),
+    weekStartsOn,
+    timezone,
+  );
+}
 
 /**
  * Convert a YYYY-MM-DD calendar date to the UTC instant of midnight in
@@ -32,17 +112,8 @@ export function currentWeekStartInLocationTz(
   timezone: string,
   now: Date = new Date(),
 ): Date {
-  // Project the instant onto the location's wall clock so date-fns'
-  // local-field math walks back to the configured first day of the week
-  // in the location's calendar, not the server's.
-  const zonedNow = toZonedTime(now, timezone);
-  const zonedWeekStart = startOfWeek(zonedNow, {
-    weekStartsOn: dayOfWeekToIndex(weekStartsOn),
-  });
-  const isoDate = `${zonedWeekStart.getFullYear()}-${String(
-    zonedWeekStart.getMonth() + 1,
-  ).padStart(2, "0")}-${String(zonedWeekStart.getDate()).padStart(2, "0")}`;
-  return weekStartInLocationTz(isoDate, timezone);
+  // Read today's date on the location's calendar, not the server's.
+  return weekStartForIsoDateInTz(isoDateInTz(now, timezone), weekStartsOn, timezone);
 }
 
 /**

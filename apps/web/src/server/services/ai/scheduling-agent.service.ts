@@ -709,6 +709,7 @@ async function prefetchWeekCandidateData(
     maxHoursLookup: new Map(context.staff.map((s) => [s.id, s.maxHoursPerWeek])),
     minHoursLookup: new Map(context.staff.map((s) => [s.id, s.minHoursPerWeek])),
     existingWeekHours: new Map(weekHoursAccumulator),
+    managerRoles: context.config.managerRoles ?? [],
     scheduleGenerationSettings: context.config.scheduleGenerationSettings,
   };
 

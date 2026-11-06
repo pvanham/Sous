@@ -101,6 +101,7 @@ class SolveRequest(BaseModel):
     maxHoursLookup: dict[str, float]
     minHoursLookup: dict[str, float]
     existingWeekHours: dict[str, float]
+    managerRoles: list[str] = []
     settings: Optional[ScheduleSettings] = None
 
 
@@ -112,6 +113,7 @@ class SolveAsyncRequest(BaseModel):
     maxHoursLookup: dict[str, float]
     minHoursLookup: dict[str, float]
     existingWeekHours: dict[str, float]
+    managerRoles: list[str] = []
     settings: Optional[ScheduleSettings] = None
 
     taskId: str
@@ -233,6 +235,23 @@ class _FlatSlot:
         self.preferred_staff = preferred_staff
         self.duration_minutes = duration_minutes
         self.candidate_staff_idxs = candidate_staff_idxs
+
+
+_FALLBACK_MANAGER_TITLES = {"gm", "km", "agm", "shift leader", "sous chef"}
+
+
+def _is_manager(roles: list[str], manager_roles: list[str]) -> bool:
+    """Mirror of `isManagerByRoles` in apps/web/src/lib/utils/manager-roles.ts.
+
+    The publish-time coverage warning uses that function; keep the two in
+    lockstep so the solver and the warning agree on who is a manager.
+    """
+    if manager_roles:
+        return any(r in manager_roles for r in roles)
+    return any(
+        "manager" in r.lower() or r.lower() in _FALLBACK_MANAGER_TITLES
+        for r in roles
+    )
 
 
 class _StaffEntry:
@@ -361,7 +380,7 @@ def _transform_input(
                 if cand.staffId not in staff_id_to_idx:
                     s_idx = len(staff_entries)
                     staff_id_to_idx[cand.staffId] = s_idx
-                    is_mgr = any(r.lower() in ["manager", "gm", "km", "agm", "shift leader"] for r in cand.roles)
+                    is_mgr = _is_manager(cand.roles, req.managerRoles)
                     staff_entries.append(
                         _StaffEntry(
                             idx=s_idx,
@@ -879,6 +898,7 @@ def _solve_and_store(req: SolveAsyncRequest) -> None:
         maxHoursLookup=req.maxHoursLookup,
         minHoursLookup=req.minHoursLookup,
         existingWeekHours=req.existingWeekHours,
+        managerRoles=req.managerRoles,
         settings=req.settings,
     )
 

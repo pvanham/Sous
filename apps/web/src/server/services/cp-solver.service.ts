@@ -23,6 +23,23 @@ const CP_SOLVER_URL =
 
 const SOLVER_TIMEOUT_MS = 60_000;
 
+/**
+ * The solver could not be reached or rejected the request. Generation
+ * must fail with this rather than return an all-unfilled week, which is
+ * indistinguishable from a real "nobody can work" result.
+ */
+export class SolverUnavailableError extends Error {
+  readonly detail: string;
+
+  constructor(detail: string) {
+    super(
+      "The schedule solver is unavailable, so no schedule was generated. Try again in a few minutes.",
+    );
+    this.name = "SolverUnavailableError";
+    this.detail = detail;
+  }
+}
+
 // ────────────────────────────────────────────────────────────
 // Response types matching the Python SolveResponse schema
 // ────────────────────────────────────────────────────────────
@@ -97,6 +114,7 @@ export function buildSolverPayload(
     maxHoursLookup: mapToRecord(input.maxHoursLookup),
     minHoursLookup: mapToRecord(input.minHoursLookup),
     existingWeekHours: mapToRecord(input.existingWeekHours),
+    managerRoles: input.managerRoles,
     settings: input.scheduleGenerationSettings
       ? {
           allowClopening: input.scheduleGenerationSettings.allowClopening,
@@ -154,7 +172,7 @@ export const CPSolverService = {
         `${LOG_PREFIX} Failed to reach CP-SAT solver (${elapsed}ms): ${msg}`,
       );
 
-      return buildFallbackResponse(input, `Solver unavailable: ${msg}`);
+      throw new SolverUnavailableError(msg);
     }
 
     if (!response.ok) {
@@ -165,10 +183,7 @@ export const CPSolverService = {
           `(${elapsed}ms): ${text.slice(0, 500)}`,
       );
 
-      return buildFallbackResponse(
-        input,
-        `Solver HTTP ${response.status}`,
-      );
+      throw new SolverUnavailableError(`HTTP ${response.status}`);
     }
 
     const result: SolverResponse = await response.json();
@@ -198,27 +213,3 @@ export const CPSolverService = {
     };
   },
 };
-
-function buildFallbackResponse(
-  input: WeekSolverInput,
-  reason: string,
-): { days: GeneratedDaySchedule[]; overtimeSummary: Record<string, number>; totalCostCents: number; fallbackRatesUsed: boolean } {
-  const days = [...input.days]
-    .sort((a, b) => a.dayIndex - b.dayIndex)
-    .map((day) => ({
-      date: day.dateStr,
-      dayOfWeek: day.dayName,
-      assignments: [],
-      unfilledSlots: day.slots.map((sc) => ({
-        station: sc.slot.station,
-        startTime: sc.slot.startTime,
-        endTime: sc.slot.endTime,
-        needed: sc.slot.preferredStaff,
-        assigned: 0,
-        reason,
-      })),
-      notes: `CP-SAT solver: ${reason}. Returning all slots as unfilled.`,
-    }));
-
-  return { days, overtimeSummary: {}, totalCostCents: 0, fallbackRatesUsed: false };
-}

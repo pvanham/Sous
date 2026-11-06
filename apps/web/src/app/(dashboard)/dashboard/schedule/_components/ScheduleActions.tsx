@@ -20,7 +20,7 @@ import {
   clearWeekShiftsForLocationWeek,
 } from "@/server/actions/schedule.actions";
 import type { ManagerCoverageGap } from "@/server/services/schedule.service";
-import { getPrevWeekStart } from "@/lib/utils/date";
+import { addWeeksInTz } from "@/lib/utils/timezone";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { ShiftDTO } from "@/types/shift";
 import type { DayOfWeek } from "@sous/types";
@@ -53,6 +53,7 @@ export interface ScheduleActionsProps {
   shifts: ShiftDTO[];
   weekStart: Date;
   weekStartsOn: DayOfWeek;
+  timezone: string;
   effectiveStatus: "PUBLISHED" | "DRAFT" | "EMPTY";
   onStatusChange: () => void;
 }
@@ -143,6 +144,7 @@ export function ScheduleActions({
   shifts,
   weekStart,
   weekStartsOn,
+  timezone,
   effectiveStatus,
   onStatusChange,
 }: ScheduleActionsProps) {
@@ -259,7 +261,7 @@ export function ScheduleActions({
 
     try {
       const result = await copyWeekShifts({
-        sourceWeekStart: getPrevWeekStart(weekStart, weekStartsOn),
+        sourceWeekStart: addWeeksInTz(weekStart, -1, weekStartsOn, timezone),
         targetWeekStart: weekStart,
       });
 

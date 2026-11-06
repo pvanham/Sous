@@ -1,10 +1,11 @@
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/db";
-import { getWeekStart, parseDateString } from "@/lib/utils/date";
+import { weekStartFromInputInTz } from "@/lib/utils/timezone";
 import AsyncTask from "@/server/models/AsyncTask";
 import { buildSolverPayload } from "@/server/services/cp-solver.service";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
+import { LocationService } from "@/server/services/location.service";
 import type { AsyncTaskDTO } from "@/types/async-task";
 import { toAsyncTaskDTO } from "@/types/async-task";
 
@@ -64,16 +65,23 @@ export const AsyncTaskService = {
   ): Promise<DispatchResult> {
     await dbConnect();
 
-    const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
-      input.orgId,
-      input.locationId,
-    );
-    const weekStart = getWeekStart(
-      /^\d{4}-\d{2}-\d{2}$/.test(input.weekStartDate)
-        ? parseDateString(input.weekStartDate)
-        : new Date(input.weekStartDate),
+    const [weekStartsOn, location] = await Promise.all([
+      KitchenConfigService.getWeekStartsOn(input.orgId, input.locationId),
+      LocationService.getById(input.locationId),
+    ]);
+    const weekStart = weekStartFromInputInTz(
+      input.weekStartDate,
       weekStartsOn,
+      location?.timezone ?? "UTC",
     );
+    if (!weekStart) {
+      return {
+        dispatched: false,
+        taskId: "",
+        deadline: new Date(),
+        error: `Invalid weekStartDate: ${input.weekStartDate}`,
+      };
+    }
     let context;
     try {
       context = await SchedulingAgentService.buildSchedulingContext(

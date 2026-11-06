@@ -101,7 +101,8 @@ export async function executeGetScheduleHealth(
           schedule.weekStartDate,
           shifts,
           staff,
-          config
+          config,
+          context.timezone
         )
       : [];
 

@@ -1,5 +1,7 @@
 import type { StoredProposal } from "@/types/conversation";
-import { combineDateTime, getWeekStart, parseDateString } from "@/lib/utils/date";
+import { parseDateString } from "@/lib/utils/date";
+import { weekStartFromInputInTz, zonedDateTime } from "@/lib/utils/timezone";
+import { LocationService } from "@/server/services/location.service";
 import { buildOCCFilter, getStaleReason } from "./occ";
 import type { AcceptSchedulePayload } from "@/lib/ai/tools/definitions/propose-accept-generated-schedule.schema";
 import { AsyncTaskService } from "@/server/services/async-task.service";
@@ -230,10 +232,16 @@ async function executeScheduleGeneration(
     };
   }
 
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(weekStartDate)
-    ? parseDateString(weekStartDate)
-    : new Date(weekStartDate);
-  if (isNaN(parsed.getTime())) {
+  const [weekStartsOn, location] = await Promise.all([
+    KitchenConfigService.getWeekStartsOn(orgId, locationId),
+    LocationService.getById(locationId),
+  ]);
+  const weekStart = weekStartFromInputInTz(
+    weekStartDate,
+    weekStartsOn,
+    location?.timezone ?? "UTC",
+  );
+  if (!weekStart) {
     return {
       success: false,
       executionSummary: "",
@@ -242,11 +250,6 @@ async function executeScheduleGeneration(
       errorCode: "malformed_payload",
     };
   }
-  const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
-    orgId,
-    locationId,
-  );
-  const weekStart = getWeekStart(parsed, weekStartsOn);
 
   const rawTemplate = proposal.payload.templateScheduleId;
   let templateScheduleId: string | undefined;
@@ -363,10 +366,11 @@ async function executeAcceptGeneratedSchedule(
     };
   }
 
+  const location = await LocationService.getById(locationId);
+  const timezone = location?.timezone ?? "UTC";
   const createInputs: CreateShiftInput[] = shifts.map((shift) => {
-    const date = parseDateString(shift.date);
-    const start = combineDateTime(date, shift.startTime);
-    const end = combineDateTime(date, shift.endTime);
+    const start = zonedDateTime(shift.date, shift.startTime, timezone);
+    const end = zonedDateTime(shift.date, shift.endTime, timezone);
 
     return {
       orgId,

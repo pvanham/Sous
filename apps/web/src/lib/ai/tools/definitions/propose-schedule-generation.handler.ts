@@ -6,7 +6,7 @@ import type { ToolExecutionContext } from "../tool-registry.types";
 import type { ToolProposal } from "../tool-proposal.types";
 import { sanitizeUserText } from "../sanitize";
 import { computeDataVersion } from "@/lib/ai/orchestrator/occ";
-import { getWeekStart, parseDateString } from "@/lib/utils/date";
+import { isoDateInTz, weekStartFromInputInTz } from "@/lib/utils/timezone";
 import { ScheduleService } from "@/server/services/schedule.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -23,24 +23,10 @@ function createWeekFormatter(tz: string) {
   });
 }
 
-function parseAsLocalDate(value: string): Date | null {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? parseDateString(value)
-    : new Date(value);
-  return isNaN(date.getTime()) ? null : date;
-}
-
 export async function executeProposeScheduleGeneration(
   params: ProposeScheduleGenerationParams,
   context: ToolExecutionContext
 ): Promise<ToolProposal<ScheduleGenerationPayload> | null> {
-  const parsed = parseAsLocalDate(params.weekStartDate);
-  if (!parsed) {
-    throw new Error(
-      "Invalid date format for weekStartDate. Expected ISO date string (e.g., '2026-03-17')."
-    );
-  }
-
   // Fetch the kitchen config first so we know the location's week-start
   // anchor before normalizing. The config is also used downstream for the
   // OCC dataVersion and overtime defaults, so the round-trip is "free".
@@ -49,7 +35,16 @@ export async function executeProposeScheduleGeneration(
     context.locationId,
   );
   const weekStartsOn = config?.weekStartsOn ?? "monday";
-  const weekStart = getWeekStart(parsed, weekStartsOn);
+  const weekStart = weekStartFromInputInTz(
+    params.weekStartDate,
+    weekStartsOn,
+    context.timezone || "UTC",
+  );
+  if (!weekStart) {
+    throw new Error(
+      "Invalid date format for weekStartDate. Expected ISO date string (e.g., '2026-03-17')."
+    );
+  }
 
   const [schedule, staff] = await Promise.all([
     ScheduleService.getByWeek(context.orgId, context.locationId, weekStart),
@@ -100,7 +95,7 @@ export async function executeProposeScheduleGeneration(
   const weekLabel = createWeekFormatter(tz).format(weekStart);
   const description = `Generate a new schedule for the week of ${weekLabel} with ${activeStaff.length} staff members`;
 
-  const normalizedWeekStart = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`;
+  const normalizedWeekStart = isoDateInTz(weekStart, tz);
 
   const payload: ScheduleGenerationPayload = {
     weekStartDate: normalizedWeekStart,

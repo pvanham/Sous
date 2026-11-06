@@ -13,9 +13,16 @@ export default async function SchedulePage() {
   // week boundary the schedule docs were stored under.
   const weekResult = await getCurrentWeekStart();
   const weekStartsOn = weekResult.success ? weekResult.data.weekStartsOn : "monday";
+  const timezone = weekResult.success ? weekResult.data.timezone : "UTC";
   const initialWeek = weekResult.success
     ? weekResult.data.weekStart
     : getWeekStart(new Date(), weekStartsOn);
 
-  return <ScheduleGrid initialWeek={initialWeek} initialWeekStartsOn={weekStartsOn} />;
+  return (
+    <ScheduleGrid
+      initialWeek={initialWeek}
+      initialWeekStartsOn={weekStartsOn}
+      timezone={timezone}
+    />
+  );
 }

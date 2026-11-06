@@ -121,6 +121,8 @@ export interface WeekSolverInput {
   minHoursLookup: Map<string, number>;
   /** staffId -> hours already committed from existing DB shifts */
   existingWeekHours: Map<string, number>;
+  /** KitchenConfig.managerRoles; drives the solver's manager coverage */
+  managerRoles: string[];
   /** Optional schedule generation settings (clopening policy) */
   scheduleGenerationSettings?: {
     allowClopening: boolean;
