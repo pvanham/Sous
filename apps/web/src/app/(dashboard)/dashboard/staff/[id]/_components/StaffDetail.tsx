@@ -80,6 +80,7 @@ interface StaffDetailProps {
   roles: string[];
   stations: string[];
   minTimeOffAdvanceDays: number;
+  canManageAccountAccess: boolean;
 }
 
 function isStaffTab(value: string): value is StaffTab {
@@ -101,6 +102,7 @@ export function StaffDetail({
   roles,
   stations,
   minTimeOffAdvanceDays,
+  canManageAccountAccess,
 }: StaffDetailProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -368,7 +370,12 @@ export function StaffDetail({
         </TabsList>
 
         <TabsContent value="profile" className="mt-6">
-          <StaffProfilePanel staff={staff} roles={roles} stations={stations} />
+          <StaffProfilePanel
+            staff={staff}
+            roles={roles}
+            stations={stations}
+            canManageAccountAccess={canManageAccountAccess}
+          />
         </TabsContent>
 
         <TabsContent value="availability" className="mt-6">

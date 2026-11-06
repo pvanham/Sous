@@ -6,6 +6,7 @@ import { escapeRegex } from "@/lib/utils";
 import {
   StaffDTO,
   InvitationStatus,
+  StaffAccountAccess,
   ImportResult,
   StaffListParams,
   PaginatedStaffResult,
@@ -541,6 +542,44 @@ export const StaffService = {
 
     if (!doc) return null;
     return toStaffDTO(doc);
+  },
+
+  /**
+   * Set which membership role this staff member's account gets.
+   * @returns Updated StaffDTO or null if not found
+   */
+  async setAccountAccess(
+    orgId: string,
+    locationId: string,
+    staffId: string,
+    accountAccess: StaffAccountAccess
+  ): Promise<StaffDTO | null> {
+    const doc = await Staff.findOneAndUpdate(
+      {
+        _id: staffId,
+        orgId: new Types.ObjectId(orgId),
+        locationId: new Types.ObjectId(locationId),
+      },
+      { $set: { accountAccess } },
+      { returnDocument: "after", runValidators: true }
+    ).lean();
+
+    if (!doc) return null;
+    return toStaffDTO(doc);
+  },
+
+  /**
+   * The staff row an accepted invite links to: the invited `staffId`
+   * when present, otherwise the row with the invitee's email.
+   */
+  async findForInviteLink(
+    orgId: string,
+    locationId: string,
+    { staffId, email }: { staffId?: string | null; email?: string | null }
+  ): Promise<StaffDTO | null> {
+    if (staffId) return this.getById(orgId, locationId, staffId);
+    if (email) return this.getByEmail(orgId, locationId, email);
+    return null;
   },
 
   /**

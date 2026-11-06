@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useClerk } from "@clerk/nextjs";
-import { Bot, Smartphone, Apple } from "lucide-react";
+import { Bot, Smartphone, Apple, LayoutDashboard } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,12 @@ const PLAY_STORE_URL =
   "https://play.google.com/store/apps/details?id=com.sous.mobile";
 const APP_DEEP_LINK = "sous://invite";
 
-export function WelcomeCard() {
+interface WelcomeCardProps {
+  /** Shift leads also have the web dashboard. */
+  showDashboardLink?: boolean;
+}
+
+export function WelcomeCard({ showDashboardLink = false }: WelcomeCardProps) {
   const { signOut } = useClerk();
 
   return (
@@ -78,6 +84,15 @@ export function WelcomeCard() {
         <p className="text-muted-foreground text-xs text-center pt-2">
           Sign in with the same email and password you just created.
         </p>
+
+        {showDashboardLink ? (
+          <Button asChild variant="ghost" className="w-full">
+            <Link href="/dashboard">
+              <LayoutDashboard className="h-4 w-4" />
+              Open the shift lead dashboard
+            </Link>
+          </Button>
+        ) : null}
       </CardContent>
 
       <CardFooter className="flex justify-center border-t pt-6">

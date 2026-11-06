@@ -174,6 +174,14 @@ const StaffSchema = new Schema<IStaffDocument>(
       type: String,
       default: null,
     },
+    // Membership role this person's login gets. The invite writes it,
+    // linking reads it, and changing it on a linked account updates the
+    // OrganizationMember row. Separate from `roles` (kitchen job titles).
+    accountAccess: {
+      type: String,
+      enum: ["staff", "shift_lead"],
+      default: "staff",
+    },
     // Set the first time a staff member finishes the mobile onboarding
     // wizard. `null` ⇒ wizard has not been completed yet; a `Date` ⇒
     // completed (AuthGate routes such users straight to the tabs). The

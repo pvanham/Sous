@@ -6,6 +6,7 @@ import {
   inviteManagerSchema,
   inviteStaffSchema,
 } from "@/lib/validations/invitation.schema";
+import { isStaffAccountRole } from "@/lib/validations/staff.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { splitName, StaffService } from "@/server/services/staff.service";
 import { revokePendingStaffInvitations } from "@/lib/clerk/revoke-staff-invitation";
@@ -166,14 +167,16 @@ export async function inviteStaffToApp(
       return { success: false, error: "Staff member not found" };
     }
 
-    // 7. Send invitation via Clerk with staff-specific metadata
+    // 7. Send invitation via Clerk with staff-specific metadata. The role
+    //    is a hint for routing before the account is linked; linking
+    //    re-reads `accountAccess` from the staff row.
     const client = await clerkClient();
     const invitation = await client.invitations.createInvitation({
       emailAddress: staffMember.email,
       ignoreExisting: true,
       redirectUrl: INVITE_REDIRECT_URL,
       publicMetadata: {
-        role: "staff",
+        role: staffMember.accountAccess,
         orgId: ctx.orgId,
         locationId: ctx.locationId,
         staffId,
@@ -304,7 +307,7 @@ export async function getInvitationPrefill(
     };
 
     if (
-      meta.role === "staff" &&
+      isStaffAccountRole(meta.role) &&
       meta.orgId &&
       meta.locationId &&
       meta.staffId

@@ -1,6 +1,11 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
+import { dbConnect } from "@/lib/db";
+import { isStaffAccountRole } from "@/lib/validations/staff.schema";
+import { StaffService } from "@/server/services/staff.service";
+import type { StaffAccountAccess } from "@/types/staff";
+
 import { WelcomeCard } from "./_components/WelcomeCard";
 
 // /welcome — post-invite landing
@@ -15,8 +20,11 @@ import { WelcomeCard } from "./_components/WelcomeCard";
 // the user the moment the ticket is consumed, so the authoritative
 // role is always available via the backend API.
 //
-//   role === "staff"                       → render WelcomeCard
-//   role === "manager" | "shift_lead"      → /dashboard
+//   role === "staff" | "shift_lead"        → render WelcomeCard, with a
+//                                            dashboard link when the
+//                                            staff row's accountAccess
+//                                            is shift_lead
+//   role === "manager"                     → /dashboard
 //   role missing + pending invitation      → resolve via invitation
 //   no role + no pending invitation        → /onboarding (likely an
 //                                            owner who landed here by
@@ -33,12 +41,13 @@ export default async function WelcomePage() {
 
   const role = resolveRoleFromMetadata(user.publicMetadata);
 
-  if (role === "manager" || role === "shift_lead" || role === "owner") {
+  if (role === "manager" || role === "owner") {
     redirect("/dashboard");
   }
 
-  if (role === "staff") {
-    return <WelcomeCard />;
+  if (isStaffAccountRole(role)) {
+    const access = await resolveAccountAccess(user.publicMetadata, role);
+    return <WelcomeCard showDashboardLink={access === "shift_lead"} />;
   }
 
   // Fallback: Clerk did not promote the invitation publicMetadata onto
@@ -53,11 +62,12 @@ export default async function WelcomePage() {
       (inv) => inv.emailAddress.toLowerCase() === email.toLowerCase(),
     );
     const pendingRole = resolveRoleFromMetadata(match?.publicMetadata);
-    if (pendingRole === "manager" || pendingRole === "shift_lead") {
+    if (pendingRole === "manager") {
       redirect("/dashboard");
     }
-    if (pendingRole === "staff") {
-      return <WelcomeCard />;
+    if (isStaffAccountRole(pendingRole)) {
+      const access = await resolveAccountAccess(match?.publicMetadata, pendingRole);
+      return <WelcomeCard showDashboardLink={access === "shift_lead"} />;
     }
   }
 
@@ -65,6 +75,32 @@ export default async function WelcomePage() {
   // arrived here via a stale URL. Send them to onboarding, which has
   // its own role guard.
   redirect("/onboarding");
+}
+
+/**
+ * The invite's role is only what was set when it was sent; the staff
+ * row's `accountAccess` is what the account is linked with.
+ */
+async function resolveAccountAccess(
+  metadata: Record<string, unknown> | undefined | null,
+  invitedRole: StaffAccountAccess,
+): Promise<StaffAccountAccess> {
+  const { orgId, locationId, staffId } = metadata ?? {};
+  if (
+    typeof orgId !== "string" ||
+    typeof locationId !== "string" ||
+    typeof staffId !== "string"
+  ) {
+    return invitedRole;
+  }
+  try {
+    await dbConnect();
+    const staff = await StaffService.getById(orgId, locationId, staffId);
+    return staff?.accountAccess ?? invitedRole;
+  } catch (error) {
+    console.error("welcome: staff lookup failed:", error);
+    return invitedRole;
+  }
 }
 
 function resolveRoleFromMetadata(

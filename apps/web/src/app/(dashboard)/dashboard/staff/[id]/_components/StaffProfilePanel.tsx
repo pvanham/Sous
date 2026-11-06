@@ -10,6 +10,7 @@ import { Loader2, Plus, Save, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
@@ -36,14 +37,27 @@ import {
   type AddressInput,
   type StaffFormValues,
 } from "@/lib/validations/staff.schema";
-import { updateStaff } from "@/server/actions/staff.actions";
-import type { StaffAddress, StaffDTO } from "@/types/staff";
+import {
+  updateStaff,
+  updateStaffAccountAccess,
+} from "@/server/actions/staff.actions";
+import type {
+  StaffAccountAccess,
+  StaffAddress,
+  StaffDTO,
+} from "@/types/staff";
 
 interface StaffProfilePanelProps {
   staff: StaffDTO;
   roles: string[];
   stations: string[];
+  canManageAccountAccess: boolean;
 }
+
+const ACCOUNT_ACCESS_LABELS: Record<StaffAccountAccess, string> = {
+  staff: "Staff",
+  shift_lead: "Shift lead",
+};
 
 type AddressDraft = {
   line1: string;
@@ -160,6 +174,7 @@ export function StaffProfilePanel({
   staff,
   roles,
   stations,
+  canManageAccountAccess,
 }: StaffProfilePanelProps) {
   const queryClient = useQueryClient();
 
@@ -196,6 +211,25 @@ export function StaffProfilePanel({
       toast.success("Profile updated");
       queryClient.invalidateQueries({ queryKey: ["staff"] });
       form.reset(toFormValues(data));
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  // Saved on change rather than with the profile form: it changes what
+  // this person can sign in to, not their schedule data.
+  const accountAccessMutation = useMutation({
+    mutationFn: async (accountAccess: StaffAccountAccess) => {
+      const result = await updateStaffAccountAccess({
+        staffId: staff.id,
+        accountAccess,
+      });
+      if (!result.success) throw new Error(result.error);
+      return result.data;
+    },
+    onSuccess: (data) => {
+      toast.success(`Account access set to ${ACCOUNT_ACCESS_LABELS[data.accountAccess]}`);
+      queryClient.setQueryData(["staff", "detail", data.id], data);
+      queryClient.invalidateQueries({ queryKey: ["staff"] });
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -439,6 +473,42 @@ export function StaffProfilePanel({
                   </FormItem>
                 )}
               />
+              <div className="space-y-2 border-t pt-4">
+                <Label htmlFor="account-access">Account access</Label>
+                <Select
+                  value={accountAccessMutation.isPending
+                    ? accountAccessMutation.variables
+                    : staff.accountAccess}
+                  onValueChange={(value) => {
+                    const next = value as StaffAccountAccess;
+                    if (next !== staff.accountAccess) {
+                      accountAccessMutation.mutate(next);
+                    }
+                  }}
+                  disabled={!canManageAccountAccess || accountAccessMutation.isPending}
+                >
+                  <SelectTrigger id="account-access" className="w-[220px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(ACCOUNT_ACCESS_LABELS) as StaffAccountAccess[]).map(
+                      (access) => (
+                        <SelectItem key={access} value={access}>
+                          {ACCOUNT_ACCESS_LABELS[access]}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-sm text-muted-foreground">
+                  Shift leads also sign in to the dashboard to approve shift
+                  exchanges and skill changes.{" "}
+                  {staff.clerkUserId
+                    ? "Changes apply to their account right away."
+                    : "Applies when they accept their app invite."}{" "}
+                  Manager coverage still comes from the kitchen roles above.
+                </p>
+              </div>
             </CardContent>
           </Card>
 
