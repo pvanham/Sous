@@ -11,8 +11,9 @@ import { registerDeviceTokenSchema } from "@sous/types";
 //   Registers (or refreshes) the caller's device push token. Idempotent.
 //
 // DELETE /api/me/notifications/devices?token=ExponentPushToken[...]
-//   Soft-revokes a single token — used by the mobile sign-out hook so
-//   we stop pushing to a device that no longer belongs to the user.
+//   Soft-revokes one of the caller's tokens — used by the mobile sign-out
+//   hook so we stop pushing to a device that no longer belongs to the
+//   user. A token owned by someone else returns 404 and stays active.
 //
 // Both verbs gate on `auth()` (any authenticated user) and write to a
 // per-Clerk-user collection (`devicetokens`). No orgId/locationId
@@ -92,7 +93,13 @@ export async function DELETE(req: NextRequest): Promise<Response> {
     }
 
     await dbConnect();
-    await DeviceTokenService.revoke(token);
+    const revoked = await DeviceTokenService.revoke(userId, token);
+    if (!revoked) {
+      return NextResponse.json(
+        { error: "Device not found." },
+        { status: 404 },
+      );
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

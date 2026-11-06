@@ -7,6 +7,7 @@ import {
   updateOrganizationSchema,
 } from "@/lib/validations/organization.schema";
 import { OrganizationService } from "@/server/services/organization.service";
+import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { OrganizationDTO } from "@/types/organization";
 
@@ -68,10 +69,14 @@ export async function createOrganization(
     // 3. DB connect
     await dbConnect();
 
-    // 4. Enforce one-owner-org onboarding path
+    // 4. Enforce one-owner-org onboarding path; invited members never own one
     const existing = await OrganizationService.getByOwnerId(userId);
     if (existing) {
       return { success: false, error: "Organization already exists for this owner" };
+    }
+    const memberships = await OrganizationMemberService.listByUserId(userId);
+    if (memberships.length > 0) {
+      return { success: false, error: "This account already belongs to a team" };
     }
 
     // 5. Service call

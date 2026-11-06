@@ -19,6 +19,7 @@ import { StaffService } from "@/server/services/staff.service";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { assertWeekStartAligned } from "@/server/services/schedule.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import type { ActionResponse } from "@/lib/safe-action";
 import type {
   TimeOffRequestDTO,
@@ -91,6 +92,8 @@ export async function createTimeOffRequest(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // Dynamic validation: check minTimeOffAdvanceDays from KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -243,6 +246,8 @@ export async function updateTimeOffRequestStatus(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const result = await TimeOffRequestService.updateStatus(
       ctx.orgId,
       ctx.locationId,
@@ -313,6 +318,8 @@ export async function resetTimeOffRequestToPending(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const result = await TimeOffRequestService.resetToPending(
       ctx.orgId,
       ctx.locationId,
@@ -461,6 +468,8 @@ export async function deleteTimeOffRequest(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const deleted = await TimeOffRequestService.delete(
       ctx.orgId,
       ctx.locationId,

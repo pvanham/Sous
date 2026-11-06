@@ -73,14 +73,18 @@ export const DeviceTokenService = {
   },
 
   /**
-   * Soft-revoke a single token. Idempotent — revoking an already-
-   * revoked or nonexistent token is a no-op.
+   * Soft-revoke one of the caller's tokens. Idempotent for the owner —
+   * revoking their already-revoked token still returns true. Returns
+   * false when the token does not belong to `clerkUserId`.
    */
-  async revoke(expoPushToken: string): Promise<void> {
-    await DeviceToken.updateOne(
-      { expoPushToken, revokedAt: null },
+  async revoke(clerkUserId: string, expoPushToken: string): Promise<boolean> {
+    const result = await DeviceToken.updateOne(
+      { clerkUserId, expoPushToken, revokedAt: null },
       { $set: { revokedAt: new Date() } },
     );
+    if (result.matchedCount > 0) return true;
+    const owned = await DeviceToken.exists({ clerkUserId, expoPushToken });
+    return owned !== null;
   },
 
   /**

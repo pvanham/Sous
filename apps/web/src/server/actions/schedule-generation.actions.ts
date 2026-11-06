@@ -7,6 +7,7 @@ import {
   acceptGeneratedScheduleSchema,
 } from "@/lib/validations/schedule-generation.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import { combineDateTime, parseDateString } from "@/lib/utils/date";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
 import { AIUsageService } from "@/server/services/ai-usage.service";
@@ -284,6 +285,8 @@ export async function generateBaseSchedule(
   }
 
   const ctx = await getLocationContext(userId);
+  const denied = denyUnlessRole(ctx);
+  if (denied) return denied;
 
   try {
     const schedule = await ScheduleService.getById(
@@ -384,6 +387,8 @@ export async function acceptGeneratedSchedule(
 
   // 3. Get location context (handles DB connection)
   const ctx = await getLocationContext(userId);
+  const denied = denyUnlessRole(ctx);
+  if (denied) return denied;
 
   try {
     const { scheduleId, shifts } = parsed.data;

@@ -16,6 +16,7 @@ import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ShiftDTO } from "@/types/shift";
 
@@ -85,6 +86,8 @@ export async function createShift(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate station against KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -164,6 +167,8 @@ export async function updateShift(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate station if provided
     if (updateData.station) {
@@ -242,6 +247,8 @@ export async function deleteShift(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Look up the shift before deleting so we can notify the affected
     //    staff member with the correct station + window after deletion.
