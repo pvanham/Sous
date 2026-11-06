@@ -252,6 +252,8 @@ export function ScheduleScreen() {
         shiftLabel={rosterLabel}
         roster={rosterQuery.data ?? []}
         loading={rosterQuery.isLoading || rosterQuery.isFetching}
+        loadFailed={rosterQuery.isError && rosterQuery.data === undefined}
+        onRetry={() => void rosterQuery.refetch()}
       />
     </ScreenWrapper>
   );

@@ -16,6 +16,20 @@ type MembershipResponse = Omit<
 };
 
 /**
+ * A `/me/membership` failure other than 404. `status` is `null` when the
+ * request never got a response (offline, timeout, missing token).
+ */
+export class MembershipRequestError extends Error {
+  readonly status: number | null;
+
+  constructor(message: string, status: number | null) {
+    super(message);
+    this.name = "MembershipRequestError";
+    this.status = status;
+  }
+}
+
+/**
  * Fetches the signed-in user's OrganizationMember record.
  *
  * The Clerk JWT is passed in explicitly (rather than relying on the
@@ -25,14 +39,15 @@ type MembershipResponse = Omit<
  * AuthGate treats every fresh sign-in as "couldn't verify your account".
  *
  * Returns null when the user has no membership (HTTP 404). Any other
- * failure throws with a readable message so the caller can surface it.
+ * failure throws a `MembershipRequestError` with a readable message so
+ * the caller can surface it.
  */
 export async function fetchMembership(
   getToken: TokenGetter,
 ): Promise<Membership | null> {
   const token = await getToken();
   if (!token) {
-    throw new Error("No Clerk session token available.");
+    throw new MembershipRequestError("No Clerk session token available.", null);
   }
 
   try {
@@ -73,11 +88,12 @@ export async function fetchMembership(
         `at ${baseURL}: ${detail}`,
     );
     if (status == null) {
-      throw new Error(
+      throw new MembershipRequestError(
         `Can't reach the Sous API at ${baseURL}. ${detail}. ` +
           "Confirm the web app is running on that port.",
+        null,
       );
     }
-    throw new Error(detail);
+    throw new MembershipRequestError(detail, status);
   }
 }

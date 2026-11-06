@@ -7,9 +7,15 @@ import {
 import type { ExchangeShift } from "@/types";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface AvailableShiftListProps {
   shifts: ExchangeShift[];
+  loading: boolean;
+  /** True when the board failed to load and there is no cached data. */
+  loadFailed: boolean;
+  onRetry: () => void;
+  retrying: boolean;
   onPickUp: (shiftId: string) => void;
   pickingUp: string | null;
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -20,10 +26,24 @@ interface AvailableShiftListProps {
  */
 export function AvailableShiftList({
   shifts,
+  loading,
+  loadFailed,
+  onRetry,
+  retrying,
   onPickUp,
   pickingUp,
   refreshControl,
 }: AvailableShiftListProps) {
+  if (loading) {
+    return (
+      <View className="py-12 items-center">
+        <StyledText variant="body" className="text-muted-foreground">
+          Loading...
+        </StyledText>
+      </View>
+    );
+  }
+
   return (
     <FlatList
       data={shifts}
@@ -40,11 +60,19 @@ export function AvailableShiftList({
       )}
       ItemSeparatorComponent={() => <View className="h-3" />}
       ListEmptyComponent={
-        <View className="py-12 items-center">
-          <StyledText variant="body" className="text-muted-foreground">
-            No shifts available for pickup.
-          </StyledText>
-        </View>
+        loadFailed ? (
+          <ErrorState
+            message="We couldn't load the exchange board."
+            onRetry={onRetry}
+            retrying={retrying}
+          />
+        ) : (
+          <View className="py-12 items-center">
+            <StyledText variant="body" className="text-muted-foreground">
+              No shifts available for pickup.
+            </StyledText>
+          </View>
+        )
       }
     />
   );
