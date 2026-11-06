@@ -236,7 +236,7 @@ export function BillingClient({
             const isCurrent = plan.tier === currentTier;
             const tierOrder = { free: 0, pro: 1, enterprise: 2 } as const;
             const isUpgrade = tierOrder[plan.tier] > tierOrder[currentTier];
-            const isDowngrade = tierOrder[plan.tier] < tierOrder[currentTier];
+            const priceId = "priceId" in plan ? plan.priceId : "";
 
             return (
               <div
@@ -293,30 +293,7 @@ export function BillingClient({
                   <Button variant="outline" disabled className="w-full">
                     Current Plan
                   </Button>
-                ) : isUpgrade && "priceId" in plan && plan.priceId ? (
-                  <Button
-                    className="w-full"
-                    onClick={() => handleUpgrade(plan.priceId!)}
-                    disabled={loading === plan.priceId}
-                  >
-                    {loading === plan.priceId && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Upgrade to {plan.name}
-                  </Button>
-                ) : isDowngrade && "priceId" in plan && plan.priceId ? (
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => handleUpgrade(plan.priceId!)}
-                    disabled={loading === plan.priceId}
-                  >
-                    {loading === plan.priceId && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Downgrade to {plan.name}
-                  </Button>
-                ) : isDowngrade ? (
+                ) : plan.tier === "free" ? (
                   <Button
                     variant="outline"
                     className="w-full text-muted-foreground"
@@ -328,9 +305,32 @@ export function BillingClient({
                     )}
                     Cancel via Portal
                   </Button>
-                ) : (
+                ) : !priceId ? (
                   <Button variant="outline" disabled className="w-full text-muted-foreground">
-                    —
+                    Not available for checkout
+                  </Button>
+                ) : isUpgrade ? (
+                  <Button
+                    className="w-full"
+                    onClick={() => handleUpgrade(priceId)}
+                    disabled={loading === priceId}
+                  >
+                    {loading === priceId && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Upgrade to {plan.name}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleUpgrade(priceId)}
+                    disabled={loading === priceId}
+                  >
+                    {loading === priceId && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Downgrade to {plan.name}
                   </Button>
                 )}
               </div>

@@ -1,14 +1,9 @@
 import { auth } from "@clerk/nextjs/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
 import { OrganizationService } from "@/server/services/organization.service";
-import { getStripe } from "@/lib/stripe";
+import { getStripe, tierForPriceId, type PaidTier } from "@/lib/stripe";
 import { dbConnect } from "@/lib/db";
 import { BillingClient } from "./_components/BillingClient";
-
-const PRICE_TO_TIER: Record<string, "pro" | "enterprise"> = {
-  [process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID!]: "pro",
-  [process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID!]: "enterprise",
-};
 
 const TIER_ORDER: Record<string, number> = {
   free: 0,
@@ -64,21 +59,25 @@ export default async function BillingSettingsPage() {
         status: "active",
       });
 
-      if (allSubs.data.length > 0) {
-        // Find the highest-tier active subscription
-        let bestSub = allSubs.data[0];
-        let bestTier: "free" | "pro" | "enterprise" = "free";
-
-        for (const sub of allSubs.data) {
-          const priceId = sub.items.data[0]?.price?.id;
-          const tier = priceId && PRICE_TO_TIER[priceId]
-            ? PRICE_TO_TIER[priceId]
-            : "pro";
-          if (TIER_ORDER[tier] > TIER_ORDER[bestTier]) {
-            bestTier = tier;
-            bestSub = sub;
-          }
+      // Only subscriptions on a configured price count toward a paid
+      // tier; an unknown price is treated as no subscription.
+      let best: { sub: (typeof allSubs.data)[number]; tier: PaidTier } | null = null;
+      for (const sub of allSubs.data) {
+        const tier = tierForPriceId(sub.items.data[0]?.price?.id);
+        if (!tier) {
+          console.warn("[Billing] Ignoring subscription with an unconfigured price", {
+            orgId: org.id,
+            subscriptionId: sub.id,
+          });
+          continue;
         }
+        if (!best || TIER_ORDER[tier] > TIER_ORDER[best.tier]) {
+          best = { sub, tier };
+        }
+      }
+
+      if (best) {
+        const { sub: bestSub, tier: bestTier } = best;
 
         currentTier = bestTier;
         cancelAtPeriodEnd =
@@ -103,8 +102,10 @@ export default async function BillingSettingsPage() {
             currentPeriodEnd,
           });
         }
-      } else {
-        // No active subscriptions in Stripe — ensure we show Free
+      } else if (allSubs.data.length === 0) {
+        // No active subscriptions in Stripe — ensure we show Free. Active
+        // subscriptions on unconfigured prices leave the stored tier alone
+        // so a missing price env var can't downgrade paying orgs here.
         if (org.subscriptionTier !== "free" || org.stripeSubscriptionId) {
           currentTier = "free";
           cancelAtPeriodEnd = false;
