@@ -7,7 +7,8 @@ import {
   acceptGeneratedScheduleSchema,
 } from "@/lib/validations/schedule-generation.schema";
 import { getLocationContext } from "@/lib/auth/get-location-context";
-import { combineDateTime, parseDateString } from "@/lib/utils/date";
+import { zonedDateTime } from "@/lib/utils/timezone";
+import { LocationService } from "@/server/services/location.service";
 import { SchedulingAgentService } from "@/server/services/ai/scheduling-agent.service";
 import { AIUsageService } from "@/server/services/ai-usage.service";
 import { ScheduleService } from "@/server/services/schedule.service";
@@ -306,9 +307,9 @@ export async function generateBaseSchedule(
       await SchedulingAgentService.generateBaseWeekSchedule(context);
 
     // Run manager coverage validation
+    const timezone = await getLocationTimezone(ctx.locationId);
     const pseudoShifts: ShiftDTO[] = [];
     for (const day of generatedSchedule.days) {
-      const date = parseDateString(day.date);
       for (const assignment of day.assignments) {
         pseudoShifts.push({
           id: `pseudo-${assignment.staffId}-${assignment.startTime}`,
@@ -316,8 +317,8 @@ export async function generateBaseSchedule(
           locationId: ctx.locationId,
           scheduleId: schedule.id,
           staffId: assignment.staffId,
-          start: combineDateTime(date, assignment.startTime),
-          end: combineDateTime(date, assignment.endTime),
+          start: zonedDateTime(day.date, assignment.startTime, timezone),
+          end: zonedDateTime(day.date, assignment.endTime, timezone),
           station: assignment.station,
           notes: "",
           createdAt: new Date(),
@@ -331,6 +332,7 @@ export async function generateBaseSchedule(
       pseudoShifts,
       context.staff,
       context.config,
+      timezone,
     );
 
     generatedSchedule.managerWarnings = managerWarnings;
@@ -398,11 +400,12 @@ export async function acceptGeneratedSchedule(
       return { success: false, error: "Schedule not found" };
     }
 
-    // Convert accepted shifts to CreateShiftInput format
+    // Convert accepted shifts to CreateShiftInput format. Times are wall
+    // clock at the location, independent of the server's timezone.
+    const timezone = await getLocationTimezone(ctx.locationId);
     const createInputs = shifts.map((shift) => {
-      const date = parseDateString(shift.date);
-      const start = combineDateTime(date, shift.startTime);
-      const end = combineDateTime(date, shift.endTime);
+      const start = zonedDateTime(shift.date, shift.startTime, timezone);
+      const end = zonedDateTime(shift.date, shift.endTime, timezone);
 
       return {
         orgId: ctx.orgId,
@@ -436,6 +439,11 @@ export async function acceptGeneratedSchedule(
 // ────────────────────────────────────────────────────────────
 // Helper functions (pure logic, no DB calls)
 // ────────────────────────────────────────────────────────────
+
+async function getLocationTimezone(locationId: string): Promise<string> {
+  const location = await LocationService.getById(locationId);
+  return location?.timezone ?? "UTC";
+}
 
 /**
  * Get the day-of-week numbers (0-6) that the kitchen is open.

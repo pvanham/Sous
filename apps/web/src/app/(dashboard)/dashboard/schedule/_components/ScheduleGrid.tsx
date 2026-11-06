@@ -18,11 +18,8 @@ import {
 import { listTimeOffForLocationWeek } from "@/server/actions/time-off-request.actions";
 import { listStaff } from "@/server/actions/staff.actions";
 import { getKitchenConfig } from "@/server/actions/kitchen-config.actions";
-import {
-  getWeekDays,
-  getNextWeekStart,
-  getPrevWeekStart,
-} from "@/lib/utils/date";
+import { getWeekDays } from "@/lib/utils/date";
+import { addWeeksInTz } from "@/lib/utils/timezone";
 import type { ShiftDTO } from "@/types/shift";
 import type { ScheduleDTO } from "@/types/schedule";
 import type { TimeOffRequestDTO } from "@/types/time-off-request";
@@ -106,9 +103,15 @@ interface ScheduleGridProps {
    * cached `config.weekStartsOn` from TanStack Query takes over.
    */
   initialWeekStartsOn: DayOfWeek;
+  /** IANA timezone of the active location; week navigation steps in it. */
+  timezone: string;
 }
 
-export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridProps) {
+export function ScheduleGrid({
+  initialWeek,
+  initialWeekStartsOn,
+  timezone,
+}: ScheduleGridProps) {
   const queryClient = useQueryClient();
 
   // State for current week
@@ -330,15 +333,15 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
 
   // Week navigation handlers
   const handlePrevWeek = () => {
-    setCurrentWeek((prev) => getPrevWeekStart(prev, weekStartsOn));
+    setCurrentWeek((prev) => addWeeksInTz(prev, -1, weekStartsOn, timezone));
     // Update selected day to first day of new week
-    setSelectedDay(getPrevWeekStart(currentWeek, weekStartsOn));
+    setSelectedDay(addWeeksInTz(currentWeek, -1, weekStartsOn, timezone));
   };
 
   const handleNextWeek = () => {
-    setCurrentWeek((prev) => getNextWeekStart(prev, weekStartsOn));
+    setCurrentWeek((prev) => addWeeksInTz(prev, 1, weekStartsOn, timezone));
     // Update selected day to first day of new week
-    setSelectedDay(getNextWeekStart(currentWeek, weekStartsOn));
+    setSelectedDay(addWeeksInTz(currentWeek, 1, weekStartsOn, timezone));
   };
 
   // View change handler
@@ -478,7 +481,7 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
     setIsCopyingFromPrev(true);
     try {
       const result = await copyWeekShifts({
-        sourceWeekStart: getPrevWeekStart(currentWeek, weekStartsOn),
+        sourceWeekStart: addWeeksInTz(currentWeek, -1, weekStartsOn, timezone),
         targetWeekStart: currentWeek,
       });
 
@@ -649,6 +652,7 @@ export function ScheduleGrid({ initialWeek, initialWeekStartsOn }: ScheduleGridP
             shifts={shifts}
             weekStart={currentWeek}
             weekStartsOn={weekStartsOn}
+            timezone={timezone}
             effectiveStatus={effectiveStatus}
             onStatusChange={handleStatusChange}
           />

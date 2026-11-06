@@ -1,4 +1,5 @@
 import { Types } from "mongoose";
+import { toZonedTime } from "date-fns-tz";
 import Schedule from "@/server/models/Schedule";
 import Shift from "@/server/models/Shift";
 import { ScheduleDTO, ScheduleStatus, toScheduleDTO } from "@/types/schedule";
@@ -6,7 +7,6 @@ import type { ShiftDTO } from "@/types/shift";
 import type { StaffDTO } from "@/types/staff";
 import type { KitchenConfigDTO } from "@/types/kitchen-config";
 import {
-  getWeekStart,
   getWeekDays,
   getStoreHoursForDay,
   formatFullDayLabel,
@@ -14,7 +14,12 @@ import {
 import { dayOfWeekToIndex } from "@sous/types";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { LocationService } from "@/server/services/location.service";
-import { getDayOfWeekInTz } from "@/lib/utils/timezone";
+import {
+  currentWeekStartInLocationTz,
+  getDayOfWeekInTz,
+  startOfDayInTz,
+} from "@/lib/utils/timezone";
+import { isManagerByRoles } from "@/lib/utils/manager-roles";
 
 /**
  * Manager coverage gap info for a specific day.
@@ -27,24 +32,11 @@ export interface ManagerCoverageGap {
 export type EffectiveScheduleStatus = "PUBLISHED" | "DRAFT" | "EMPTY";
 
 /**
- * Check if a staff member has a manager role.
- * Matches case-insensitively against common manager role patterns.
+ * Check if a staff member has a manager role. Shares its rule with the
+ * CP-SAT solver via `isManagerByRoles`.
  */
 function isManager(staff: StaffDTO, managerRoles: string[]): boolean {
-  if (managerRoles && managerRoles.length > 0) {
-    return staff.roles.some((role) => managerRoles.includes(role));
-  }
-  
-  // Fallback to strict hardcoded checks if no manager roles configured
-  return staff.roles.some(
-    (role) =>
-      role.toLowerCase().includes("manager") ||
-      role.toLowerCase() === "gm" ||
-      role.toLowerCase() === "km" ||
-      role.toLowerCase() === "agm" ||
-      role.toLowerCase() === "shift leader" ||
-      role.toLowerCase() === "sous chef"
-  );
+  return isManagerByRoles(staff.roles, managerRoles ?? []);
 }
 
 /**
@@ -196,6 +188,19 @@ export async function assertWeekStartAligned(
 }
 
 /**
+ * Midnight of the given instant's calendar day in the location's
+ * timezone. `weekStartDate` is stored as that instant, so lookups must
+ * normalize the same way; `setHours(0)` would use the server's timezone.
+ */
+async function normalizeToLocationMidnight(
+  locationId: string,
+  date: Date,
+): Promise<Date> {
+  const location = await LocationService.getById(locationId);
+  return startOfDayInTz(date, location?.timezone ?? "UTC");
+}
+
+/**
  * ScheduleService - Service layer for Schedule operations.
  * This is the ONLY place that imports and interacts with the Schedule Mongoose model.
  */
@@ -216,9 +221,7 @@ export const ScheduleService = {
     locationId: string,
     weekStartDate: Date,
   ): Promise<ScheduleDTO> {
-    // Normalize to start of day
-    const normalizedDate = new Date(weekStartDate);
-    normalizedDate.setHours(0, 0, 0, 0);
+    const normalizedDate = await normalizeToLocationMidnight(locationId, weekStartDate);
 
     // Enforce the per-location week-start alignment. The Mongoose model
     // dropped its hardcoded "Monday" validator (alignment is now per
@@ -267,9 +270,7 @@ export const ScheduleService = {
     locationId: string,
     weekStartDate: Date,
   ): Promise<ScheduleDTO | null> {
-    // Normalize to start of day
-    const normalizedDate = new Date(weekStartDate);
-    normalizedDate.setHours(0, 0, 0, 0);
+    const normalizedDate = await normalizeToLocationMidnight(locationId, weekStartDate);
 
     await assertWeekStartAligned(orgId, locationId, normalizedDate);
 
@@ -301,11 +302,14 @@ export const ScheduleService = {
       .lean();
 
     if (!doc) {
-      const weekStartsOn = await KitchenConfigService.getWeekStartsOn(
-        orgId,
-        locationId,
+      const [weekStartsOn, location] = await Promise.all([
+        KitchenConfigService.getWeekStartsOn(orgId, locationId),
+        LocationService.getById(locationId),
+      ]);
+      const weekStart = currentWeekStartInLocationTz(
+        weekStartsOn,
+        location?.timezone ?? "UTC",
       );
-      const weekStart = getWeekStart(new Date(), weekStartsOn);
       return this.getOrCreateForWeek(orgId, locationId, weekStart);
     }
     return toScheduleDTO(doc);
@@ -514,9 +518,17 @@ export const ScheduleService = {
     shifts: ShiftDTO[],
     staff: StaffDTO[],
     config: KitchenConfigDTO,
+    timezone: string,
   ): ManagerCoverageGap[] {
     const warnings: ManagerCoverageGap[] = [];
-    const weekDays = getWeekDays(weekStartDate, config.weekStartsOn);
+    // Project every instant onto the location's wall clock so day
+    // matching and hour math below are independent of the server's TZ.
+    const weekDays = getWeekDays(toZonedTime(weekStartDate, timezone), config.weekStartsOn);
+    const zonedShifts = shifts.map((shift) => ({
+      ...shift,
+      start: toZonedTime(new Date(shift.start), timezone),
+      end: toZonedTime(new Date(shift.end), timezone),
+    }));
 
     for (const day of weekDays) {
       // Get store hours for this day (without buffer)
@@ -526,8 +538,8 @@ export const ScheduleService = {
       if (!storeHours) continue;
 
       // Get shifts for this specific day
-      const dayShifts = shifts.filter((shift) => {
-        const shiftDay = new Date(shift.start);
+      const dayShifts = zonedShifts.filter((shift) => {
+        const shiftDay = shift.start;
         return (
           shiftDay.getFullYear() === day.getFullYear() &&
           shiftDay.getMonth() === day.getMonth() &&

@@ -538,9 +538,10 @@ export async function publishSchedule(
     );
 
     let managerWarnings: ManagerCoverageGap[] = [];
-    const [staff, config] = await Promise.all([
+    const [staff, config, location] = await Promise.all([
       StaffService.list(ctx.orgId, ctx.locationId),
       KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
+      LocationService.getById(ctx.locationId),
     ]);
 
     if (config) {
@@ -549,6 +550,7 @@ export async function publishSchedule(
         consolidatedShifts,
         staff,
         config,
+        location?.timezone ?? "UTC",
       );
     }
 
@@ -634,7 +636,7 @@ export async function checkManagerCoverage(
     // 4. Get shifts, staff, and config
     const weekStart = new Date(schedule.weekStartDate);
     const weekEnd = new Date(weekStart.getTime() + WEEK_MS);
-    const [shifts, staff, config] = await Promise.all([
+    const [shifts, staff, config, location] = await Promise.all([
       ShiftService.getByLocationAndDateRange(
         ctx.orgId,
         ctx.locationId,
@@ -643,6 +645,7 @@ export async function checkManagerCoverage(
       ),
       StaffService.list(ctx.orgId, ctx.locationId),
       KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
+      LocationService.getById(ctx.locationId),
     ]);
 
     // 5. Check for manager coverage gaps
@@ -653,6 +656,7 @@ export async function checkManagerCoverage(
         shifts,
         staff,
         config,
+        location?.timezone ?? "UTC",
       );
     }
 
