@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
-import { StaffService } from "@/server/services/staff.service";
+import {
+  linkStaffAccount,
+  resolveStaffInvite,
+  syncClerkRole,
+} from "@/lib/auth/staff-invite";
 import type { MemberRole } from "@/server/models/OrganizationMember";
 import type { DayOfWeek } from "@sous/types";
 
@@ -133,7 +137,15 @@ async function tryHealMembership(
     console.log(
       `[membership self-heal] provisioning ${clerkUserId} from user.publicMetadata`,
     );
-    return provisionMembership(clerkUserId, userPrimaryEmail(user), fromUserMetadata);
+    const healed = await provisionMembership(
+      clerkUserId,
+      userPrimaryEmail(user),
+      fromUserMetadata,
+    );
+    if (healed && healed.role !== fromUserMetadata.role) {
+      await syncClerkRole(clerkUserId, healed.role);
+    }
+    return healed;
   }
 
   // Path B: invitation is still pending in Clerk for this user's email.
@@ -179,7 +191,7 @@ async function tryHealMembership(
       await client.users.updateUser(clerkUserId, {
         publicMetadata: {
           ...(user.publicMetadata ?? {}),
-          role: fromInvitation.role,
+          role: healed.role,
           orgId: fromInvitation.orgId,
           locationId: fromInvitation.locationId,
           ...(fromInvitation.staffId ? { staffId: fromInvitation.staffId } : {}),
@@ -252,44 +264,17 @@ async function provisionMembership(
   data: InvitationData,
 ): Promise<HealedMembership | null> {
   try {
+    // Same role resolution and staff linking as the user.created webhook.
+    const { role, staff } = await resolveStaffInvite(data, email);
     const created = await OrganizationMemberService.create({
       orgId: data.orgId,
       locationId: data.locationId,
       clerkUserId,
-      role: data.role,
+      role,
     });
 
-    // Mirror the webhook's staff-record linking for staff invitations.
-    if (data.role === "staff" && data.locationId) {
-      try {
-        if (data.staffId) {
-          await StaffService.linkClerkUser(
-            data.orgId,
-            data.locationId,
-            data.staffId,
-            clerkUserId,
-          );
-        } else if (email) {
-          const staffByEmail = await StaffService.getByEmail(
-            data.orgId,
-            data.locationId,
-            email,
-          );
-          if (staffByEmail) {
-            await StaffService.linkClerkUser(
-              data.orgId,
-              data.locationId,
-              staffByEmail.id,
-              clerkUserId,
-            );
-          }
-        }
-      } catch (error) {
-        console.error(
-          "[membership self-heal] StaffService.linkClerkUser failed (non-fatal):",
-          error,
-        );
-      }
+    if (staff) {
+      await linkStaffAccount(staff, clerkUserId);
     }
 
     return {

@@ -4,6 +4,7 @@ export type {
   StaffAddress,
   StaffDTO,
   InvitationStatus,
+  StaffAccountAccess,
   StaffListParams,
   PaginatedStaffResult,
   ImportRowError,
@@ -35,6 +36,7 @@ export interface IStaff {
    * accepted or the Clerk user is unlinked.
    */
   clerkInvitationId?: string | null;
+  accountAccess?: import("@sous/types").StaffAccountAccess;
   onboardingCompletedAt?: Date | null;
   imageUrl?: string | null;
   /**
@@ -66,6 +68,7 @@ export function toStaffDTO(doc: IStaff & { _id: unknown }): import("@sous/types"
     address: doc.address ?? null,
     clerkUserId: doc.clerkUserId ?? null,
     invitationStatus: doc.invitationStatus ?? "not_invited",
+    accountAccess: doc.accountAccess ?? "staff",
     onboardingCompletedAt: doc.onboardingCompletedAt ?? null,
     imageUrl: doc.imageUrl ?? null,
     createdAt: doc.createdAt,

@@ -1,4 +1,6 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { auth } from "@clerk/nextjs/server";
+import { getLocationContext } from "@/lib/auth/get-location-context";
 import { getStaffById } from "@/server/actions/staff.actions";
 import { getStaffAvailability } from "@/server/actions/staff-availability.actions";
 import { getTimeOffRequestsByStaff } from "@/server/actions/time-off-request.actions";
@@ -14,6 +16,10 @@ export default async function StaffDetailPage({
   params,
 }: StaffDetailPageProps) {
   const { id: staffId } = await params;
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+  const ctx = await getLocationContext(userId);
+  const canManageAccountAccess = ctx.role === "owner" || ctx.role === "manager";
 
   // One round-trip for everything the detail page needs. The backend is
   // already staff-centric, so a single page can own profile, availability,
@@ -62,6 +68,7 @@ export default async function StaffDetailPage({
       roles={roles}
       stations={stations}
       minTimeOffAdvanceDays={minTimeOffAdvanceDays}
+      canManageAccountAccess={canManageAccountAccess}
     />
   );
 }

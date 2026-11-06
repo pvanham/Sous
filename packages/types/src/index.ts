@@ -31,6 +31,14 @@ export interface StaffAddress {
 
 export type InvitationStatus = "not_invited" | "pending" | "accepted";
 
+/**
+ * Login role a staff member's account gets. `shift_lead` adds dashboard
+ * access, exchange and skill approvals, and a smaller AI tool set than a
+ * manager. Independent of the kitchen job titles in `roles`; manager
+ * coverage is decided by `KitchenConfig.managerRoles` alone.
+ */
+export type StaffAccountAccess = "staff" | "shift_lead";
+
 export interface StaffDTO {
   id: string;
   orgId: string;
@@ -49,6 +57,11 @@ export interface StaffDTO {
   address?: StaffAddress | null;
   clerkUserId?: string | null;
   invitationStatus: InvitationStatus;
+  /**
+   * Membership role the account is created with (or switched to, once
+   * linked). Defaults to `"staff"`.
+   */
+  accountAccess: StaffAccountAccess;
   /**
    * Timestamp of the first time the staff member finished the mobile
    * onboarding wizard. `null` until they tap "Get started" on the

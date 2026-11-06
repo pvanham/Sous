@@ -6,8 +6,11 @@ import {
   staffUpdateSchema,
   importStaffSchema,
   staffListParamsSchema,
+  updateStaffAccountAccessSchema,
+  isStaffAccountRole,
 } from "@/lib/validations/staff.schema";
 import { splitName, StaffService } from "@/server/services/staff.service";
+import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { TimeOffRequestService } from "@/server/services/time-off-request.service";
@@ -608,6 +611,93 @@ export async function setStaffActive(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to update staff status";
+    return { success: false, error: message };
+  }
+}
+
+/**
+ * Set whether a staff member's login is a staff or shift lead account.
+ * Before the invite is accepted this only changes the staff row, which
+ * linking reads. Once linked, the Clerk role and the OrganizationMember
+ * role change with it. Owner and manager accounts are never changed here.
+ * @param input - `{ staffId, accountAccess }`
+ * @returns ActionResponse containing updated StaffDTO
+ */
+export async function updateStaffAccountAccess(
+  input: unknown
+): Promise<ActionResponse<StaffDTO>> {
+  try {
+    // 1. Auth check
+    const { userId } = await auth();
+    if (!userId) {
+      return { success: false, error: "Unauthorized" };
+    }
+
+    // 2. Validate input
+    const parsed = updateStaffAccountAccessSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message ?? "Invalid input",
+      };
+    }
+    const { staffId, accountAccess } = parsed.data;
+
+    // 3. Get context & enforce owner/manager access
+    const ctx = await getLocationContext(userId);
+    if (ctx.role !== "owner" && ctx.role !== "manager") {
+      return {
+        success: false,
+        error: "Only owners and managers can change account access",
+      };
+    }
+
+    // 4. Load the staff row within the caller's location
+    const staff = await StaffService.getById(ctx.orgId, ctx.locationId, staffId);
+    if (!staff) {
+      return { success: false, error: "Staff member not found" };
+    }
+
+    // 5. A linked account changes role too, unless it is an owner or
+    //    manager login, which this control must not demote.
+    const membership = staff.clerkUserId
+      ? await OrganizationMemberService.getByUserAndOrg(
+          staff.clerkUserId,
+          ctx.orgId
+        )
+      : null;
+    if (membership && !isStaffAccountRole(membership.role)) {
+      return {
+        success: false,
+        error: "This person signs in as an owner or manager",
+      };
+    }
+
+    const updated = await StaffService.setAccountAccess(
+      ctx.orgId,
+      ctx.locationId,
+      staffId,
+      accountAccess
+    );
+    if (!updated) {
+      return { success: false, error: "Staff member not found" };
+    }
+
+    if (membership && staff.clerkUserId && membership.role !== accountAccess) {
+      const client = await clerkClient();
+      await client.users.updateUserMetadata(staff.clerkUserId, {
+        publicMetadata: { role: accountAccess },
+      });
+      await OrganizationMemberService.update(membership.id, {
+        role: accountAccess,
+      });
+    }
+
+    // 6. Return response
+    return { success: true, data: updated };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to update account access";
     return { success: false, error: message };
   }
 }

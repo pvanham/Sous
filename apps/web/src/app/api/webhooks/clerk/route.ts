@@ -4,6 +4,12 @@ import { dbConnect } from "@/lib/db";
 import { OrganizationService } from "@/server/services/organization.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
+import {
+  linkStaffAccount,
+  resolveStaffInvite,
+  syncClerkRole,
+} from "@/lib/auth/staff-invite";
+import { isStaffAccountRole } from "@/lib/validations/staff.schema";
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { NotificationPreferenceService } from "@/server/services/notification-preference.service";
 import { WebNotificationPreferenceService } from "@/server/services/web-notification-preference.service";
@@ -49,13 +55,23 @@ export async function POST(req: NextRequest) {
     const isInvitedMember = metadataRole && publicMetadata?.orgId;
 
     if (isInvitedMember) {
-      const resolvedRole: MemberRole = VALID_INVITED_ROLES.includes(metadataRole as MemberRole)
+      const invitedRole: MemberRole = VALID_INVITED_ROLES.includes(metadataRole as MemberRole)
         ? (metadataRole as MemberRole)
         : "manager";
       const orgId = publicMetadata.orgId as string;
       const locationId = (publicMetadata.locationId as string) || null;
 
       try {
+        const { role: resolvedRole, staff } = await resolveStaffInvite(
+          {
+            role: invitedRole,
+            orgId,
+            locationId,
+            staffId: publicMetadata.staffId as string | undefined,
+          },
+          email || null,
+        );
+
         await OrganizationMemberService.create({
           orgId,
           locationId,
@@ -64,35 +80,12 @@ export async function POST(req: NextRequest) {
         });
         console.log(`Successfully added user ${userId} as ${resolvedRole} to org ${orgId}`);
 
-        // Link Clerk user to existing Staff record for staff invitations
-        if (resolvedRole === "staff" && locationId) {
-          const staffId = publicMetadata.staffId as string | undefined;
-          try {
-            const linkedId = staffId
-              ? staffId
-              : (
-                  await StaffService.getByEmail(orgId, locationId, email)
-                )?.id;
-            if (linkedId) {
-              await StaffService.linkClerkUser(
-                orgId,
-                locationId,
-                linkedId,
-                userId,
-              );
-              console.log(`Linked clerk user ${userId} to staff ${linkedId}`);
-              try {
-                await StaffService.mirrorAccountFromClerk(userId);
-              } catch (mirrorError) {
-                console.error(
-                  "Failed to mirror account onto staff (non-fatal):",
-                  mirrorError,
-                );
-              }
-            }
-          } catch (linkError) {
-            console.error("Failed to link staff record (non-fatal):", linkError);
-          }
+        if (staff) {
+          await linkStaffAccount(staff, userId);
+          console.log(`Linked clerk user ${userId} to staff ${staff.id}`);
+        }
+        if (resolvedRole !== metadataRole) {
+          await syncClerkRole(userId, resolvedRole);
         }
       } catch (error) {
         console.error("Failed to create membership:", error);
@@ -190,7 +183,7 @@ export async function POST(req: NextRequest) {
           await OrganizationService.cascadeDelete(orgId);
 
           console.log(`Completed cascading delete for org ${orgId}`);
-        } else if (membership.role === "staff") {
+        } else if (isStaffAccountRole(membership.role)) {
           // Unlink Clerk user from Staff record but preserve scheduling data,
           // then clean up identity-scoped rows and the membership itself.
           await Promise.all([
@@ -200,9 +193,11 @@ export async function POST(req: NextRequest) {
             WebNotificationPreferenceService.deleteAllByClerkUserId(userId),
           ]);
           await OrganizationMemberService.delete(membership.id);
-          console.log(`Deleted staff membership ${membership.id} and unlinked staff record`);
+          console.log(
+            `Deleted ${membership.role} membership ${membership.id} and unlinked staff record`,
+          );
         } else {
-          // Manager / shift_lead: clean up identity-scoped rows, then delete membership.
+          // Manager: clean up identity-scoped rows, then delete membership.
           await Promise.all([
             DeviceTokenService.deleteAllByClerkUserId(userId),
             NotificationPreferenceService.deleteAllByClerkUserId(userId),

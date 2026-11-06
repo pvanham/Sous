@@ -141,6 +141,24 @@ export const csvRowSchema = z.object({
 // Uses base schema without refinements since .omit() doesn't work on refined schemas
 export const importStaffSchema = z.array(staffBaseSchema.omit({ isActive: true }));
 
+export const staffAccountAccessSchema = z.enum(["staff", "shift_lead"]);
+
+/** Owner/manager change to which login role a staff member's account gets. */
+export const updateStaffAccountAccessSchema = z.object({
+  staffId: z.string().regex(/^[0-9a-fA-F]{24}$/, "Invalid staff ID"),
+  accountAccess: staffAccountAccessSchema,
+});
+
+/**
+ * Membership roles backed by a Staff row: the account is linked to that
+ * row on sign-up and unlinked when the Clerk user is deleted.
+ */
+export function isStaffAccountRole(
+  role: string | null | undefined,
+): role is z.infer<typeof staffAccountAccessSchema> {
+  return staffAccountAccessSchema.safeParse(role).success;
+}
+
 export const STAFF_LIST_DEFAULTS = {
   page: 1,
   pageSize: 10,
@@ -192,6 +210,7 @@ export type CsvRowInput = z.infer<typeof csvRowSchema>;
 export type ImportStaffInput = z.infer<typeof importStaffSchema>;
 export type SkillInput = z.infer<typeof skillSchema>;
 export type AddressInput = z.infer<typeof addressSchema>;
+export type UpdateStaffAccountAccessInput = z.infer<typeof updateStaffAccountAccessSchema>;
 
 // Explicit form values type for react-hook-form compatibility
 // This ensures consistent types between the form and zodResolver
