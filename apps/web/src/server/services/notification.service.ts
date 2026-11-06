@@ -6,6 +6,7 @@ import { WebNotificationPreferenceService } from "@/server/services/web-notifica
 import { DeviceTokenService } from "@/server/services/device-token.service";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { StaffService } from "@/server/services/staff.service";
+import { resolveAudienceStaff } from "@/lib/announcement/resolve-audience";
 import { sendExpoPush, type ExpoPushPayload } from "@/lib/push/expo-push";
 import { sendEmailBatch, type SendEmailInput } from "@/lib/email/resend";
 import {
@@ -32,6 +33,15 @@ export interface RecipientSelector {
   managersOf?: { orgId: string; locationId: string };
   /** Every active staff row at an org+location with a Clerk link. */
   allStaffOf?: { orgId: string; locationId: string };
+  /**
+   * Active, Clerk-linked staff an announcement audience reaches, resolved
+   * the same way as announcement analytics.
+   */
+  announcementAudienceOf?: {
+    orgId: string;
+    locationId: string;
+    targetAudience: readonly string[];
+  };
   /** Owner of an organization. */
   ownerOf?: { ownerClerkUserId: string };
 }
@@ -204,6 +214,20 @@ async function resolveRecipients(
       }
     } catch (err) {
       console.error("[notify] allStaffOf resolution failed:", err);
+    }
+  }
+  if (selector.announcementAudienceOf) {
+    try {
+      const staff = await resolveAudienceStaff(
+        selector.announcementAudienceOf.orgId,
+        selector.announcementAudienceOf.locationId,
+        selector.announcementAudienceOf.targetAudience,
+      );
+      for (const s of staff) {
+        if (s.clerkUserId) ids.add(s.clerkUserId);
+      }
+    } catch (err) {
+      console.error("[notify] announcementAudienceOf resolution failed:", err);
     }
   }
   if (selector.ownerOf) {

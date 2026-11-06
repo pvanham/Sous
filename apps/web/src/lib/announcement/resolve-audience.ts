@@ -1,4 +1,5 @@
 import { ANNOUNCEMENT_AUDIENCE_TOKENS } from "@sous/types";
+import type { LocationContext } from "@/lib/auth/get-location-context";
 import type { StaffDTO } from "@/types/staff";
 import { StaffService } from "@/server/services/staff.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
@@ -50,4 +51,45 @@ export async function resolveAudienceStaff(
     ...selectedRoles,
   ]);
   return scopedStaff.filter((member) => member.isActive);
+}
+
+/**
+ * `targetAudience` entries that reach this staff member. An announcement
+ * whose audience contains any of them is one `resolveAudienceStaff` would
+ * return this person for, so reads and notifications stay in agreement.
+ */
+export function audienceEntriesForStaff(
+  staff: StaffDTO,
+  managerRoles: readonly string[]
+): string[] {
+  if (!staff.isActive) return [];
+
+  const entries: string[] = [ANNOUNCEMENT_AUDIENCE_TOKENS.everyone];
+  if (staff.roles.some((role) => managerRoles.includes(role))) {
+    entries.push(ANNOUNCEMENT_AUDIENCE_TOKENS.managers);
+  }
+  for (const role of staff.roles) {
+    if (!role.startsWith("@")) entries.push(role);
+  }
+  return entries;
+}
+
+/**
+ * Audience entries the caller may read through the staff-facing
+ * announcement API, or `null` when the caller's role reads every
+ * published post at the location. Staff and shift lead accounts without
+ * a linked staff row read nothing.
+ */
+export async function readableAudienceForMember(
+  ctx: LocationContext,
+  clerkUserId: string
+): Promise<string[] | null> {
+  if (ctx.role === "owner" || ctx.role === "manager") return null;
+
+  const [staff, config] = await Promise.all([
+    StaffService.getByClerkUserId(ctx.orgId, ctx.locationId, clerkUserId),
+    KitchenConfigService.getByLocation(ctx.orgId, ctx.locationId),
+  ]);
+  if (!staff) return [];
+  return audienceEntriesForStaff(staff, config?.managerRoles ?? []);
 }

@@ -67,17 +67,25 @@ export const AnnouncementService = {
       includeExpired?: boolean;
       includeDrafts?: boolean;
       includeScheduled?: boolean;
+      /** Only rows whose `targetAudience` contains one of these entries. */
+      audienceAnyOf?: readonly string[] | null;
     } = {}
   ): Promise<AnnouncementDTO[]> {
     const limit = options.limit ?? 20;
     const includeExpired = options.includeExpired ?? false;
     const includeDrafts = options.includeDrafts ?? false;
     const includeScheduled = options.includeScheduled ?? false;
+    const audienceAnyOf = options.audienceAnyOf ?? null;
+
+    if (audienceAnyOf !== null && audienceAnyOf.length === 0) return [];
 
     const query: Record<string, unknown> = {
       orgId: new Types.ObjectId(orgId),
       locationId: new Types.ObjectId(locationId),
     };
+    if (audienceAnyOf !== null) {
+      query.targetAudience = { $in: [...audienceAnyOf] };
+    }
 
     const now = new Date();
     const andFilters: Record<string, unknown>[] = [];
@@ -124,6 +132,38 @@ export const AnnouncementService = {
       locationId: new Types.ObjectId(locationId),
     }).lean();
 
+    return doc ? toAnnouncementDTO(doc) : null;
+  },
+
+  /**
+   * Get a single announcement for the staff-facing API. Drafts and posts
+   * whose `publishDate` is still in the future are never returned. Expired
+   * posts are, so the mobile archive can open them.
+   *
+   * @param audienceAnyOf - Audience entries the reader belongs to, or
+   *        `null` to skip the audience check (owners and managers).
+   * @returns `AnnouncementDTO` or `null` when the row is missing, not yet
+   *          published, or outside the reader's audience.
+   */
+  async getPublishedForReader(
+    orgId: string,
+    locationId: string,
+    announcementId: string,
+    audienceAnyOf: readonly string[] | null
+  ): Promise<AnnouncementDTO | null> {
+    if (audienceAnyOf !== null && audienceAnyOf.length === 0) return null;
+
+    const query: Record<string, unknown> = {
+      _id: announcementId,
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
+      publishDate: { $ne: null, $lte: new Date() },
+    };
+    if (audienceAnyOf !== null) {
+      query.targetAudience = { $in: [...audienceAnyOf] };
+    }
+
+    const doc = await Announcement.findOne(query).lean();
     return doc ? toAnnouncementDTO(doc) : null;
   },
 

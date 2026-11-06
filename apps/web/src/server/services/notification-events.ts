@@ -468,7 +468,13 @@ export const NotificationEvents = {
     // Extract plain text for push — the body is Tiptap JSON, not a string.
     const pushBody = tiptapBodyToPlainText(announcement.body).slice(0, 140);
     return NotificationService.notify({
-      recipients: { allStaffOf: { orgId, locationId } },
+      recipients: {
+        announcementAudienceOf: {
+          orgId,
+          locationId,
+          targetAudience: announcement.targetAudience,
+        },
+      },
       category: "announcements",
       orgId,
       locationId,

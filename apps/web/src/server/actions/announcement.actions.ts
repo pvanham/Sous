@@ -7,6 +7,7 @@ import {
 } from "@/server/services/announcement.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { validateAudienceEntriesWithRoleSet } from "@/lib/announcement/audience";
+import { readableAudienceForMember } from "@/lib/announcement/resolve-audience";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { AnnouncementAcknowledgmentService } from "@/server/services/announcement-acknowledgment.service";
 import { AnnouncementAnalyticsService } from "@/server/services/announcement-analytics.service";
@@ -85,7 +86,8 @@ async function resolveAuthorName(clerkUserId: string): Promise<string> {
  * Open to every role (staff use the mobile home tab, managers use
  * their authoring UI). The `includeExpired` flag is only honoured
  * for write-eligible roles so staff cannot enumerate rolled-off
- * posts by tweaking the URL.
+ * posts by tweaking the URL. Other roles only see posts whose
+ * audience includes their staff row.
  */
 export async function listAnnouncements(
   input: unknown = {}
@@ -113,6 +115,7 @@ export async function listAnnouncements(
       parsed.data.includeDrafts && WRITE_ROLES.includes(ctx.role);
     const includeScheduled =
       parsed.data.includeScheduled && WRITE_ROLES.includes(ctx.role);
+    const audienceAnyOf = await readableAudienceForMember(ctx, userId);
 
     const data = await AnnouncementService.list(
       ctx.orgId,
@@ -122,6 +125,7 @@ export async function listAnnouncements(
         includeExpired,
         includeDrafts,
         includeScheduled,
+        audienceAnyOf,
       }
     );
 
@@ -462,10 +466,11 @@ export async function markAnnouncementRead(
     }
 
     const ctx = await getLocationContext(userId);
-    const announcement = await AnnouncementService.getById(
+    const announcement = await AnnouncementService.getPublishedForReader(
       ctx.orgId,
       ctx.locationId,
-      announcementId
+      announcementId,
+      await readableAudienceForMember(ctx, userId)
     );
     if (!announcement) {
       return { success: false, error: "Announcement not found" };
@@ -504,10 +509,11 @@ export async function acknowledgeAnnouncement(
     }
 
     const ctx = await getLocationContext(userId);
-    const announcement = await AnnouncementService.getById(
+    const announcement = await AnnouncementService.getPublishedForReader(
       ctx.orgId,
       ctx.locationId,
-      announcementId
+      announcementId,
+      await readableAudienceForMember(ctx, userId)
     );
     if (!announcement) {
       return { success: false, error: "Announcement not found" };

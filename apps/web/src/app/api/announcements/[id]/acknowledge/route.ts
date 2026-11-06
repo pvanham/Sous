@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { readableAudienceForMember } from "@/lib/announcement/resolve-audience";
 import { AnnouncementService } from "@/server/services/announcement.service";
 import { AnnouncementAcknowledgmentService } from "@/server/services/announcement-acknowledgment.service";
 
@@ -30,7 +31,13 @@ export async function POST(
     }
 
     const ctx = await getLocationContext(userId);
-    const announcement = await AnnouncementService.getById(ctx.orgId, ctx.locationId, id);
+    const audience = await readableAudienceForMember(ctx, userId);
+    const announcement = await AnnouncementService.getPublishedForReader(
+      ctx.orgId,
+      ctx.locationId,
+      id,
+      audience
+    );
 
     if (!announcement) {
       return NextResponse.json({ error: "Announcement not found." }, { status: 404 });
