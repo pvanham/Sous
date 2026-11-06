@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { readableAudienceForMember } from "@/lib/announcement/resolve-audience";
 import { AnnouncementService } from "@/server/services/announcement.service";
 import { AnnouncementAcknowledgmentService } from "@/server/services/announcement-acknowledgment.service";
 import type { AnnouncementListItemDTO } from "@sous/types";
@@ -33,6 +34,9 @@ import type { AnnouncementListItemDTO } from "@sous/types";
 //     org + location. Reads are open to every role (staff,
 //     shift_lead, manager, owner). Manager-only writes still go
 //     through `announcement.actions.ts`.
+//   - Staff and shift lead callers only see posts whose
+//     `targetAudience` includes their staff row, matching the
+//     notification fan-out in `resolveAudienceStaff`.
 //
 // Query params
 //   - `limit` (optional): integer 1–100, defaults to 20. Out-of-range
@@ -67,7 +71,14 @@ export async function GET(req: NextRequest): Promise<Response> {
     const limit = parseLimit(req.nextUrl.searchParams.get("limit"));
     const lifecycle = parseLifecycle(req.nextUrl.searchParams.get("lifecycle"));
 
-    const announcements = await listByLifecycle(ctx.orgId, ctx.locationId, lifecycle, limit);
+    const audience = await readableAudienceForMember(ctx, userId);
+    const announcements = await listByLifecycle(
+      ctx.orgId,
+      ctx.locationId,
+      lifecycle,
+      limit,
+      audience,
+    );
     const ackRows = await AnnouncementAcknowledgmentService.getManyForUser(
       ctx.orgId,
       ctx.locationId,
@@ -119,11 +130,13 @@ async function listByLifecycle(
   orgId: string,
   locationId: string,
   lifecycle: AnnouncementLifecycleFilter,
-  limit: number
+  limit: number,
+  audience: readonly string[] | null
 ) {
   const rows = await AnnouncementService.list(orgId, locationId, {
     limit,
     includeExpired: lifecycle === "expired",
+    audienceAnyOf: audience,
   });
 
   if (lifecycle === "expired") {
