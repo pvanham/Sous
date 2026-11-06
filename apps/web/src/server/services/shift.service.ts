@@ -514,12 +514,20 @@ export const ShiftService = {
   },
 
   /**
-   * Delete all shifts for a schedule.
+   * Delete all shifts for a schedule within a tenant.
+   * @param orgId - Organization ID
+   * @param locationId - Location ID
    * @param scheduleId - Schedule document ID
    * @returns Number of deleted documents
    */
-  async deleteBySchedule(scheduleId: string): Promise<number> {
+  async deleteBySchedule(
+    orgId: string,
+    locationId: string,
+    scheduleId: string,
+  ): Promise<number> {
     const result = await Shift.deleteMany({
+      orgId: new Types.ObjectId(orgId),
+      locationId: new Types.ObjectId(locationId),
       scheduleId: new Types.ObjectId(scheduleId),
     });
     return result.deletedCount;

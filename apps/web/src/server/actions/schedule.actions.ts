@@ -19,6 +19,7 @@ import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { LocationService } from "@/server/services/location.service";
 import { NotificationEvents } from "@/server/services/notification-events";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import { currentWeekStartInLocationTz } from "@/lib/utils/timezone";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { ScheduleDTO } from "@/types/schedule";
@@ -235,6 +236,8 @@ export async function updateScheduleStatus(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Read the existing status so we know whether this is a real
     // PUBLISHED→DRAFT transition (worth notifying about) or just a
@@ -306,6 +309,8 @@ export async function updateScheduleNotes(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Service call
     const schedule = await ScheduleService.updateNotes(
@@ -347,15 +352,29 @@ export async function deleteSchedule(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
-    // 3. Delete shifts first
-    const shiftsDeleted = await ShiftService.deleteBySchedule(scheduleId);
-
-    // 4. Delete schedule
-    const deleted = await ScheduleService.delete(
+    // 3. Verify schedule ownership before touching its shifts
+    const schedule = await ScheduleService.getById(
       ctx.orgId,
       ctx.locationId,
       scheduleId,
+    );
+    if (!schedule) {
+      return { success: false, error: "Schedule not found" };
+    }
+
+    // 4. Delete shifts, then the schedule
+    const shiftsDeleted = await ShiftService.deleteBySchedule(
+      ctx.orgId,
+      ctx.locationId,
+      schedule.id,
+    );
+    const deleted = await ScheduleService.delete(
+      ctx.orgId,
+      ctx.locationId,
+      schedule.id,
     );
 
     if (!deleted) {
@@ -406,6 +425,8 @@ export async function copyWeekShifts(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Reject a same-week copy outright.
     const sourceWeekNormalized = new Date(sourceWeekStart);
@@ -471,6 +492,8 @@ export async function publishSchedule(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 3. Get schedule to verify ownership
     const schedule = await ScheduleService.getById(
@@ -686,6 +709,8 @@ export async function clearWeekShifts(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 3. Verify schedule ownership
     const schedule = await ScheduleService.getById(
@@ -698,7 +723,11 @@ export async function clearWeekShifts(
     }
 
     // 4. Delete all shifts for this schedule
-    const shiftsDeleted = await ShiftService.deleteBySchedule(scheduleId);
+    const shiftsDeleted = await ShiftService.deleteBySchedule(
+      ctx.orgId,
+      ctx.locationId,
+      schedule.id,
+    );
 
     // 5. Return response
     return {
@@ -741,6 +770,8 @@ export async function clearWeekShiftsForLocationWeek(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Enforce location-configured week anchor
     await assertWeekStartAligned(ctx.orgId, ctx.locationId, weekStartDate);

@@ -12,6 +12,7 @@ import { LaborRequirementService } from "@/server/services/labor-requirement.ser
 import { StaffService } from "@/server/services/staff.service";
 import { ShiftService } from "@/server/services/shift.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import { dbConnect } from "@/lib/db";
 import Schedule from "@/server/models/Schedule";
 import type { ActionResponse } from "@/lib/safe-action";
@@ -291,6 +292,8 @@ export async function saveKitchenConfig(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Get current config to check for removals
     const currentConfig = await KitchenConfigService.getByLocation(
@@ -430,6 +433,8 @@ export async function saveAISettings(
     }
 
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     const result = await KitchenConfigService.updateAISettings(
       ctx.orgId,
@@ -470,6 +475,8 @@ export async function saveScheduleGenerationSettings(
     }
 
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     const result = await KitchenConfigService.updateScheduleGenerationSettings(
       ctx.orgId,

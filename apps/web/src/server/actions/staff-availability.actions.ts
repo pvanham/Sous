@@ -10,6 +10,7 @@ import {
 } from "@/lib/validations/staff-availability.schema";
 import { StaffAvailabilityService } from "@/server/services/staff-availability.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { StaffAvailabilityDTO } from "@/types/staff-availability";
 
@@ -183,6 +184,8 @@ export async function upsertStaffAvailability(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const { availability } = await StaffAvailabilityService.upsert(
       ctx.orgId,
       ctx.locationId,
@@ -224,6 +227,8 @@ export async function bulkUpdateAvailability(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const result = await StaffAvailabilityService.bulkUpsert(
       ctx.orgId,
       ctx.locationId,
@@ -261,6 +266,8 @@ export async function deleteStaffAvailability(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const deleted = await StaffAvailabilityService.delete(
       ctx.orgId,
       ctx.locationId,
@@ -300,6 +307,8 @@ export async function deleteAllStaffAvailability(
 
   try {
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
     const count = await StaffAvailabilityService.deleteByStaffId(
       ctx.orgId,
       ctx.locationId,

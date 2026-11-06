@@ -15,6 +15,7 @@ import { StaffAvailabilityService } from "@/server/services/staff-availability.s
 import { ExchangeShiftService } from "@/server/services/exchange-shift.service";
 import { SkillChangeRequestService } from "@/server/services/skill-change-request.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import { revokePendingStaffInvitations } from "@/lib/clerk/revoke-staff-invitation";
 import { inviteStaffToApp } from "@/server/actions/invitation.actions";
 import type { ActionResponse } from "@/lib/safe-action";
@@ -171,6 +172,8 @@ export async function importStaffFromCSV(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Fetch KitchenConfig to validate roles/stations
     const config = await KitchenConfigService.getByLocation(
@@ -277,6 +280,8 @@ export async function createStaff(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate roles/stations against KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -376,6 +381,8 @@ export async function updateStaff(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate roles/stations if provided
     if (updateData.roles || updateData.skills) {
@@ -590,6 +597,8 @@ export async function setStaffActive(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 3. Service call
     const staff = await StaffService.setActive(
@@ -629,6 +638,8 @@ export async function deleteStaff(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 3. Revoke a pending Clerk invitation before any local deletes.
     //    A failure leaves the staff record in place so a retry can

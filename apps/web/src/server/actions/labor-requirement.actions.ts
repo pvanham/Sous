@@ -11,6 +11,7 @@ import {
 import { LaborRequirementService } from "@/server/services/labor-requirement.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { getLocationContext } from "@/lib/auth/get-location-context";
+import { denyUnlessRole } from "@/lib/auth/guards";
 import type { ActionResponse } from "@/lib/safe-action";
 import type { LaborRequirementDTO } from "@/types/labor-requirement";
 
@@ -155,6 +156,8 @@ export async function createLaborRequirement(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate station against KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -230,6 +233,8 @@ export async function updateLaborRequirement(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate station if provided
     if (updateData.station) {
@@ -314,6 +319,8 @@ export async function upsertLaborRequirement(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate station against KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -371,6 +378,8 @@ export async function deleteLaborRequirement(
 
     // 2. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 3. Service call
     const deleted = await LaborRequirementService.delete(
@@ -427,6 +436,8 @@ export async function bulkCreateLaborRequirements(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Validate all stations against KitchenConfig
     const config = await KitchenConfigService.getByLocation(
@@ -501,6 +512,8 @@ export async function bulkDeleteLaborRequirements(
 
     // 3. Get location context (handles DB connection)
     const ctx = await getLocationContext(userId);
+    const denied = denyUnlessRole(ctx);
+    if (denied) return denied;
 
     // 4. Service call
     const result = await LaborRequirementService.bulkDelete(
