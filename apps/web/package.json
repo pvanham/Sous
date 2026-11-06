@@ -30,6 +30,7 @@
     "test:announcements-phase-4": "tsx ../../scripts/test-announcements-phase-4.ts",
     "test:announcements-phase-5": "tsx ../../scripts/test-announcements-phase-5.ts",
     "test:announcements-mobile": "tsx ../../scripts/test-announcements-mobile.ts",
+    "migrate:sous-75": "tsx ../../scripts/migrate-sous-75.ts",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [],
