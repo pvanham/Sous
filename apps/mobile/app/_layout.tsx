@@ -38,8 +38,10 @@ import {
 import { OfflineBanner } from "@/components/offline-banner";
 import { useEffectiveColorScheme } from "@/hooks/use-effective-color-scheme";
 import { useSettingsPreferences } from "@/features/settings/preferences-store";
-import { fetchMembership } from "@/features/auth/api";
+import { fetchMembership, MembershipRequestError } from "@/features/auth/api";
+import { AuthGateNotice } from "@/features/auth/components/auth-gate-notice";
 import { useAuthStore } from "@/features/auth/store";
+import { useSignOut } from "@/features/auth/use-sign-out";
 import { useMyStaff } from "@/features/profile/hooks";
 
 const clerkPublishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
@@ -53,8 +55,11 @@ if (!clerkPublishableKey) {
 /**
  * Redirects users based on auth state and verifies they have at least
  * one OrganizationMember row before letting them into (tabs). Users
- * without a membership are signed out and bounced back to sign-in with
- * an explanatory error.
+ * without a membership (404) or with a rejected session (401/403) are
+ * signed out and bounced back to sign-in with an explanatory error.
+ * Network failures and 5xx keep the session and show a retry notice, as
+ * does a staff or shift lead account whose Staff row failed to load or
+ * hasn't been linked yet.
  *
  * Any role (staff, shift_lead, manager, owner) is accepted — managers
  * and owners may also want to view their schedule or submit time-off
@@ -161,6 +166,29 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   // Owners without a Staff row fall through naturally because
   // their `useMyStaff` query resolves to `null`.
   const myStaffQuery = useMyStaff();
+  const signOutFromNotice = useSignOut();
+
+  // A failed background refetch keeps the last good data, so only a
+  // failure with nothing cached blocks the gate. A dropped connection
+  // mid-session must not sign anyone out or pull them out of the tabs.
+  const membership = membershipQuery.data;
+  const membershipError =
+    membershipQuery.isError && membership === undefined
+      ? membershipQuery.error
+      : null;
+  const membershipErrorEndsSession =
+    membershipError instanceof MembershipRequestError &&
+    (membershipError.status === 401 || membershipError.status === 403);
+  const isStaffAccount =
+    membership?.role === "staff" || membership?.role === "shift_lead";
+  const staffLoadFailed =
+    myStaffQuery.isError && myStaffQuery.data === undefined;
+  // Staff and shift lead accounts are only usable once the webhook has
+  // linked their Staff row; until then the tabs would render empty.
+  const staffUnlinked =
+    isStaffAccount && myStaffQuery.isSuccess && myStaffQuery.data === null;
+  const needsOnboarding =
+    myStaffQuery.data != null && myStaffQuery.data.onboardingCompletedAt === null;
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -197,8 +225,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
     if (membershipQuery.isLoading) return;
 
-    if (membershipQuery.isSuccess && membershipQuery.data) {
-      setMembership(membershipQuery.data);
+    if (membership) {
+      setMembership(membership);
 
       // Onboarding gate. Wait for the Staff query to settle
       // before deciding — flashing `/(tabs)` and then redirecting
@@ -214,10 +242,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       // null` and fall through.
       if (myStaffQuery.isLoading) return;
 
-      const needsOnboarding =
-        myStaffQuery.isSuccess &&
-        myStaffQuery.data !== null &&
-        myStaffQuery.data.onboardingCompletedAt === null;
+      // Hold here and let the notice offer a retry rather than
+      // guessing that onboarding is done.
+      if (staffLoadFailed || staffUnlinked) return;
 
       if (needsOnboarding) {
         if (!inOnboardingGroup) {
@@ -237,7 +264,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (membershipQuery.isSuccess && !membershipQuery.data) {
+    if (membership === null) {
       clearMembership();
       setPendingSignInError(
         "This account isn't linked to a location yet. Please contact your manager.",
@@ -246,17 +273,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (membershipQuery.isError) {
+    // Network failures and 5xx keep the session; the notice below
+    // offers a retry. Only a rejected session token signs out.
+    if (membershipError && membershipErrorEndsSession) {
       clearMembership();
-      const detail =
-        membershipQuery.error instanceof Error
-          ? membershipQuery.error.message
-          : null;
-      console.warn("[mobile] AuthGate membership error:", detail);
+      console.warn("[mobile] AuthGate membership rejected:", membershipError.message);
       setPendingSignInError(
-        detail
-          ? `Couldn't verify your account: ${detail}`
-          : "Couldn't verify your account. Please sign in again.",
+        `Couldn't verify your account: ${membershipError.message}`,
       );
       void signOut();
     }
@@ -266,13 +289,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     segments,
     router,
     membershipQuery.isLoading,
-    membershipQuery.isSuccess,
-    membershipQuery.isError,
-    membershipQuery.data,
-    membershipQuery.error,
+    membership,
+    membershipError,
+    membershipErrorEndsSession,
     myStaffQuery.isLoading,
-    myStaffQuery.isSuccess,
-    myStaffQuery.data,
+    staffLoadFailed,
+    staffUnlinked,
+    needsOnboarding,
     setMembership,
     clearMembership,
     setPendingSignInError,
@@ -293,16 +316,13 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     if (top === "invite") return true;
     if (!isSignedIn) return true;
     if (membershipQuery.isLoading) return false;
-    // Error / no-membership both lead to a forced sign-out; keep the
-    // overlay up through that brief transition.
-    if (membershipQuery.isError) return false;
-    if (membershipQuery.isSuccess && !membershipQuery.data) return false;
-    if (membershipQuery.isSuccess && membershipQuery.data) {
+    // A rejected session and a missing membership both lead to a
+    // forced sign-out; keep the overlay up through that transition.
+    // Other errors are covered by the notice instead.
+    if (membershipError) return false;
+    if (membership === null) return false;
+    if (membership) {
       if (myStaffQuery.isLoading) return false;
-      const needsOnboarding =
-        myStaffQuery.isSuccess &&
-        myStaffQuery.data !== null &&
-        myStaffQuery.data.onboardingCompletedAt === null;
       if (needsOnboarding) {
         // Settled only once we're inside the wizard group.
         return top === "(onboarding)";
@@ -316,11 +336,55 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return false;
   })();
 
-  const showLoadingOverlay = isLoaded && isSignedIn && !routingSettled;
+  const notice = (() => {
+    if (!isLoaded || !isSignedIn) return null;
+    if ((segments[0] as string | undefined) === "invite") return null;
+    if (membershipError && !membershipErrorEndsSession) {
+      return {
+        title: "We couldn't verify your account",
+        message: "Check your connection and try again. You're still signed in.",
+        onRetry: () => void membershipQuery.refetch(),
+        retrying: membershipQuery.isFetching,
+      };
+    }
+    if (!membership || myStaffQuery.isLoading) return null;
+    if (staffLoadFailed) {
+      return {
+        title: "We couldn't load your profile",
+        message: "Check your connection and try again. You're still signed in.",
+        onRetry: () => void myStaffQuery.refetch(),
+        retrying: myStaffQuery.isFetching,
+      };
+    }
+    if (staffUnlinked) {
+      return {
+        title: "Your account is almost ready",
+        message:
+          "Your sign-in isn't linked to a staff profile at this location yet. " +
+          "This usually takes a moment after accepting an invite. If it " +
+          "persists, ask your manager to check your invite.",
+        onRetry: () => void myStaffQuery.refetch(),
+        retrying: myStaffQuery.isFetching,
+      };
+    }
+    return null;
+  })();
+
+  const showLoadingOverlay =
+    isLoaded && isSignedIn && !routingSettled && notice === null;
 
   return (
     <>
       {children}
+      {notice ? (
+        <AuthGateNotice
+          title={notice.title}
+          message={notice.message}
+          onRetry={notice.onRetry}
+          retrying={notice.retrying}
+          onSignOut={() => void signOutFromNotice()}
+        />
+      ) : null}
       {showLoadingOverlay ? (
         // Opaque (not translucent): fully hides whatever group Expo
         // Router mounted underneath while we settle the destination,

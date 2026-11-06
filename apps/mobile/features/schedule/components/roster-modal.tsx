@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import type { StaffDTO } from "@sous/types";
 import { StyledText } from "@/components/ui/text";
 import { BottomSheet } from "@/components/ui/bottom-sheet";
+import { ErrorState } from "@/components/ui/error-state";
 
 interface RosterModalProps {
   visible: boolean;
@@ -10,6 +11,9 @@ interface RosterModalProps {
   shiftLabel: string;
   roster: StaffDTO[];
   loading: boolean;
+  /** True when the roster request failed and there is no cached data. */
+  loadFailed: boolean;
+  onRetry: () => void;
 }
 
 /**
@@ -21,6 +25,8 @@ export function RosterModal({
   shiftLabel,
   roster,
   loading,
+  loadFailed,
+  onRetry,
 }: RosterModalProps) {
   const { height: windowHeight } = useWindowDimensions();
   // The sheet cap is 60% of screen. Reserve space for:
@@ -48,6 +54,12 @@ export function RosterModal({
         >
           Loading roster...
         </StyledText>
+      ) : loadFailed ? (
+        <ErrorState
+          message="We couldn't load the roster for this shift."
+          onRetry={onRetry}
+          className="py-8"
+        />
       ) : (
         <FlatList
           data={roster}

@@ -20,6 +20,7 @@ import type { ShiftDTO } from "@sous/types";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/error-state";
 import { AvailableShiftList } from "../components/available-shift-list";
 import { ProposeExchangeModal } from "../components/propose-exchange-modal";
 import {
@@ -372,6 +373,10 @@ export function ExchangeScreen() {
       {activeTab === "available" ? (
         <AvailableShiftList
           shifts={availableQuery.data ?? []}
+          loading={availableQuery.isLoading}
+          loadFailed={availableQuery.isError}
+          onRetry={() => void availableQuery.refetch()}
+          retrying={availableQuery.isFetching}
           onPickUp={handlePickUp}
           pickingUp={busyId}
           refreshControl={
@@ -385,6 +390,9 @@ export function ExchangeScreen() {
         <MyDroppedList
           shifts={myDroppedQuery.data ?? []}
           loading={myDroppedQuery.isLoading}
+          loadFailed={myDroppedQuery.isError}
+          onRetry={() => void myDroppedQuery.refetch()}
+          retrying={myDroppedQuery.isFetching}
           busyId={busyId}
           onCancel={handleCancelDrop}
           refreshControl={
@@ -398,6 +406,9 @@ export function ExchangeScreen() {
         <MyPickupsList
           shifts={myPickupsQuery.data ?? []}
           loading={myPickupsQuery.isLoading}
+          loadFailed={myPickupsQuery.isError}
+          onRetry={() => void myPickupsQuery.refetch()}
+          retrying={myPickupsQuery.isFetching}
           busyId={busyId}
           onWithdraw={handleWithdraw}
           refreshControl={
@@ -462,12 +473,18 @@ function SegmentButton({
 function MyDroppedList({
   shifts,
   loading,
+  loadFailed,
+  onRetry,
+  retrying,
   busyId,
   onCancel,
   refreshControl,
 }: {
   shifts: ExchangeShift[];
   loading: boolean;
+  loadFailed: boolean;
+  onRetry: () => void;
+  retrying: boolean;
   busyId: string | null;
   onCancel: (exchangeId: string) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -498,11 +515,19 @@ function MyDroppedList({
       )}
       ItemSeparatorComponent={() => <View className="h-3" />}
       ListEmptyComponent={
-        <View className="py-12 items-center">
-          <StyledText variant="body" className="text-muted-foreground">
-            You haven&apos;t dropped any shifts.
-          </StyledText>
-        </View>
+        loadFailed ? (
+          <ErrorState
+            message="We couldn't load your dropped shifts."
+            onRetry={onRetry}
+            retrying={retrying}
+          />
+        ) : (
+          <View className="py-12 items-center">
+            <StyledText variant="body" className="text-muted-foreground">
+              You haven&apos;t dropped any shifts.
+            </StyledText>
+          </View>
+        )
       }
     />
   );
@@ -511,12 +536,18 @@ function MyDroppedList({
 function MyPickupsList({
   shifts,
   loading,
+  loadFailed,
+  onRetry,
+  retrying,
   busyId,
   onWithdraw,
   refreshControl,
 }: {
   shifts: ExchangeShift[];
   loading: boolean;
+  loadFailed: boolean;
+  onRetry: () => void;
+  retrying: boolean;
   busyId: string | null;
   onWithdraw: (exchangeId: string) => void;
   refreshControl?: ReactElement<RefreshControlProps>;
@@ -547,11 +578,19 @@ function MyPickupsList({
       )}
       ItemSeparatorComponent={() => <View className="h-3" />}
       ListEmptyComponent={
-        <View className="py-12 items-center">
-          <StyledText variant="body" className="text-muted-foreground">
-            You haven&apos;t picked up any shifts.
-          </StyledText>
-        </View>
+        loadFailed ? (
+          <ErrorState
+            message="We couldn't load your pickups."
+            onRetry={onRetry}
+            retrying={retrying}
+          />
+        ) : (
+          <View className="py-12 items-center">
+            <StyledText variant="body" className="text-muted-foreground">
+              You haven&apos;t picked up any shifts.
+            </StyledText>
+          </View>
+        )
       }
     />
   );

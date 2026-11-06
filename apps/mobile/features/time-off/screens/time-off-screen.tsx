@@ -7,6 +7,7 @@ import type { TimeOffRequestDTO, TimeOffRequestStatus } from "@sous/types";
 import { formatCalendarRange } from "@sous/types/utils/calendar-date";
 import { ScreenWrapper } from "@/components/ui/screen-wrapper";
 import { StyledText } from "@/components/ui/text";
+import { ErrorState } from "@/components/ui/error-state";
 import { RequestModal } from "../components/request-modal";
 import { fetchTimeOffRequests, submitTimeOffRequest } from "../api";
 import type { CreateTimeOffRequestInput } from "@/types";
@@ -143,6 +144,12 @@ export function TimeOffScreen() {
             <StyledText variant="body" className="text-muted-foreground text-center py-12">
               Loading requests...
             </StyledText>
+          ) : requestsQuery.isError ? (
+            <ErrorState
+              message="We couldn't load your time-off requests."
+              onRetry={handleRefresh}
+              retrying={requestsQuery.isFetching}
+            />
           ) : (
             <StyledText variant="body" className="text-muted-foreground text-center py-12">
               No time-off requests yet.

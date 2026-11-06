@@ -62,8 +62,8 @@ export function ProfileStepScreen() {
   // Hydrate from Clerk + the (possibly empty) Staff record once.
   // We deliberately read from Clerk first because the staff member
   // can update their name via Clerk's account portal directly —
-  // that value is the source of truth, and we only mirror it onto
-  // the Staff doc when the user moves on from this step.
+  // that value is the source of truth, and `handleNext` waits for it
+  // to be mirrored onto the Staff doc before moving on.
   useEffect(() => {
     if (!isLoaded || !user) return;
     setFirstName((prev) => prev || (user.firstName ?? ""));
@@ -91,11 +91,10 @@ export function ProfileStepScreen() {
     setSubmitting(true);
     try {
       const updates: Promise<unknown>[] = [];
-      if (user.firstName !== trimmedFirst) {
-        updates.push(user.update({ firstName: trimmedFirst }));
-      }
-      if (user.lastName !== trimmedLast) {
-        updates.push(user.update({ lastName: trimmedLast }));
+      if (user.firstName !== trimmedFirst || user.lastName !== trimmedLast) {
+        updates.push(
+          user.update({ firstName: trimmedFirst, lastName: trimmedLast }),
+        );
       }
       // Only patch Staff when the phone actually changed — the
       // PATCH route rejects empty payloads with 400.
@@ -105,6 +104,11 @@ export function ProfileStepScreen() {
         updates.push(updateMyStaff.mutateAsync({ phone }));
       }
       await Promise.all(updates);
+      // GET /me/staff mirrors the confirmed Clerk name onto Staff.name.
+      // Waiting for it keeps the roster and the Done checklist from
+      // showing the invite-time name.
+      const refreshed = await myStaffQuery.refetch();
+      if (refreshed.isError) throw refreshed.error;
       goNext();
     } catch (err) {
       setSubmitError(extractErrorMessage(err));
@@ -119,6 +123,7 @@ export function ProfileStepScreen() {
     phone,
     staff,
     updateMyStaff,
+    myStaffQuery,
     goNext,
   ]);
 
