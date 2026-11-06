@@ -21,16 +21,14 @@ web app uses.
 - Sign in via Clerk (email + password flow, session persists via
   `expo-secure-store`).
 - Verify the Clerk user has an `OrganizationMember` record via
-  `GET /api/me/membership` — no membership means we sign the user
-  out and explain why.
+  `GET /api/me/membership`. A confirmed missing membership signs the
+  user out and explains why; a failed request shows a retry screen
+  and keeps the session (see §5).
 - Render four tabs: **Home**, **Schedule**, **Exchange**, **Time Off**.
 
-**What the mobile app does not do yet**: some feature screens still
-render **mock data** (see §10). The Home and Schedule tabs are now
-wired to real endpoints (`/api/shifts/next`, `/api/announcements`,
-`/api/shifts`, `/api/shifts/:shiftId/roster`); Exchange and Time-off
-remain on mocks until their route handlers ship. The Axios pipeline,
-auth wiring, TanStack Query setup, and UI are real.
+Every tab calls the live web API; there is no mock data left on the
+mobile data layer (see §10). Exchange uses `/api/exchange/*` and
+`/api/shifts/[shiftId]/drop`, and Time Off uses `/api/time-off`.
 
 ---
 
@@ -182,9 +180,17 @@ Runs inside `_layout.tsx`. Its responsibilities:
 - Wire `attachNotificationTapHandler` once at mount. The handler
   reads `data.url` from each push payload and hands it to
   `Linking.openURL`, which Expo Router resolves to a `router.push`.
-- On 404 (no membership), call `signOut()` with an error that the
-  sign-in screen surfaces via `consumePendingSignInError()`.
-- On network or Clerk errors, also sign out with a readable message.
+- Sign out only when the account is confirmed to have no access: a
+  404 (no membership), or a 401 / 403 from `/api/me/membership`. The
+  sign-in screen surfaces the message via
+  `consumePendingSignInError()`.
+- On network errors and 5xx responses, keep the session and show
+  `AuthGateNotice` with a retry button. A failed background refetch
+  is ignored while a cached membership exists.
+- For a `staff` or `shift_lead` membership, hold the user on the same
+  notice when `/api/me/staff` fails or returns no linked Staff row,
+  instead of sending them into tabs that need one. A missing link
+  usually means the `user.created` webhook has not run yet.
 - Redirect between `(auth)`, `(onboarding)`, and `(tabs)` based on
   `segments[0]`, the presence of a Staff row (`useMyStaff`), and
   `Staff.onboardingCompletedAt`. Any user with a Staff row whose
@@ -242,14 +248,46 @@ export const tokenCache: TokenCache = {
 - On HTTP 404 it returns `null` (user exists in Clerk but has no
   `OrganizationMember` in Mongo). AuthGate treats this as "sign
   out with a friendly message."
-- On any other error it throws a formatted message so
-  `pendingSignInError` is meaningful to the user.
+- On any other error it throws a `MembershipRequestError` carrying
+  the HTTP status (`null` for network failures). AuthGate signs out
+  for 401 / 403 and shows the retry notice for everything else.
 
 The backing endpoint is `/api/me/membership` on the web app (see
 [05-api-and-testing.md](./05-api-and-testing.md)). It also self-heals
 missing memberships from Clerk invitation metadata when the
 `user.created` webhook was missed — that is the **web** side's
 concern, not the mobile side's.
+
+### Staff and shift lead accounts
+
+A shift lead is an employee who also gets a limited login: dashboard
+access, shift exchange and skill change approvals, and a smaller AI
+tool set than a manager. Both `staff` and `shift_lead` memberships are
+backed by a Staff row, so both are scheduled, take the mobile
+onboarding flow, and need the linked row described above.
+
+- **Where it is set.** On the web staff profile, an owner or manager
+  sets **Account access** to Staff or Shift lead. It is stored as
+  `Staff.accountAccess` (default `staff`). The Team settings invite
+  only creates managers, because it creates a membership with no Staff
+  row.
+- **Before the invite is accepted.** The app invite carries the
+  current value as `publicMetadata.role`. When the account is created,
+  the `user.created` webhook (or the `/api/me/membership` self-heal)
+  reads `accountAccess` from the Staff row again and uses that as the
+  membership role. A change made after the invite was sent still
+  applies.
+- **After the account exists.** Changing Account access updates
+  `OrganizationMember.role` and Clerk `publicMetadata.role` together.
+  Owner and manager logins are never changed from this control.
+- **Deletion.** `user.deleted` unlinks the Staff row for both roles
+  and keeps the scheduling history.
+- **Not coverage.** Account access does not affect manager coverage
+  in schedule generation. That comes only from the kitchen roles
+  marked as manager roles in `KitchenConfig.managerRoles`.
+
+On mobile, `shift_lead` is treated like `staff` for routing; the
+extra permissions live on the web dashboard and in server-side RBAC.
 
 ---
 
@@ -372,9 +410,9 @@ Rules:
 
 ---
 
-## 10. Mock data — active technical debt
+## 10. Mobile API surface
 
-Every feature `api.ts` file now hits real endpoints — there is no
+Every feature `api.ts` file hits real endpoints — there is no
 remaining mock data on the mobile data layer:
 
 - `features/home/api.ts` — **live** (next shift; announcement fetch
@@ -386,20 +424,11 @@ remaining mock data on the mobile data layer:
 - `features/exchange/api.ts` — **live** (available shifts, my drops,
   pickUpShift, dropShift)
 
-Every function carries a doc comment describing the planned route
-handler that will replace the mock, e.g.:
+### 10.1 Endpoints
 
-```ts
-// Replace with `apiClient.get("/shifts", { params: { weekStart } })` later.
-```
-
-### 10.1 Planned mobile API surface (skeletons live in the repo)
-
-Skeleton route handlers exist under `apps/web/src/app/api/` for every
-endpoint the mobile app will eventually call. They each return
-`501 Not Implemented` and contain an extensive header comment that
-documents auth, request/response shape, and the implementation plan.
-**Do not flesh one out without first reading its file-level comment**:
+Each mobile call maps to one route handler under
+`apps/web/src/app/api/`. The handler's file-level comment documents
+auth, request and response shape; read it before changing either side:
 
 | Mobile call                               | Verb | Web route handler                                                | Status |
 |-------------------------------------------|------|------------------------------------------------------------------|--------|
@@ -532,22 +561,17 @@ Mutation success on the screen invalidates BOTH `["exchange"]` (the
 board + my drops) AND `["schedule"]` (the caller's weekly view
 changes because a shift is being added or removed).
 
-When you wire a feature to a real endpoint:
+When you add a new mobile call:
 
-1. Delete the `delay(...)` + mock factory.
-2. Replace the body with `apiClient.get/post(...)` (Axios, not
-   fetch).
-3. Use the DTOs from `@sous/types` as the response shape — do not
+1. Call `apiClient.get/post(...)` (Axios, not fetch).
+2. Use the DTOs from `@sous/types` as the response shape — do not
    define a mobile-local type that shadows them.
-4. Update the web app's `apps/web/src/app/api/` route handler (and
+3. Update the web app's `apps/web/src/app/api/` route handler (and
    service) to match. Route handlers used by mobile are the only
    `app/api/*` routes you should add — see
    [05-api-and-testing.md](./05-api-and-testing.md).
-5. Invalidate the relevant TanStack Query keys on mutation success.
-
-Do not pretend the mocks are real. If a screen is wired to mocks,
-its PR description must say so, and the corresponding server
-endpoint task should be filed.
+4. Invalidate the relevant TanStack Query keys on mutation success.
+5. Add a row to the table above.
 
 ---
 
