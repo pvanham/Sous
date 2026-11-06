@@ -1,6 +1,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/db";
+import { writeMembershipMetadata } from "@/lib/auth/membership-metadata";
 import { OrganizationMemberService } from "@/server/services/organization-member.service";
 import { KitchenConfigService } from "@/server/services/kitchen-config.service";
 import { StaffService } from "@/server/services/staff.service";
@@ -176,15 +177,7 @@ async function tryHealMembership(
     // Copy the invitation metadata onto the Clerk user so subsequent
     // lookups can take Path A, and revoke the now-consumed invitation.
     try {
-      await client.users.updateUser(clerkUserId, {
-        publicMetadata: {
-          ...(user.publicMetadata ?? {}),
-          role: fromInvitation.role,
-          orgId: fromInvitation.orgId,
-          locationId: fromInvitation.locationId,
-          ...(fromInvitation.staffId ? { staffId: fromInvitation.staffId } : {}),
-        },
-      });
+      await writeMembershipMetadata(clerkUserId, fromInvitation);
     } catch (error) {
       console.error(
         "[membership self-heal] users.updateUser (metadata copy) failed:",
